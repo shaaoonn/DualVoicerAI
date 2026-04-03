@@ -202,42 +202,69 @@ def ai_trigger_flow(self):
 
 ---
 
-## 📁 File Structure
+## 📁 GitHub Repository Structure
+
+**Repo:** `github.com/shaaoonn/DualVoicerAI`
+**Branch:** `main`
 
 ```
-ai-voice-product/
-├── SKILL.md               ← Master (you are here)
-├── references/
-│   ├── 02_ui_panel.md     ← Settings panel spec (860×700)
-│   ├── 03_auth_system.md  ← Google OAuth + Phone OTP (Phase 3)
-│   ├── 04_modules.md      ← P1-1 to P1-8 implementation
-│   ├── 05_testing.md      ← Test checklists + build
-│   └── 06_backend.md      ← Phase 2: Flask + Firebase + Website
+DualVoicerAI/                  ← GitHub repo root
+├── .gitignore
+├── SKILL.md                   ← Master plan (you are here)
+├── references/                ← Project planning docs (all phases)
+│   ├── 02_ui_panel.md
+│   ├── 03_auth_system.md
+│   ├── 04_modules.md
+│   ├── 05_testing.md
+│   └── 06_backend.md
 │
-├── main.py                ← Fork of desktop/main.py
-├── config.py              ← ← ← START HERE
-├── updater.py             ← Unchanged
-├── version.json
-├── .env                   ← OPENROUTER_API_KEY=sk-...
-├── .env.example
+├── desktop/                   ← ★ Desktop App (Phase 1)
+│   ├── main.py
+│   ├── config.py              ← DEV_MODE, API keys, UI config
+│   ├── updater.py
+│   ├── build.bat
+│   ├── requirements.txt
+│   ├── version.json
+│   ├── .env.example
+│   ├── DualVoicerLogo.ico
+│   ├── *.wav, *.png           ← Assets
+│   ├── ai_engine/             ← AI, TTS, clipboard modules
+│   ├── ui/                    ← Settings panel
+│   ├── ui_components/         ← Spectrum button, language data
+│   └── subscription/          ← Freemium gate
 │
-├── ai_engine/             ← Phase 1 (P1-2,3)
-│   ├── openrouter.py
-│   ├── text_processor.py
-│   ├── format_handler.py
-│   ├── clipboard_guard.py
-│   └── tts_detector.py    ← Phase 1 (P1-5)
+├── website/                   ← (Phase 2 — future)
+│   └── ...
 │
-├── ui_components/         ← Phase 1
-│   ├── spectrum_button.py ← P1-1
-│   └── language_data.py   ← P1-4
-│
-├── ui/
-│   └── settings_panel.py  ← P1-8 (large window)
-│
-└── subscription/
-    ├── freemium.py        ← P1-7 (DEV_MODE aware)
-    └── auth_new.py        ← Phase 3 only
+└── backend/                   ← (Phase 2 — future)
+    └── ...
+```
+
+### 🔒 CRITICAL: Folder Structure Rules for Claude Code
+
+```
+1. NEVER move files between top-level folders (desktop/, website/, backend/).
+   - desktop/ এর ফাইল website/ এ নিয়ে যাবে না, উল্টোটাও না।
+   - প্রতিটা ফোল্ডার আলাদা প্রোজেক্ট, আলাদা dependency.
+
+2. NEVER flatten the structure — desktop app files MUST stay inside desktop/.
+   - main.py → desktop/main.py (NOT repo root)
+   - config.py → desktop/config.py (NOT repo root)
+
+3. Root-level files: Only .gitignore, SKILL.md, references/ belong at repo root.
+   - কখনো repo root-এ .py ফাইল রাখবে না।
+
+4. NEW folders: Phase 2 তে website/ ও backend/ তৈরি হবে।
+   - এগুলো desktop/ এর ভেতরে না, পাশে (sibling) থাকবে।
+
+5. Git push: Always push to `main` branch on `origin`.
+   - git push -u origin main
+
+6. NEVER commit .env (secrets) — only .env.example.
+   - .gitignore এ .env আছে, সরাবে না।
+
+7. LOCAL dev path: F:\WEB and APPS\Dual Voicer AI\desktop\
+   - App চালাতে: cd desktop && python main.py
 ```
 
 ---
