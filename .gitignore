@@ -1,0 +1,33 @@
+# Environment
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.spec
+
+# IDE
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# App data
+*.lock
+.freemium.json
+
+# PyInstaller
+*.manifest
+*.exe

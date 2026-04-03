@@ -1,0 +1,5 @@
+{
+    "version": "3.6.9",
+    "download_url": "https://github.com/shaaoonn/DualVoicer-Dist/releases/download/v3.6.9/DualVoicer_v3.6.9_Setup.exe",
+    "release_notes": "DualVoicer v3.6.9\n\n🚀 নতুন ফিচার:\n- [NEW] Noise Filter Slider (50-500)\n- [NEW] Auto-Refresh Engine (প্রতি 15 recognitions)\n- [IMPROVED] দ্রুত স্টার্ট (No Auto Calibration)\n\n🐛 বাগ ফিক্স:\n- [FIXED] দীর্ঘক্ষণ ব্যবহারে ফ্রিজ সমস্যা\n- [FIXED] Threshold Drift সমস্যা\n- [FIXED] Audio Queue Buildup\n\nNote: সেটিংস থেকে Noise Filter এডজাস্ট করুন।"
+}
