@@ -743,7 +743,8 @@ class VoiceTypingApp(ctk.CTk):
             keyboard.add_hotkey('alt+c', lambda: self.after(0, self.handle_reader_click))
             keyboard.add_hotkey(AI_HOTKEY, lambda: self.after(0, self.ai_trigger_flow))
             keyboard.add_hotkey(SMART_PASTE_HOTKEY, lambda: self.after(0, self.smart_paste_flow))
-            print("[HOTKEYS] Registered: alt+z/x/c, " + AI_HOTKEY + ", " + SMART_PASTE_HOTKEY)
+            keyboard.add_hotkey('ctrl+shift+d', lambda: self.after(0, self.toggle_pen_mode))
+            print("[HOTKEYS] Registered: alt+z/x/c, " + AI_HOTKEY + ", " + SMART_PASTE_HOTKEY + ", ctrl+shift+d (pen)")
         except Exception as e:
             print(f"[HOTKEY ERROR] {e}")
 
@@ -1007,33 +1008,108 @@ class VoiceTypingApp(ctk.CTk):
         pass
 
     def toggle_pen_mode(self):
-        """Toggle screen annotation pen (placeholder — full implementation in Part C)."""
-        # TODO: Part C implementation
-        from tkinter import messagebox
-        messagebox.showinfo("Pen Tool", "Pen tool coming soon!\nপেন টুল শীঘ্রই আসবে।")
+        """Toggle screen annotation pen on/off."""
+        if hasattr(self, '_pen_overlay') and self._pen_overlay is not None:
+            self._close_pen_mode()
+        else:
+            self._open_pen_mode()
+
+    def _open_pen_mode(self):
+        """Open pen overlay + toolbar for screen annotation."""
+        try:
+            from ui_components.pen_overlay import PenOverlay
+            from ui_components.pen_toolbar import PenToolbar
+
+            # Create overlay (fullscreen transparent canvas)
+            self._pen_overlay = PenOverlay(self, on_close_callback=self._close_pen_mode)
+
+            # Create toolbar (floating control panel)
+            self._pen_toolbar = PenToolbar(self, self._pen_overlay, self)
+
+            # Ensure both stay on top
+            self.after(200, self._pen_ensure_topmost)
+
+            print("[PEN] Pen mode opened")
+        except Exception as e:
+            print(f"[PEN] Failed to open pen mode: {e}")
+            self._pen_overlay = None
+            self._pen_toolbar = None
+
+    def _close_pen_mode(self):
+        """Close pen overlay + toolbar."""
+        try:
+            if hasattr(self, '_pen_toolbar') and self._pen_toolbar:
+                try:
+                    self._pen_toolbar.destroy()
+                except:
+                    pass
+                self._pen_toolbar = None
+
+            if hasattr(self, '_pen_overlay') and self._pen_overlay:
+                try:
+                    self._pen_overlay.destroy()
+                except:
+                    pass
+                self._pen_overlay = None
+
+            print("[PEN] Pen mode closed")
+        except Exception as e:
+            print(f"[PEN] Error closing pen mode: {e}")
+
+    def _pen_ensure_topmost(self):
+        """Ensure pen overlay and toolbar stay on top after creation."""
+        try:
+            if hasattr(self, '_pen_overlay') and self._pen_overlay and self._pen_overlay.winfo_exists():
+                self._pen_overlay.attributes('-topmost', True)
+                self._pen_overlay.lift()
+            if hasattr(self, '_pen_toolbar') and self._pen_toolbar and self._pen_toolbar.winfo_exists():
+                self._pen_toolbar.attributes('-topmost', True)
+                self._pen_toolbar.lift()
+        except:
+            pass
 
     def take_screenshot(self):
-        """Trigger Windows Snipping Tool, optionally save to folder."""
+        """Trigger Windows Snipping Tool, save clipboard image for AI analysis."""
         if self.is_reading:
             self._pause_reader()
         pyautogui.hotkey('win', 'shift', 's')
 
-        # If save dir configured, save clipboard image after snip
-        save_dir = self.settings.get("screenshot_save_dir", "").strip()
-        if save_dir and os.path.isdir(save_dir):
-            def _save_snip():
-                time.sleep(4)  # wait for user to snip
-                try:
-                    from PIL import ImageGrab
-                    img = ImageGrab.grabclipboard()
-                    if img:
+        # Mark that a screenshot was initiated (for AI analysis)
+        self._screenshot_pending = True
+        self._screenshot_time = time.time()
+
+        def _capture_after_snip():
+            """Wait for snip completion, then grab clipboard image."""
+            time.sleep(4)  # wait for user to complete snip
+            try:
+                from PIL import ImageGrab
+                img = ImageGrab.grabclipboard()
+                if img:
+                    # Save base64 for AI vision analysis
+                    import io, base64
+                    buf = io.BytesIO()
+                    img.save(buf, format='PNG')
+                    buf.seek(0)
+                    b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                    self._last_screenshot_b64 = f"data:image/png;base64,{b64}"
+                    self._last_screenshot_time = time.time()
+                    print("[SCREENSHOT] Captured for AI analysis")
+
+                    # Also save to folder if configured
+                    save_dir = self.settings.get("screenshot_save_dir", "").strip()
+                    if save_dir and os.path.isdir(save_dir):
                         fname = datetime.datetime.now().strftime("screenshot_%Y%m%d_%H%M%S.png")
                         path = os.path.join(save_dir, fname)
                         img.save(path)
                         print(f"[SCREENSHOT] Saved: {path}")
-                except Exception as e:
-                    print(f"[SCREENSHOT] Save error: {e}")
-            threading.Thread(target=_save_snip, daemon=True).start()
+                else:
+                    print("[SCREENSHOT] No image in clipboard")
+            except Exception as e:
+                print(f"[SCREENSHOT] Capture error: {e}")
+            finally:
+                self._screenshot_pending = False
+
+        threading.Thread(target=_capture_after_snip, daemon=True).start()
 
     def _pause_reader(self):
         """Pause TTS playback immediately (synchronous)."""
@@ -1147,6 +1223,21 @@ class VoiceTypingApp(ctk.CTk):
             self.is_listening = False
             self._silent_reset()
 
+        # Check if there's a recent screenshot (within last 60 seconds)
+        has_screenshot = (
+            hasattr(self, '_last_screenshot_b64') and
+            self._last_screenshot_b64 and
+            hasattr(self, '_last_screenshot_time') and
+            (time.time() - self._last_screenshot_time) < 60
+        )
+
+        if has_screenshot:
+            self._ai_screenshot_flow()
+        else:
+            self._ai_text_flow()
+
+    def _ai_text_flow(self):
+        """Standard AI text processing (Ctrl+Shift+A with selected text)."""
         self.after(0, lambda: self.btn_ai.set_state("ai_thinking"))
 
         def _run():
@@ -1176,6 +1267,44 @@ class VoiceTypingApp(ctk.CTk):
                 }
                 msg = msgs.get(str(e), f"\u274c {e}")
                 self.after(0, lambda m=msg: self._show_ai_error(m))
+            finally:
+                self.after(0, lambda: self.btn_ai.set_state("idle"))
+
+        import threading
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _ai_screenshot_flow(self):
+        """AI vision analysis of the last screenshot."""
+        self.after(0, lambda: self.btn_ai.set_state("ai_thinking"))
+        screenshot_b64 = self._last_screenshot_b64
+
+        # Clear screenshot so next AI press does text mode
+        self._last_screenshot_b64 = None
+        self._last_screenshot_time = 0
+
+        def _run():
+            import asyncio
+            from ai_engine.screenshot_analyzer import analyze_screenshot
+            from ai_engine.clipboard_guard import ClipboardGuard
+
+            try:
+                result = asyncio.run(analyze_screenshot(screenshot_b64))
+                if result and result.strip():
+                    # Copy result to clipboard and paste
+                    guard = ClipboardGuard()
+                    out_fmt = self.settings.get("ai_output_format", "plain")
+                    guard.paste_result(result, output_format=out_fmt)
+                    print(f"[AI SCREENSHOT] Analysis complete ({len(result)} chars)")
+            except RuntimeError as e:
+                msgs = {
+                    "RATE_LIMIT":      "\u23f3 AI \u09b2\u09bf\u09ae\u09bf\u099f \u09aa\u09cc\u0981\u099b\u09c7 \u0997\u09c7\u099b\u09c7",
+                    "TIMEOUT":         "\u231b AI \u09b8\u09be\u09dc\u09be \u09a6\u09bf\u099a\u09cd\u099b\u09c7 \u09a8\u09be",
+                    "INVALID_API_KEY": "\U0001f511 API \u0995\u09c0 \u09b8\u09ae\u09b8\u09cd\u09af\u09be",
+                }
+                msg = msgs.get(str(e), f"\u274c {e}")
+                self.after(0, lambda m=msg: self._show_ai_error(m))
+            except Exception as e:
+                self.after(0, lambda: self._show_ai_error(f"\u274c Screenshot AI: {e}"))
             finally:
                 self.after(0, lambda: self.btn_ai.set_state("idle"))
 
@@ -2991,11 +3120,21 @@ class VoiceTypingApp(ctk.CTk):
             if not foreground_hwnd:
                 return False
             
-            # Exclude our own window
+            # Exclude our own window + pen overlay/toolbar
             try:
                 my_hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
                 if foreground_hwnd == my_hwnd:
                     return False
+                # Exclude ALL pen overlay HWNDs (render + input windows)
+                if hasattr(self, '_pen_overlay') and self._pen_overlay:
+                    for ph in self._pen_overlay.get_all_hwnds():
+                        if foreground_hwnd == ph:
+                            return False
+                # Exclude pen toolbar HWND
+                if hasattr(self, '_pen_toolbar') and self._pen_toolbar:
+                    tb_hwnd = self._pen_toolbar.get_hwnd()
+                    if tb_hwnd and foreground_hwnd == tb_hwnd:
+                        return False
             except: pass
             
             # Get window class name - exclude desktop/shell
@@ -3071,6 +3210,17 @@ class VoiceTypingApp(ctk.CTk):
                 self.attributes('-topmost', True)
                 self.lift()
 
+                # Also re-lift pen overlay/toolbar if active
+                try:
+                    if hasattr(self, '_pen_overlay') and self._pen_overlay and self._pen_overlay.winfo_exists():
+                        self._pen_overlay.attributes('-topmost', True)
+                        self._pen_overlay.lift()
+                    if hasattr(self, '_pen_toolbar') and self._pen_toolbar and self._pen_toolbar.winfo_exists():
+                        self._pen_toolbar.attributes('-topmost', True)
+                        self._pen_toolbar.lift()
+                except:
+                    pass
+
             self.after(1500, self.monitor_topmost)
         except:
             try:
@@ -3079,9 +3229,13 @@ class VoiceTypingApp(ctk.CTk):
                 pass
     
     def _handle_fullscreen_result(self, is_fullscreen):
-        """Handle fullscreen detection result on main thread"""
+        """Handle fullscreen detection result on main thread.
+        When pen mode is active, NEVER hide — pen should work over fullscreen apps."""
         try:
-            if is_fullscreen:
+            # Pen mode overrides fullscreen auto-hide
+            pen_active = hasattr(self, '_pen_overlay') and self._pen_overlay is not None
+
+            if is_fullscreen and not pen_active:
                 if not self._hidden_for_fullscreen:
                     self._hidden_for_fullscreen = True
                     self.withdraw()
@@ -3093,7 +3247,6 @@ class VoiceTypingApp(ctk.CTk):
                     self.attributes('-topmost', True)
                     self.lift()
                     print("[FULLSCREEN] Widget shown")
-                # Only lift occasionally, not every cycle (reduces overhead)
         except:
             pass
 
