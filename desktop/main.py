@@ -92,6 +92,7 @@ DEFAULT_SETTINGS = {
     "auto_timeout": "15",
     "show_desktop_icon": True,
     "sound_enabled": True,
+    "show_labels": True,
     "mic_sensitivity": "normal",
     "noise_threshold": 100,
     "mic_index": None,
@@ -818,6 +819,11 @@ class VoiceTypingApp(ctk.CTk):
             colors=SPECTRUM_COLORS, toolbar_bg=self.TOOLBAR_BG,
             command=self.ai_trigger_flow if hasattr(self, 'ai_trigger_flow') else None)
 
+        # Apply label visibility from settings
+        if not self.settings.get("show_labels", True):
+            for btn in [self.btn_bn, self.btn_en, self.btn_read, self.btn_ai]:
+                btn.set_labels_visible(False)
+
         # Tool buttons frame
         self.tool_frame = tk.Frame(self.frame, bg=self.TOOLBAR_BG)
 
@@ -1006,6 +1012,27 @@ class VoiceTypingApp(ctk.CTk):
 
     def update_size(self, value):
         pass
+
+    def open_editor_window(self):
+        """Open the built-in editor window.
+        Closes pen overlay first (its fullscreen input_win blocks editor)."""
+        if hasattr(self, '_editor_win') and self._editor_win is not None:
+            try:
+                if self._editor_win.winfo_exists():
+                    self._editor_win.lift()
+                    # Re-open toolbar if it was closed
+                    if not self._editor_win._pen_toolbar:
+                        self._editor_win._open_toolbar()
+                    return
+            except:
+                pass
+
+        # Close pen overlay — its fullscreen input window blocks editor
+        if hasattr(self, '_pen_overlay') and self._pen_overlay is not None:
+            self._close_pen_mode()
+
+        from ui.editor_window import EditorWindow
+        self._editor_win = EditorWindow(self, self)
 
     def toggle_pen_mode(self):
         """Toggle pen mode: off → draw → view (click-through) → draw → ..."""
@@ -2311,8 +2338,8 @@ class VoiceTypingApp(ctk.CTk):
         """Save all settings to AppData file"""
         try:
             if hasattr(self, 'settings_file'):
-                with open(self.settings_file, 'w') as f:
-                    json.dump(self.settings, f, indent=2)
+                with open(self.settings_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.settings, f, indent=2, ensure_ascii=False)
             # Update button labels after save
             self.after(0, self.update_button_labels)
         except Exception as e:
@@ -2379,6 +2406,13 @@ class VoiceTypingApp(ctk.CTk):
         self.settings["sound_enabled"] = not self.settings.get("sound_enabled", True)
         self.save_settings()
         print(f"[SETTINGS] Sound {'enabled' if self.settings['sound_enabled'] else 'disabled'}")
+
+    def toggle_labels(self):
+        """Toggle button label visibility"""
+        show = self.settings.get("show_labels", True)
+        for btn in [self.btn_bn, self.btn_en, self.btn_read, self.btn_ai]:
+            btn.set_labels_visible(show)
+        self.save_settings()
     
     def update_timeout(self, v):
         self.settings["auto_timeout"] = "99999" if v == "∞" else v

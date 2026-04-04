@@ -41,6 +41,7 @@ class SpectrumButton(tk.Canvas):
         self._drag_started = False
         self._photo = None
         self._glow = False
+        self._show_label = True
 
         self._draw()
         self.bind("<Button-1>", self._on_down)
@@ -69,6 +70,10 @@ class SpectrumButton(tk.Canvas):
     def set_display_label(self, t):
         self._display_label = t
         if self._state == "idle": self._draw()
+
+    def set_labels_visible(self, visible: bool):
+        self._show_label = visible
+        self._draw()
 
     def resize(self, n):
         self.size = n; self.config(width=n, height=n); self._draw()
@@ -141,18 +146,19 @@ class SpectrumButton(tk.Canvas):
         ey = cy - eh // 2 - int(sz * 0.06)  # slightly above center
         d.text((ex, ey), emoji, font=efont, fill=(255, 255, 255, 255))
 
-        # ── Label (bigger, bold) ──
-        lbl_sz = max(10, int(sz * 0.24))
-        try: lfont = ImageFont.truetype("segoeuib.ttf", lbl_sz)
-        except:
-            try: lfont = ImageFont.truetype("segoeui.ttf", lbl_sz)
-            except: lfont = ImageFont.load_default()
-        lbb = d.textbbox((0, 0), self._display_label, font=lfont)
-        lw = lbb[2] - lbb[0]
-        lh = lbb[3] - lbb[1]
-        lcolor = (220, 220, 230, 255) if self._hover else (170, 170, 185, 255)
-        ly = big - lh - pad - 2
-        d.text((cx - lw//2, ly), self._display_label, fill=lcolor, font=lfont)
+        # ── Label (bigger, bold, gold) ──
+        if self._show_label:
+            lbl_sz = max(10, int(sz * 0.36))
+            try: lfont = ImageFont.truetype("segoeuib.ttf", lbl_sz)
+            except:
+                try: lfont = ImageFont.truetype("segoeui.ttf", lbl_sz)
+                except: lfont = ImageFont.load_default()
+            lbb = d.textbbox((0, 0), self._display_label, font=lfont)
+            lw = lbb[2] - lbb[0]
+            lh = lbb[3] - lbb[1]
+            lcolor = (255, 215, 0, 255) if self._hover else (218, 175, 32, 255)
+            ly = big - lh - pad - 2
+            d.text((cx - lw//2, ly), self._display_label, fill=lcolor, font=lfont)
 
         # Downscale
         img = img.resize((sz, sz), Image.LANCZOS)
@@ -238,17 +244,18 @@ class SpectrumButton(tk.Canvas):
                 bc = (int(60+60*t), int(90+60*t), int(130+80*t), 255)
             d.rectangle([x1, y1, x1 + bw, y2], fill=bc)
 
-        # Label (bigger, bold)
-        lbl_sz = max(10, int(sz * 0.24))
-        try: lfont = ImageFont.truetype("segoeuib.ttf", lbl_sz)
-        except:
-            try: lfont = ImageFont.truetype("segoeui.ttf", lbl_sz)
-            except: lfont = ImageFont.load_default()
-        lbb = d.textbbox((0, 0), self._display_label, font=lfont)
-        lw = lbb[2] - lbb[0]
-        ly = big - (lbb[3] - lbb[1]) - pad - 2
-        d.text((cx - lw // 2, ly), self._display_label,
-               fill=(170, 170, 185, 255), font=lfont)
+        # Label (bold, gold)
+        if self._show_label:
+            lbl_sz = max(10, int(sz * 0.36))
+            try: lfont = ImageFont.truetype("segoeuib.ttf", lbl_sz)
+            except:
+                try: lfont = ImageFont.truetype("segoeui.ttf", lbl_sz)
+                except: lfont = ImageFont.load_default()
+            lbb = d.textbbox((0, 0), self._display_label, font=lfont)
+            lw = lbb[2] - lbb[0]
+            ly = big - (lbb[3] - lbb[1]) - pad - 2
+            d.text((cx - lw // 2, ly), self._display_label,
+                   fill=(218, 175, 32, 255), font=lfont)
 
         # Downscale with anti-aliasing
         img = img.resize((sz, sz), Image.LANCZOS)

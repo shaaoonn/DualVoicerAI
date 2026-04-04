@@ -4,6 +4,7 @@ Pen/highlighter buttons toggle between draw mode (shows cursor) and view mode.
 Thickness controlled by slider (1-100px)."""
 
 import tkinter as tk
+import tkinter.font as tkfont
 import ctypes
 
 user32 = ctypes.windll.user32
@@ -33,8 +34,9 @@ class PenToolbar(tk.Toplevel):
     ICON_ERASER = "\U0001f9f9"
     ICON_MOUSE = "\U0001f5b1\ufe0f"
     ICON_TEXT = "T"
+    ICON_HAND = "\u270b"
 
-    FONTS = [
+    POPULAR_FONTS = [
         "Segoe UI",
         "Arial",
         "Nirmala UI",
@@ -44,6 +46,7 @@ class PenToolbar(tk.Toplevel):
         "Comic Sans MS",
         "Consolas",
     ]
+    SEPARATOR = "── আরো ──"
 
     def __init__(self, parent, overlay, app_ref):
         super().__init__(parent)
@@ -52,10 +55,28 @@ class PenToolbar(tk.Toplevel):
         self._active_tool = "pen"
         self._draw_mode = True
         self._active_color_btn = None
+        self._font_list = self._build_font_list()
 
         self._setup_window()
         self._build_ui()
         self.after(100, self._setup_win32)
+
+    def _build_font_list(self):
+        """Build font list: popular 8 + separator + all system fonts."""
+        try:
+            all_fonts = sorted(set(tkfont.families(self)),
+                               key=lambda f: f.lower())
+            # Filter out @-prefixed vertical fonts
+            all_fonts = [f for f in all_fonts if not f.startswith("@")]
+        except Exception:
+            all_fonts = []
+
+        popular = [f for f in self.POPULAR_FONTS if f in all_fonts]
+        remaining = [f for f in all_fonts if f not in popular]
+
+        if remaining:
+            return popular + [self.SEPARATOR] + remaining
+        return popular
 
     def _setup_window(self):
         self.overrideredirect(True)
@@ -125,13 +146,41 @@ class PenToolbar(tk.Toplevel):
         )
         self._btn_text.pack(side="left", padx=1)
 
+        self._btn_hand = tk.Button(
+            tools_frame, text=self.ICON_HAND, bg=self.BG, fg="#CCC",
+            font=("Segoe UI Emoji", 11), relief="flat", bd=0,
+            activebackground=self.BG_HOVER,
+            command=lambda: self._toggle_tool("pan")
+        )
+        self._btn_hand.pack(side="left", padx=1)
+
+        # ── Zoom slider (editor mode only) ──
+        if not getattr(self._overlay, '_supports_view_mode', True):
+            tk.Frame(row, bg="#555", width=1, height=22).pack(side="left", padx=3)
+            zoom_frame = tk.Frame(row, bg=self.BG)
+            zoom_frame.pack(side="left", padx=(0, 4))
+            self._zoom_label = tk.Label(
+                zoom_frame, text="100%", bg=self.BG, fg="#CCC",
+                font=("Segoe UI", 8), width=4
+            )
+            self._zoom_label.pack(side="left")
+            self._zoom_var = tk.IntVar(value=100)
+            self._zoom_slider = tk.Scale(
+                zoom_frame, from_=25, to=400, orient="horizontal",
+                variable=self._zoom_var, length=80, sliderlength=12,
+                showvalue=False, bg=self.BG, fg="#CCC", troughcolor="#1A1A2A",
+                highlightthickness=0, bd=0, activebackground=self.BG_ACTIVE,
+                font=("Segoe UI", 7), command=self._on_zoom_change
+            )
+            self._zoom_slider.pack(side="left", padx=2)
+
         # ── Separator ──
         tk.Frame(row, bg="#555", width=1, height=22).pack(side="left", padx=3)
 
         # ── Font dropdown (for text tool) ──
-        self._font_var = tk.StringVar(value=self.FONTS[0])
+        self._font_var = tk.StringVar(value=self._font_list[0] if self._font_list else "Segoe UI")
         self._font_menu = tk.OptionMenu(
-            row, self._font_var, *self.FONTS,
+            row, self._font_var, *self._font_list,
             command=self._on_font_change
         )
         self._font_menu.configure(
@@ -201,6 +250,24 @@ class PenToolbar(tk.Toplevel):
         # ── Separator ──
         tk.Frame(row, bg="#555", width=1, height=22).pack(side="left", padx=3)
 
+        # ── Fullscreen (editor mode only) ──
+        if not getattr(self._overlay, '_supports_view_mode', True):
+            tk.Button(
+                row, text="\u26f6", bg=self.BG, fg="#CCC",
+                font=("Segoe UI", 12), relief="flat", bd=0,
+                activebackground=self.BG_HOVER,
+                command=self._toggle_fullscreen
+            ).pack(side="left", padx=1)
+
+        # ── Editor (overlay mode only) ──
+        if getattr(self._overlay, '_supports_view_mode', True):
+            tk.Button(
+                row, text="\U0001f4c4", bg=self.BG, fg="#CCC",
+                font=("Segoe UI Emoji", 11), relief="flat", bd=0,
+                activebackground=self.BG_HOVER,
+                command=self._open_editor
+            ).pack(side="left", padx=1)
+
         # ── Close ──
         tk.Button(
             row, text="\u2716", bg="#663333", fg="#FFF",
@@ -219,13 +286,29 @@ class PenToolbar(tk.Toplevel):
     # ── Tool Toggle ───────────────────────────────────
 
     def _toggle_tool(self, tool):
+        if tool == "pan":
+            if getattr(self._overlay, '_supports_view_mode', True):
+                self._enter_view_mode()
+            else:
+                self._active_tool = "pan"
+                self._overlay.set_tool("pan")
+                self._draw_mode = True
+                self._update_tool_icons()
+            return
+
         if self._active_tool == tool and self._draw_mode:
-            self._enter_view_mode()
+            if getattr(self._overlay, '_supports_view_mode', True):
+                self._enter_view_mode()
+            else:
+                # Editor mode: enter select mode
+                self._active_tool = "select"
+                self._overlay.set_tool("select")
+                self._update_tool_icons()
+                return
         else:
             self._active_tool = tool
             self._overlay.set_tool(tool)
             self._enter_draw_mode()
-            # Auto-place text at last stroke endpoint
             if tool == "text":
                 self._overlay.auto_place_text()
 
@@ -245,26 +328,31 @@ class PenToolbar(tk.Toplevel):
         self._update_tool_icons()
 
     def _update_tool_icons(self):
-        if self._draw_mode:
-            pen_icon = self.ICON_MOUSE if self._active_tool == "pen" else self.ICON_PEN
-            hl_icon = self.ICON_MOUSE if self._active_tool == "highlighter" else self.ICON_HIGHLIGHTER
-            er_icon = self.ICON_MOUSE if self._active_tool == "eraser" else self.ICON_ERASER
+        is_select = self._active_tool == "select"
+        if self._draw_mode or is_select:
+            active = self._active_tool
+            pen_icon = self.ICON_MOUSE if active in ("pen", "select") else self.ICON_PEN
+            hl_icon = self.ICON_MOUSE if active == "highlighter" else self.ICON_HIGHLIGHTER
+            er_icon = self.ICON_MOUSE if active == "eraser" else self.ICON_ERASER
             self._btn_pen.configure(text=pen_icon,
-                bg=self.BG_ACTIVE if self._active_tool == "pen" else self.BG)
+                bg=self.BG_ACTIVE if active in ("pen", "select") else self.BG)
             self._btn_highlight.configure(text=hl_icon,
-                bg=self.BG_ACTIVE if self._active_tool == "highlighter" else self.BG)
+                bg=self.BG_ACTIVE if active == "highlighter" else self.BG)
             self._btn_eraser.configure(text=er_icon,
-                bg=self.BG_ACTIVE if self._active_tool == "eraser" else self.BG)
-            txt_icon = self.ICON_MOUSE if self._active_tool == "text" else self.ICON_TEXT
-            txt_font = ("Segoe UI Emoji", 11) if self._active_tool == "text" else ("Segoe UI", 12, "bold")
+                bg=self.BG_ACTIVE if active == "eraser" else self.BG)
+            txt_icon = self.ICON_MOUSE if active == "text" else self.ICON_TEXT
+            txt_font = ("Segoe UI Emoji", 11) if active == "text" else ("Segoe UI", 12, "bold")
             self._btn_text.configure(text=txt_icon, font=txt_font,
-                bg=self.BG_ACTIVE if self._active_tool == "text" else self.BG)
+                bg=self.BG_ACTIVE if active == "text" else self.BG)
+            self._btn_hand.configure(
+                bg=self.BG_ACTIVE if active == "pan" else self.BG)
         else:
             self._btn_pen.configure(text=self.ICON_PEN, bg=self.BG)
             self._btn_highlight.configure(text=self.ICON_HIGHLIGHTER, bg=self.BG)
             self._btn_eraser.configure(text=self.ICON_ERASER, bg=self.BG)
             self._btn_text.configure(text=self.ICON_TEXT,
                 font=("Segoe UI", 12, "bold"), bg=self.BG)
+            self._btn_hand.configure(bg=self.BG)
 
     def sync_draw_mode(self):
         self._draw_mode = True
@@ -283,6 +371,10 @@ class PenToolbar(tk.Toplevel):
 
     def _on_font_change(self, font_name):
         """Change font for text tool."""
+        if font_name == self.SEPARATOR:
+            # Revert to previous font — separator is not selectable
+            self._font_var.set(self._font_list[0])
+            return
         self._overlay.set_font(font_name)
 
     def _set_color(self, color):
@@ -313,6 +405,21 @@ class PenToolbar(tk.Toplevel):
 
     def _close_pen(self):
         self._overlay.close()
+
+    def _on_zoom_change(self, value):
+        level = int(value)
+        if hasattr(self, '_zoom_label'):
+            self._zoom_label.configure(text=f"{level}%")
+        if hasattr(self._overlay, 'set_zoom'):
+            self._overlay.set_zoom(level / 100.0)
+
+    def _toggle_fullscreen(self):
+        if hasattr(self._overlay, '_toggle_fullscreen'):
+            self._overlay._toggle_fullscreen()
+
+    def _open_editor(self):
+        if hasattr(self._app, 'open_editor_window'):
+            self._app.open_editor_window()
 
     # ── Drag ──────────────────────────────────────────
 

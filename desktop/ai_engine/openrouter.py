@@ -26,7 +26,11 @@ async def complete(messages: list, model_key: str = "primary") -> str:
                 if resp.status == 401:
                     raise RuntimeError("INVALID_API_KEY")
                 data = await resp.json()
-                return data["choices"][0]["message"]["content"]
+                choices = data.get("choices")
+                if not choices or not choices[0].get("message"):
+                    err = data.get("error", {}).get("message", "Unknown API error")
+                    raise RuntimeError(f"API_ERROR: {err}")
+                return choices[0]["message"]["content"]
     except asyncio.TimeoutError:
         if model_key == "primary":
             return await complete(messages, "fallback")
@@ -55,7 +59,11 @@ async def complete_vision(messages: list, model_key: str = "primary") -> str:
                 if resp.status == 401:
                     raise RuntimeError("INVALID_API_KEY")
                 data = await resp.json()
-                return data["choices"][0]["message"]["content"]
+                choices = data.get("choices")
+                if not choices or not choices[0].get("message"):
+                    err = data.get("error", {}).get("message", "Unknown API error")
+                    raise RuntimeError(f"API_ERROR: {err}")
+                return choices[0]["message"]["content"]
     except asyncio.TimeoutError:
         if model_key == "primary":
             return await complete_vision(messages, "fallback")

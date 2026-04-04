@@ -224,6 +224,19 @@ class SettingsPanel(ctk.CTkToplevel):
         self._divider(toggle_card)
         self._toggle_row(toggle_card, "Sound Effects", "sound_enabled",
                          on_change=getattr(self.app, 'toggle_sound', None))
+        self._divider(toggle_card)
+        self._toggle_row(toggle_card, "Button Labels", "show_labels",
+                         on_change=getattr(self.app, 'toggle_labels', None))
+
+        # Editor
+        self._section(frame, "\U0001f4dd এডিটর")
+        editor_card = self._card(frame)
+        ctk.CTkButton(editor_card, text="\U0001f4dd এডিটর খুলুন",
+                       width=180, height=34,
+                       fg_color="#2A4A6A", hover_color="#3A5A7A",
+                       font=("Segoe UI", 12),
+                       command=lambda: self.app.open_editor_window()
+                       ).pack(padx=16, pady=10)
 
         # Microphone
         self._section(frame, "\U0001f399\ufe0f \u09ae\u09be\u0987\u0995\u09cd\u09b0\u09cb\u09ab\u09cb\u09a8")
