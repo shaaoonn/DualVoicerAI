@@ -5,11 +5,16 @@ Two-window technique for proper transparent drawing on Windows:
   render_win — Shows strokes at full opacity, transparent bg (WS_EX_TRANSPARENT)
   input_win  — Nearly invisible (alpha=1/255), captures all mouse events
 
-Catmull-Rom curve smoothing, undo/redo, eraser, click-through toggle."""
+Catmull-Rom curve smoothing, undo/redo, eraser, click-through toggle.
+Highlighter uses stipple for semi-transparency."""
 
 import tkinter as tk
 import ctypes
 import ctypes.wintypes
+import struct
+import os
+import io
+import tempfile
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Callable
 
@@ -28,11 +33,67 @@ SWP_FRAMECHANGED   = 0x0020
 LWA_ALPHA          = 0x00000002
 HWND_TOPMOST       = -1
 
-# Virtual screen metrics
 SM_XVIRTUALSCREEN  = 76
 SM_YVIRTUALSCREEN  = 77
 SM_CXVIRTUALSCREEN = 78
 SM_CYVIRTUALSCREEN = 79
+
+
+# ── Custom pen cursor (created once, cached) ────────
+
+_PEN_CURSOR_PATH = None
+
+def _get_pen_cursor():
+    """Create a pen cursor (.cur) tilted upper-right, cached on disk."""
+    global _PEN_CURSOR_PATH
+    if _PEN_CURSOR_PATH and os.path.exists(_PEN_CURSOR_PATH):
+        # Forward slashes for Tcl (backslashes = escape chars in Tcl)
+        return "@" + _PEN_CURSOR_PATH.replace("\\", "/")
+    try:
+        from PIL import Image, ImageDraw
+
+        sz = 32
+        img = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+
+        # Pen shape: tip at bottom-left (~2,29), body tilting upper-right
+        # Outer outline (white for visibility on dark backgrounds)
+        d.polygon([
+            (1, 30), (3, 28), (26, 5), (30, 1),
+            (31, 2), (29, 4), (6, 27), (4, 31)
+        ], fill=None, outline=(255, 255, 255, 255))
+        # Inner body (dark)
+        d.polygon([
+            (2, 29), (4, 27), (27, 4), (29, 2),
+            (30, 3), (28, 5), (5, 28), (3, 30)
+        ], fill=(30, 30, 30, 255))
+        # Pen tip accent
+        d.polygon([(1, 30), (2, 29), (4, 27), (3, 28)],
+                  fill=(80, 80, 80, 255))
+        # Tip point
+        d.point((1, 30), fill=(0, 0, 0, 255))
+
+        # Save as ICO, then patch to CUR
+        buf = io.BytesIO()
+        img.save(buf, format='ICO', sizes=[(32, 32)])
+        data = bytearray(buf.getvalue())
+
+        # Patch header: type 1 (ICO) → 2 (CUR)
+        struct.pack_into("<H", data, 2, 2)
+        # Patch directory: planes/bpp → hotspot (x=1, y=30 = pen tip)
+        struct.pack_into("<H", data, 10, 1)   # Hotspot X
+        struct.pack_into("<H", data, 12, 30)  # Hotspot Y
+
+        cur_path = os.path.join(tempfile.gettempdir(), "voiceai_pen.cur")
+        with open(cur_path, "wb") as f:
+            f.write(data)
+
+        _PEN_CURSOR_PATH = cur_path
+        # Forward slashes for Tcl compatibility
+        return "@" + cur_path.replace("\\", "/")
+    except Exception as e:
+        print(f"[PEN] Custom cursor failed: {e}")
+        return "pencil"  # Fallback
 
 
 @dataclass
@@ -40,7 +101,7 @@ class Stroke:
     """Single drawn stroke with all its data."""
     points: List[Tuple[float, float]] = field(default_factory=list)
     color: str = "#FF0000"
-    width: int = 3
+    width: int = 4
     is_highlighter: bool = False
     canvas_ids: List[int] = field(default_factory=list)
     smoothed_points: List[Tuple[float, float]] = field(default_factory=list)
@@ -49,19 +110,16 @@ class Stroke:
 class PenOverlay:
     """Fullscreen transparent overlay for drawing annotations on screen.
 
-    Architecture (two-window technique):
-      render_win — Toplevel with -transparentcolor + WS_EX_TRANSPARENT.
-                   Shows strokes at full opacity. Transparent bg is click-through.
-      input_win  — Toplevel with alpha=1/255 (nearly invisible).
-                   Captures all mouse events for drawing.
+    Two-window technique:
+      render_win — Shows strokes, transparent bg, click-through
+      input_win  — Nearly invisible, captures mouse events
 
-    Z-order (bottom to top): input_win → render_win → PenToolbar
-    Mouse events: user clicks → input_win catches → draws on render_win canvas
+    Z-order: input_win < MAIN WIDGET < render_win < PenToolbar
     """
 
     TRANS_COLOR = "#010101"
     DEFAULT_COLOR = "#FF0000"
-    DEFAULT_WIDTH = 3
+    DEFAULT_WIDTH = 4
 
     def __init__(self, parent, on_close_callback: Optional[Callable] = None):
         self._parent = parent
@@ -77,22 +135,34 @@ class PenOverlay:
         # Pen settings
         self._pen_color = self.DEFAULT_COLOR
         self._pen_width = self.DEFAULT_WIDTH
-        self._tool = "pen"  # "pen" | "highlighter" | "eraser"
+        self._tool = "pen"
         self._highlighter_color = "#FFFF44"
 
-        # Screen dimensions (multi-monitor)
+        # EMA smoothing state
+        self._ema_x = 0.0
+        self._ema_y = 0.0
+        self._ema_alpha = 0.35
+
+        # Custom cursor
+        self._pen_cursor = _get_pen_cursor()
+
+        # Screen dimensions
         self._vx, self._vy, self._vw, self._vh = self._get_screen_dims()
 
-        # Build two windows
-        self._setup_render_window()
-        self._setup_input_window()
-        self._bind_events()
-        self._parent.after(100, self._setup_win32)
+        # Build windows (with cleanup on failure to prevent black screen)
+        try:
+            self._setup_render_window()
+            self._setup_input_window()
+            self._bind_events()
+            self._parent.after(100, self._setup_win32)
+        except Exception as e:
+            print(f"[PEN] Init failed, cleaning up: {e}")
+            self.destroy()
+            raise
 
     # ── Window Setup ─────────────────────────────────
 
     def _get_screen_dims(self):
-        """Get virtual screen dimensions for multi-monitor support."""
         try:
             vx = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
             vy = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
@@ -102,16 +172,12 @@ class PenOverlay:
                 return vx, vy, vw, vh
         except:
             pass
-        # Fallback to primary monitor
         try:
-            sw = user32.GetSystemMetrics(0)
-            sh = user32.GetSystemMetrics(1)
-            return 0, 0, sw, sh
+            return 0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
         except:
             return 0, 0, 1920, 1080
 
     def _setup_render_window(self):
-        """Render window: transparent bg, shows strokes at full opacity, click-through."""
         self._render_win = tk.Toplevel(self._parent)
         self._render_win.overrideredirect(True)
         self._render_win.attributes('-topmost', True)
@@ -119,34 +185,39 @@ class PenOverlay:
         self._render_win.configure(bg=self.TRANS_COLOR)
         self._render_win.attributes('-transparentcolor', self.TRANS_COLOR)
 
-        # Canvas for drawing strokes (bg = transparent color → see-through)
         self._canvas = tk.Canvas(
-            self._render_win, bg=self.TRANS_COLOR,
-            highlightthickness=0
+            self._render_win, bg=self.TRANS_COLOR, highlightthickness=0
         )
         self._canvas.pack(fill="both", expand=True)
 
     def _setup_input_window(self):
-        """Input window: nearly invisible (alpha=1/255), captures mouse events."""
         self._input_win = tk.Toplevel(self._parent)
         self._input_win.overrideredirect(True)
         self._input_win.attributes('-topmost', True)
         self._input_win.geometry(f"{self._vw}x{self._vh}+{self._vx}+{self._vy}")
         self._input_win.configure(bg='black')
 
-        # Input canvas captures all mouse events
-        self._input_canvas = tk.Canvas(
-            self._input_win, bg='black',
-            highlightthickness=0, cursor="crosshair"
-        )
+        # Try custom cursor, fallback to built-in pencil
+        cursor = self._pen_cursor
+        try:
+            self._input_canvas = tk.Canvas(
+                self._input_win, bg='black',
+                highlightthickness=0, cursor=cursor
+            )
+        except tk.TclError:
+            print(f"[PEN] Custom cursor failed, using pencil fallback")
+            self._pen_cursor = "pencil"
+            self._input_canvas = tk.Canvas(
+                self._input_win, bg='black',
+                highlightthickness=0, cursor="pencil"
+            )
         self._input_canvas.pack(fill="both", expand=True)
 
     def _setup_win32(self):
-        """Apply Win32 extended styles to both windows."""
         if self._destroyed:
             return
         try:
-            # ── Render window: click-through so events pass to input_win ──
+            # Render window: click-through
             self._render_win.update_idletasks()
             rh = user32.GetParent(self._render_win.winfo_id())
             self._render_hwnd = rh
@@ -155,88 +226,85 @@ class PenOverlay:
                       WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)
             user32.SetWindowLongW(rh, GWL_EXSTYLE, style)
 
-            # ── Input window: captures events, nearly invisible ──
+            # Input window: captures events, alpha=1
             self._input_win.update_idletasks()
             ih = user32.GetParent(self._input_win.winfo_id())
             self._input_hwnd = ih
             style = user32.GetWindowLongW(ih, GWL_EXSTYLE)
             style |= (WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)
-            style &= ~WS_EX_TRANSPARENT  # NOT click-through — captures events
+            style &= ~WS_EX_TRANSPARENT
             user32.SetWindowLongW(ih, GWL_EXSTYLE, style)
-
-            # Set alpha=1 on input window (nearly invisible but captures events)
             user32.SetLayeredWindowAttributes(ih, 0, 1, LWA_ALPHA)
 
-            # Ensure z-order: render_win above input_win
             user32.SetWindowPos(rh, HWND_TOPMOST, 0, 0, 0, 0,
                                 SWP_NOMOVE | SWP_NOSIZE)
 
-            print("[PEN] Two-window setup OK (draw mode)")
+            print("[PEN] Two-window setup OK")
         except Exception as e:
             print(f"[PEN] Win32 setup failed: {e}")
 
     # ── Events ────────────────────────────────────────
 
     def _bind_events(self):
-        """Bind mouse events on input canvas, keyboard on input window."""
         self._input_canvas.bind("<ButtonPress-1>", self._on_mouse_down)
         self._input_canvas.bind("<B1-Motion>", self._on_mouse_move)
         self._input_canvas.bind("<ButtonRelease-1>", self._on_mouse_up)
-
-        # Scoped keyboard shortcuts (only when overlay is active)
         self._input_win.bind("<Control-z>", lambda e: self.undo())
         self._input_win.bind("<Control-y>", lambda e: self.redo())
         self._input_win.bind("<Escape>", lambda e: self.close())
 
     def _on_mouse_down(self, event):
-        """Start a new stroke or erase."""
         x, y = event.x, event.y
 
         if self._tool == "eraser":
             self._erase_at(x, y)
             return
 
-        # Start new stroke
         color = self._highlighter_color if self._tool == "highlighter" else self._pen_color
-        width = self._pen_width * 4 if self._tool == "highlighter" else self._pen_width
+        width = self._pen_width * 3 if self._tool == "highlighter" else self._pen_width
+        is_hl = (self._tool == "highlighter")
+
         self._current_stroke = Stroke(
-            points=[(x, y)],
-            color=color,
-            width=width,
-            is_highlighter=(self._tool == "highlighter"),
+            points=[(x, y)], color=color, width=width,
+            is_highlighter=is_hl,
         )
-        # Draw initial dot
+        self._ema_x = float(x)
+        self._ema_y = float(y)
+
         r = max(1, width // 2)
+        stipple = "gray50" if is_hl else ""
         dot_id = self._canvas.create_oval(
             x - r, y - r, x + r, y + r,
-            fill=color, outline="", tags="stroke"
+            fill=color, outline="", stipple=stipple, tags="stroke"
         )
         self._current_stroke.canvas_ids.append(dot_id)
 
     def _on_mouse_move(self, event):
-        """Add point to current stroke, draw incrementally."""
         if not self._current_stroke:
             if self._tool == "eraser":
                 self._erase_at(event.x, event.y)
             return
 
-        x, y = event.x, event.y
-        pts = self._current_stroke.points
+        raw_x, raw_y = float(event.x), float(event.y)
+        a = self._ema_alpha
+        x = a * raw_x + (1 - a) * self._ema_x
+        y = a * raw_y + (1 - a) * self._ema_y
+        self._ema_x = x
+        self._ema_y = y
 
-        # Skip if too close (noise reduction)
+        pts = self._current_stroke.points
         if pts:
             dx = x - pts[-1][0]
             dy = y - pts[-1][1]
-            if dx * dx + dy * dy < 4:  # < 2px distance
+            if dx * dx + dy * dy < 9:
                 return
 
         pts.append((x, y))
+        stipple = "gray50" if self._current_stroke.is_highlighter else ""
 
-        # Draw incrementally with smoothing
         if len(pts) >= 4:
-            # Use last 4 points for Catmull-Rom
             smoothed = self._catmull_rom_segment(
-                pts[-4], pts[-3], pts[-2], pts[-1], num_points=6
+                pts[-4], pts[-3], pts[-2], pts[-1], num_points=8
             )
             flat = []
             for p in smoothed:
@@ -245,38 +313,29 @@ class PenOverlay:
 
             if len(flat) >= 4:
                 line_id = self._canvas.create_line(
-                    *flat,
-                    fill=self._current_stroke.color,
+                    *flat, fill=self._current_stroke.color,
                     width=self._current_stroke.width,
-                    smooth=True, splinesteps=12,
+                    smooth=True, splinesteps=16,
                     capstyle=tk.ROUND, joinstyle=tk.ROUND,
-                    tags="stroke"
+                    stipple=stipple, tags="stroke"
                 )
                 self._current_stroke.canvas_ids.append(line_id)
         elif len(pts) >= 2:
-            # Simple line for first few points
             line_id = self._canvas.create_line(
                 pts[-2][0], pts[-2][1], pts[-1][0], pts[-1][1],
                 fill=self._current_stroke.color,
                 width=self._current_stroke.width,
-                capstyle=tk.ROUND,
-                tags="stroke"
+                capstyle=tk.ROUND, stipple=stipple, tags="stroke"
             )
             self._current_stroke.canvas_ids.append(line_id)
 
     def _on_mouse_up(self, event):
-        """Finalize stroke with full Catmull-Rom smoothing."""
         if not self._current_stroke:
             return
 
         stroke = self._current_stroke
         self._current_stroke = None
 
-        if len(stroke.points) < 2:
-            # Single click — keep the dot
-            pass
-
-        # Re-render as single smooth line for better quality
         if len(stroke.points) >= 3:
             for cid in stroke.canvas_ids:
                 self._canvas.delete(cid)
@@ -284,23 +343,20 @@ class PenOverlay:
 
             smoothed = self._smooth_full_stroke(stroke.points)
             stroke.smoothed_points = smoothed
-
             flat = []
             for p in smoothed:
                 flat.extend(p)
 
             if len(flat) >= 4:
+                stipple = "gray50" if stroke.is_highlighter else ""
                 line_id = self._canvas.create_line(
-                    *flat,
-                    fill=stroke.color,
-                    width=stroke.width,
-                    smooth=True, splinesteps=16,
+                    *flat, fill=stroke.color, width=stroke.width,
+                    smooth=True, splinesteps=32,
                     capstyle=tk.ROUND, joinstyle=tk.ROUND,
-                    tags="stroke"
+                    stipple=stipple, tags="stroke"
                 )
                 stroke.canvas_ids = [line_id]
 
-        # Push to strokes, clear redo stack
         self._strokes.append(stroke)
         self._undo_stack.clear()
 
@@ -308,58 +364,91 @@ class PenOverlay:
 
     @staticmethod
     def _catmull_rom_segment(p0, p1, p2, p3, num_points=8):
-        """Catmull-Rom spline interpolation between p1 and p2."""
         points = []
         for i in range(num_points):
             t = i / num_points
             t2 = t * t
             t3 = t2 * t
-
-            x = 0.5 * (
-                (2 * p1[0]) +
-                (-p0[0] + p2[0]) * t +
-                (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 +
-                (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3
-            )
-            y = 0.5 * (
-                (2 * p1[1]) +
-                (-p0[1] + p2[1]) * t +
-                (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 +
-                (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3
-            )
+            x = 0.5 * ((2*p1[0]) + (-p0[0]+p2[0])*t +
+                        (2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2 +
+                        (-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3)
+            y = 0.5 * ((2*p1[1]) + (-p0[1]+p2[1])*t +
+                        (2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2 +
+                        (-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)
             points.append((x, y))
         return points
 
+    @staticmethod
+    def _rdp_simplify(points, epsilon=1.5):
+        if len(points) <= 2:
+            return list(points)
+        start, end = points[0], points[-1]
+        max_dist = 0.0
+        max_idx = 0
+        dx_line = end[0] - start[0]
+        dy_line = end[1] - start[1]
+        line_len_sq = dx_line * dx_line + dy_line * dy_line
+
+        for i in range(1, len(points) - 1):
+            px, py = points[i]
+            if line_len_sq == 0:
+                dist = ((px - start[0])**2 + (py - start[1])**2) ** 0.5
+            else:
+                t = max(0, min(1, ((px-start[0])*dx_line + (py-start[1])*dy_line) / line_len_sq))
+                proj_x = start[0] + t * dx_line
+                proj_y = start[1] + t * dy_line
+                dist = ((px-proj_x)**2 + (py-proj_y)**2) ** 0.5
+            if dist > max_dist:
+                max_dist = dist
+                max_idx = i
+
+        if max_dist > epsilon:
+            left = PenOverlay._rdp_simplify(points[:max_idx+1], epsilon)
+            right = PenOverlay._rdp_simplify(points[max_idx:], epsilon)
+            return left[:-1] + right
+        return [start, end]
+
     def _smooth_full_stroke(self, raw_points):
-        """Apply Catmull-Rom smoothing to an entire stroke."""
         if len(raw_points) < 3:
             return list(raw_points)
+        pts = self._rdp_simplify(raw_points, epsilon=1.5)
+        if len(pts) < 3:
+            pts = raw_points
 
-        pts = raw_points
         result = []
-
         for i in range(len(pts) - 1):
-            p0 = pts[max(0, i - 1)]
+            p0 = pts[max(0, i-1)]
             p1 = pts[i]
-            p2 = pts[min(len(pts) - 1, i + 1)]
-            p3 = pts[min(len(pts) - 1, i + 2)]
-
-            segment = self._catmull_rom_segment(p0, p1, p2, p3, num_points=6)
+            p2 = pts[min(len(pts)-1, i+1)]
+            p3 = pts[min(len(pts)-1, i+2)]
+            segment = self._catmull_rom_segment(p0, p1, p2, p3, num_points=10)
             result.extend(segment)
-
-        # Add final point
         result.append(pts[-1])
+        result = self._chaikin_smooth(result, iterations=1)
         return result
+
+    @staticmethod
+    def _chaikin_smooth(points, iterations=1):
+        if len(points) < 3:
+            return list(points)
+        pts = list(points)
+        for _ in range(iterations):
+            new_pts = [pts[0]]
+            for i in range(len(pts) - 1):
+                p0, p1 = pts[i], pts[i+1]
+                new_pts.append((0.75*p0[0]+0.25*p1[0], 0.75*p0[1]+0.25*p1[1]))
+                new_pts.append((0.25*p0[0]+0.75*p1[0], 0.25*p0[1]+0.75*p1[1]))
+            new_pts.append(pts[-1])
+            pts = new_pts
+        return pts
 
     # ── Eraser ────────────────────────────────────────
 
     def _erase_at(self, x, y):
-        """Erase stroke under cursor (15px radius hit-test)."""
         r = 15
-        items = self._canvas.find_overlapping(x - r, y - r, x + r, y + r)
+        items = self._canvas.find_overlapping(x-r, y-r, x+r, y+r)
         if not items:
             return
-
         for stroke in self._strokes[:]:
             for cid in stroke.canvas_ids:
                 if cid in items:
@@ -372,7 +461,6 @@ class PenOverlay:
     # ── Undo / Redo ───────────────────────────────────
 
     def undo(self):
-        """Undo last stroke."""
         if not self._strokes:
             return
         stroke = self._strokes.pop()
@@ -381,38 +469,34 @@ class PenOverlay:
         self._undo_stack.append(stroke)
 
     def redo(self):
-        """Redo last undone stroke."""
         if not self._undo_stack:
             return
         stroke = self._undo_stack.pop()
-        pts = stroke.smoothed_points if stroke.smoothed_points else stroke.points
+        pts = stroke.smoothed_points or stroke.points
         stroke.canvas_ids.clear()
+        stipple = "gray50" if stroke.is_highlighter else ""
 
         if len(pts) >= 2:
             flat = []
             for p in pts:
                 flat.extend(p)
             line_id = self._canvas.create_line(
-                *flat,
-                fill=stroke.color, width=stroke.width,
-                smooth=True, splinesteps=16,
+                *flat, fill=stroke.color, width=stroke.width,
+                smooth=True, splinesteps=32,
                 capstyle=tk.ROUND, joinstyle=tk.ROUND,
-                tags="stroke"
+                stipple=stipple, tags="stroke"
             )
             stroke.canvas_ids = [line_id]
         elif len(pts) == 1:
             r = max(1, stroke.width // 2)
             dot_id = self._canvas.create_oval(
-                pts[0][0] - r, pts[0][1] - r,
-                pts[0][0] + r, pts[0][1] + r,
-                fill=stroke.color, outline="", tags="stroke"
+                pts[0][0]-r, pts[0][1]-r, pts[0][0]+r, pts[0][1]+r,
+                fill=stroke.color, outline="", stipple=stipple, tags="stroke"
             )
             stroke.canvas_ids = [dot_id]
-
         self._strokes.append(stroke)
 
     def clear_all(self):
-        """Clear all strokes."""
         self._canvas.delete("stroke")
         self._strokes.clear()
         self._undo_stack.clear()
@@ -420,27 +504,23 @@ class PenOverlay:
     # ── Click-Through Toggle ──────────────────────────
 
     def set_click_through(self, enabled: bool):
-        """Toggle click-through mode (draw ↔ interact with apps below)."""
         if not hasattr(self, '_input_hwnd'):
             return
         try:
             style = user32.GetWindowLongW(self._input_hwnd, GWL_EXSTYLE)
             if enabled:
-                # Make input window click-through → events pass to desktop/apps
                 style |= WS_EX_TRANSPARENT
                 self._input_canvas.configure(cursor="arrow")
             else:
-                # Input window captures events → draw mode
                 style &= ~WS_EX_TRANSPARENT
-                self._input_canvas.configure(cursor="crosshair")
-
+                cursor = "circle" if self._tool == "eraser" else self._pen_cursor
+                self._input_canvas.configure(cursor=cursor)
             user32.SetWindowLongW(self._input_hwnd, GWL_EXSTYLE, style)
             user32.SetWindowPos(
                 self._input_hwnd, None, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED
             )
             self._click_through = enabled
-            print(f"[PEN] Click-through: {enabled}")
         except Exception as e:
             print(f"[PEN] Click-through toggle failed: {e}")
 
@@ -459,30 +539,42 @@ class PenOverlay:
         self._pen_width = width
 
     def set_tool(self, tool: str):
-        """Set tool: 'pen', 'highlighter', 'eraser'."""
         self._tool = tool
+        if self._click_through:
+            return
         if tool == "eraser":
             self._input_canvas.configure(cursor="circle")
-        elif tool == "highlighter":
-            self._input_canvas.configure(cursor="crosshair")
         else:
-            self._input_canvas.configure(cursor="crosshair")
+            self._input_canvas.configure(cursor=self._pen_cursor)
 
     def set_highlighter_color(self, color: str):
         self._highlighter_color = color
 
-    # ── Tkinter-Compatible API (used by main.py) ─────
+    # ── Z-Order helpers (split lift for main widget clickability) ──
+
+    def lift_input(self):
+        """Lift only the input window (goes BELOW main widget)."""
+        try:
+            self._input_win.lift()
+        except:
+            pass
+
+    def lift_render(self):
+        """Lift only the render window (goes ABOVE main widget)."""
+        try:
+            self._render_win.lift()
+        except:
+            pass
+
+    # ── Tkinter-Compatible API ────────────────────────
 
     def winfo_exists(self):
-        """Check if both windows still exist."""
         try:
-            return (self._render_win.winfo_exists() and
-                    self._input_win.winfo_exists())
+            return self._render_win.winfo_exists() and self._input_win.winfo_exists()
         except:
             return False
 
     def attributes(self, *args, **kwargs):
-        """Apply attributes to both windows."""
         try:
             self._render_win.attributes(*args, **kwargs)
             self._input_win.attributes(*args, **kwargs)
@@ -490,15 +582,13 @@ class PenOverlay:
             pass
 
     def lift(self):
-        """Lift both windows (input first, render on top)."""
         try:
             self._input_win.lift()
-            self._render_win.lift()  # Render stays above input
+            self._render_win.lift()
         except:
             pass
 
     def withdraw(self):
-        """Hide both windows."""
         try:
             self._render_win.withdraw()
             self._input_win.withdraw()
@@ -506,7 +596,6 @@ class PenOverlay:
             pass
 
     def deiconify(self):
-        """Show both windows."""
         try:
             self._input_win.deiconify()
             self._render_win.deiconify()
@@ -514,7 +603,6 @@ class PenOverlay:
             pass
 
     def destroy(self):
-        """Destroy both windows."""
         self._destroyed = True
         try:
             self._input_win.destroy()
@@ -526,11 +614,9 @@ class PenOverlay:
             pass
 
     def get_hwnd(self):
-        """Return render window HWND for fullscreen exclusion."""
         return getattr(self, '_render_hwnd', None)
 
     def get_all_hwnds(self):
-        """Return all HWNDs (render + input) for fullscreen exclusion."""
         hwnds = []
         if hasattr(self, '_render_hwnd') and self._render_hwnd:
             hwnds.append(self._render_hwnd)
@@ -538,10 +624,7 @@ class PenOverlay:
             hwnds.append(self._input_hwnd)
         return hwnds
 
-    # ── Cleanup ───────────────────────────────────────
-
     def close(self):
-        """Close overlay and notify parent."""
         if self._on_close:
             self._on_close()
         else:

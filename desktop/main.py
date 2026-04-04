@@ -1008,35 +1008,53 @@ class VoiceTypingApp(ctk.CTk):
         pass
 
     def toggle_pen_mode(self):
-        """Toggle screen annotation pen on/off."""
-        if hasattr(self, '_pen_overlay') and self._pen_overlay is not None:
-            self._close_pen_mode()
-        else:
+        """Toggle pen mode: off → draw → view (click-through) → draw → ..."""
+        if not hasattr(self, '_pen_overlay') or self._pen_overlay is None:
+            # No overlay → create and enter draw mode
             self._open_pen_mode()
+        elif self._pen_overlay.is_click_through:
+            # View mode → switch to draw mode
+            self._pen_set_draw_mode()
+        else:
+            # Draw mode → switch to view mode (strokes stay)
+            self._pen_set_view_mode()
 
     def _open_pen_mode(self):
-        """Open pen overlay + toolbar for screen annotation."""
+        """Open pen overlay + toolbar, enter draw mode."""
         try:
             from ui_components.pen_overlay import PenOverlay
             from ui_components.pen_toolbar import PenToolbar
 
-            # Create overlay (fullscreen transparent canvas)
             self._pen_overlay = PenOverlay(self, on_close_callback=self._close_pen_mode)
-
-            # Create toolbar (floating control panel)
             self._pen_toolbar = PenToolbar(self, self._pen_overlay, self)
 
-            # Ensure both stay on top
+            # Main toolbar: pen icon → mouse icon
+            self.btn_pen.configure(text="\U0001f5b1\ufe0f")
             self.after(200, self._pen_ensure_topmost)
-
-            print("[PEN] Pen mode opened")
+            print("[PEN] Pen mode opened (draw)")
         except Exception as e:
-            print(f"[PEN] Failed to open pen mode: {e}")
+            print(f"[PEN] Failed to open: {e}")
             self._pen_overlay = None
             self._pen_toolbar = None
 
+    def _pen_set_draw_mode(self):
+        """Switch to draw mode (pen captures events)."""
+        if self._pen_overlay:
+            self._pen_overlay.set_click_through(False)
+            self.btn_pen.configure(text="\U0001f5b1\ufe0f")
+            if self._pen_toolbar:
+                self._pen_toolbar.sync_draw_mode()
+
+    def _pen_set_view_mode(self):
+        """Switch to view mode (click-through, strokes stay)."""
+        if self._pen_overlay:
+            self._pen_overlay.set_click_through(True)
+            self.btn_pen.configure(text="\U0001f58a\ufe0f")
+            if self._pen_toolbar:
+                self._pen_toolbar.sync_view_mode()
+
     def _close_pen_mode(self):
-        """Close pen overlay + toolbar."""
+        """Close pen overlay + toolbar (clears strokes)."""
         try:
             if hasattr(self, '_pen_toolbar') and self._pen_toolbar:
                 try:
@@ -1052,16 +1070,19 @@ class VoiceTypingApp(ctk.CTk):
                     pass
                 self._pen_overlay = None
 
+            # Restore pen icon on main toolbar
+            self.btn_pen.configure(text="\U0001f58a\ufe0f")
             print("[PEN] Pen mode closed")
         except Exception as e:
-            print(f"[PEN] Error closing pen mode: {e}")
+            print(f"[PEN] Error closing: {e}")
 
     def _pen_ensure_topmost(self):
-        """Ensure pen overlay and toolbar stay on top after creation."""
+        """Ensure correct z-order: input < main widget < render < toolbar."""
         try:
             if hasattr(self, '_pen_overlay') and self._pen_overlay and self._pen_overlay.winfo_exists():
-                self._pen_overlay.attributes('-topmost', True)
-                self._pen_overlay.lift()
+                self._pen_overlay.lift_input()
+                self.lift()
+                self._pen_overlay.lift_render()
             if hasattr(self, '_pen_toolbar') and self._pen_toolbar and self._pen_toolbar.winfo_exists():
                 self._pen_toolbar.attributes('-topmost', True)
                 self._pen_toolbar.lift()
@@ -3207,19 +3228,26 @@ class VoiceTypingApp(ctk.CTk):
 
             # RE-ENFORCE topmost: prevent widget from going behind other windows
             if not self._hidden_for_fullscreen:
-                self.attributes('-topmost', True)
-                self.lift()
+                pen_active = (hasattr(self, '_pen_overlay') and self._pen_overlay
+                              and self._pen_overlay.winfo_exists())
 
-                # Also re-lift pen overlay/toolbar if active
-                try:
-                    if hasattr(self, '_pen_overlay') and self._pen_overlay and self._pen_overlay.winfo_exists():
-                        self._pen_overlay.attributes('-topmost', True)
-                        self._pen_overlay.lift()
-                    if hasattr(self, '_pen_toolbar') and self._pen_toolbar and self._pen_toolbar.winfo_exists():
-                        self._pen_toolbar.attributes('-topmost', True)
-                        self._pen_toolbar.lift()
-                except:
-                    pass
+                if pen_active:
+                    # Z-order: input < MAIN WIDGET < render < toolbar
+                    # So main widget is always clickable above the input catcher
+                    try:
+                        self._pen_overlay.lift_input()      # Input at bottom
+                        self.attributes('-topmost', True)
+                        self.lift()                          # Main widget above input
+                        self._pen_overlay.lift_render()      # Render above main
+                        if (hasattr(self, '_pen_toolbar') and self._pen_toolbar
+                                and self._pen_toolbar.winfo_exists()):
+                            self._pen_toolbar.attributes('-topmost', True)
+                            self._pen_toolbar.lift()          # Toolbar on top
+                    except:
+                        pass
+                else:
+                    self.attributes('-topmost', True)
+                    self.lift()
 
             self.after(1500, self.monitor_topmost)
         except:
