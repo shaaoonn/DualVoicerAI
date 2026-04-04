@@ -1090,47 +1090,92 @@ class VoiceTypingApp(ctk.CTk):
             pass
 
     def take_screenshot(self):
-        """Trigger Windows Snipping Tool, save clipboard image for AI analysis."""
+        """Trigger Windows Snipping Tool, save clipboard image for AI analysis.
+        In pen mode: temporarily make overlay click-through so snip tool works,
+        and keep render window visible so drawings appear in screenshot."""
         if self.is_reading:
             self._pause_reader()
+
+        # In pen mode, make input window click-through so snipping tool works
+        pen_was_drawing = False
+        if (hasattr(self, '_pen_overlay') and self._pen_overlay and
+                self._pen_overlay.winfo_exists()):
+            if not self._pen_overlay.is_click_through:
+                pen_was_drawing = True
+                self._pen_overlay.set_click_through(True)
+
         pyautogui.hotkey('win', 'shift', 's')
 
-        # Mark that a screenshot was initiated (for AI analysis)
         self._screenshot_pending = True
-        self._screenshot_time = time.time()
 
         def _capture_after_snip():
-            """Wait for snip completion, then grab clipboard image."""
-            time.sleep(4)  # wait for user to complete snip
-            try:
-                from PIL import ImageGrab
-                img = ImageGrab.grabclipboard()
-                if img:
-                    # Save base64 for AI vision analysis
-                    import io, base64
-                    buf = io.BytesIO()
-                    img.save(buf, format='PNG')
-                    buf.seek(0)
-                    b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-                    self._last_screenshot_b64 = f"data:image/png;base64,{b64}"
-                    self._last_screenshot_time = time.time()
-                    print("[SCREENSHOT] Captured for AI analysis")
+            """Poll clipboard for image (up to 15s), then save for AI."""
+            from PIL import ImageGrab
+            import io, base64
 
-                    # Also save to folder if configured
-                    save_dir = self.settings.get("screenshot_save_dir", "").strip()
-                    if save_dir and os.path.isdir(save_dir):
-                        fname = datetime.datetime.now().strftime("screenshot_%Y%m%d_%H%M%S.png")
-                        path = os.path.join(save_dir, fname)
-                        img.save(path)
-                        print(f"[SCREENSHOT] Saved: {path}")
-                else:
-                    print("[SCREENSHOT] No image in clipboard")
-            except Exception as e:
-                print(f"[SCREENSHOT] Capture error: {e}")
-            finally:
-                self._screenshot_pending = False
+            captured = False
+            # Poll clipboard every 0.5s for up to 15 seconds
+            for _ in range(30):
+                time.sleep(0.5)
+                try:
+                    img = ImageGrab.grabclipboard()
+                    if img:
+                        buf = io.BytesIO()
+                        img.save(buf, format='PNG')
+                        buf.seek(0)
+                        b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                        self._last_screenshot_b64 = f"data:image/png;base64,{b64}"
+                        self._last_screenshot_time = time.time()
+                        print("[SCREENSHOT] Captured for AI analysis")
+                        captured = True
+
+                        # Show AI button glow (10s countdown)
+                        self.after(0, self._start_screenshot_glow)
+
+                        # Save to folder if configured
+                        save_dir = self.settings.get("screenshot_save_dir", "").strip()
+                        if save_dir and os.path.isdir(save_dir):
+                            fname = datetime.datetime.now().strftime("screenshot_%Y%m%d_%H%M%S.png")
+                            path = os.path.join(save_dir, fname)
+                            img.save(path)
+                            print(f"[SCREENSHOT] Saved: {path}")
+                        break
+                except:
+                    pass
+            if not captured:
+                print("[SCREENSHOT] No image captured after 15s")
+
+            # Restore pen draw mode if it was active
+            if pen_was_drawing:
+                self.after(0, lambda: self._pen_restore_after_screenshot())
+
+            self._screenshot_pending = False
 
         threading.Thread(target=_capture_after_snip, daemon=True).start()
+
+    def _pen_restore_after_screenshot(self):
+        """Restore pen draw mode after screenshot capture."""
+        if (hasattr(self, '_pen_overlay') and self._pen_overlay and
+                self._pen_overlay.winfo_exists()):
+            self._pen_overlay.set_click_through(False)
+            if hasattr(self, '_pen_toolbar') and self._pen_toolbar:
+                self._pen_toolbar.sync_draw_mode()
+
+    def _start_screenshot_glow(self):
+        """Bright glow on AI button for 10 seconds to indicate screenshot ready."""
+        self._screenshot_glow_active = True
+        self.btn_ai.set_glow(True)
+        # Auto-expire after 10 seconds
+        self.after(10000, self._stop_screenshot_glow)
+
+    def _stop_screenshot_glow(self):
+        """Stop AI button glow and expire screenshot."""
+        self._screenshot_glow_active = False
+        self.btn_ai.set_glow(False)
+        # Expire screenshot after 10s
+        if (hasattr(self, '_last_screenshot_time') and
+                time.time() - self._last_screenshot_time >= 10):
+            self._last_screenshot_b64 = None
 
     def _pause_reader(self):
         """Pause TTS playback immediately (synchronous)."""
@@ -1244,12 +1289,12 @@ class VoiceTypingApp(ctk.CTk):
             self.is_listening = False
             self._silent_reset()
 
-        # Check if there's a recent screenshot (within last 60 seconds)
+        # Check if there's a recent screenshot (within last 10 seconds)
         has_screenshot = (
             hasattr(self, '_last_screenshot_b64') and
             self._last_screenshot_b64 and
             hasattr(self, '_last_screenshot_time') and
-            (time.time() - self._last_screenshot_time) < 60
+            (time.time() - self._last_screenshot_time) < 10
         )
 
         if has_screenshot:
@@ -1309,7 +1354,8 @@ class VoiceTypingApp(ctk.CTk):
             from ai_engine.clipboard_guard import ClipboardGuard
 
             try:
-                result = asyncio.run(analyze_screenshot(screenshot_b64))
+                img_sys = self.settings.get("image_system_prompt", "")
+                result = asyncio.run(analyze_screenshot(screenshot_b64, system_prompt=img_sys))
                 if result and result.strip():
                     # Copy result to clipboard and paste
                     guard = ClipboardGuard()

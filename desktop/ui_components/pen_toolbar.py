@@ -32,6 +32,18 @@ class PenToolbar(tk.Toplevel):
     ICON_HIGHLIGHTER = "\U0001f58d\ufe0f"
     ICON_ERASER = "\U0001f9f9"
     ICON_MOUSE = "\U0001f5b1\ufe0f"
+    ICON_TEXT = "T"
+
+    FONTS = [
+        "Segoe UI",
+        "Arial",
+        "Nirmala UI",
+        "Times New Roman",
+        "Courier New",
+        "Impact",
+        "Comic Sans MS",
+        "Consolas",
+    ]
 
     def __init__(self, parent, overlay, app_ref):
         super().__init__(parent)
@@ -104,6 +116,35 @@ class PenToolbar(tk.Toplevel):
             command=lambda: self._activate_eraser()
         )
         self._btn_eraser.pack(side="left", padx=1)
+
+        self._btn_text = tk.Button(
+            tools_frame, text=self.ICON_TEXT, bg=self.BG, fg="#CCC",
+            font=("Segoe UI", 12, "bold"), relief="flat", bd=0,
+            activebackground=self.BG_HOVER, width=2,
+            command=lambda: self._toggle_tool("text")
+        )
+        self._btn_text.pack(side="left", padx=1)
+
+        # ── Separator ──
+        tk.Frame(row, bg="#555", width=1, height=22).pack(side="left", padx=3)
+
+        # ── Font dropdown (for text tool) ──
+        self._font_var = tk.StringVar(value=self.FONTS[0])
+        self._font_menu = tk.OptionMenu(
+            row, self._font_var, *self.FONTS,
+            command=self._on_font_change
+        )
+        self._font_menu.configure(
+            bg=self.BG, fg="#CCC", font=("Segoe UI", 9),
+            highlightthickness=0, bd=0, relief="flat",
+            activebackground=self.BG_HOVER, activeforeground="#FFF",
+            width=10
+        )
+        self._font_menu["menu"].configure(
+            bg="#1A1A2A", fg="#CCC", font=("Segoe UI", 9),
+            activebackground=self.BG_ACTIVE, activeforeground="#FFF"
+        )
+        self._font_menu.pack(side="left", padx=(0, 4))
 
         # ── Separator ──
         tk.Frame(row, bg="#555", width=1, height=22).pack(side="left", padx=3)
@@ -184,6 +225,9 @@ class PenToolbar(tk.Toplevel):
             self._active_tool = tool
             self._overlay.set_tool(tool)
             self._enter_draw_mode()
+            # Auto-place text at last stroke endpoint
+            if tool == "text":
+                self._overlay.auto_place_text()
 
     def _activate_eraser(self):
         self._active_tool = "eraser"
@@ -211,14 +255,20 @@ class PenToolbar(tk.Toplevel):
                 bg=self.BG_ACTIVE if self._active_tool == "highlighter" else self.BG)
             self._btn_eraser.configure(text=er_icon,
                 bg=self.BG_ACTIVE if self._active_tool == "eraser" else self.BG)
+            txt_icon = self.ICON_MOUSE if self._active_tool == "text" else self.ICON_TEXT
+            txt_font = ("Segoe UI Emoji", 11) if self._active_tool == "text" else ("Segoe UI", 12, "bold")
+            self._btn_text.configure(text=txt_icon, font=txt_font,
+                bg=self.BG_ACTIVE if self._active_tool == "text" else self.BG)
         else:
             self._btn_pen.configure(text=self.ICON_PEN, bg=self.BG)
             self._btn_highlight.configure(text=self.ICON_HIGHLIGHTER, bg=self.BG)
             self._btn_eraser.configure(text=self.ICON_ERASER, bg=self.BG)
+            self._btn_text.configure(text=self.ICON_TEXT,
+                font=("Segoe UI", 12, "bold"), bg=self.BG)
 
     def sync_draw_mode(self):
         self._draw_mode = True
-        if self._active_tool not in ("pen", "highlighter", "eraser"):
+        if self._active_tool not in ("pen", "highlighter", "eraser", "text"):
             self._active_tool = "pen"
         self._overlay.set_tool(self._active_tool)
         self._overlay.set_click_through(False)
@@ -231,6 +281,10 @@ class PenToolbar(tk.Toplevel):
 
     # ── Actions ───────────────────────────────────────
 
+    def _on_font_change(self, font_name):
+        """Change font for text tool."""
+        self._overlay.set_font(font_name)
+
     def _set_color(self, color):
         self._overlay.set_color(color)
         if self._active_color_btn:
@@ -239,8 +293,10 @@ class PenToolbar(tk.Toplevel):
         if btn:
             btn.configure(relief="solid", bd=2)
             self._active_color_btn = btn
-        self._active_tool = "pen"
-        self._overlay.set_tool("pen")
+        # Keep current tool if it's text
+        if self._active_tool != "text":
+            self._active_tool = "pen"
+            self._overlay.set_tool("pen")
         self._enter_draw_mode()
 
     def _on_thickness_change(self, value):

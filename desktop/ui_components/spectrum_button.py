@@ -40,6 +40,7 @@ class SpectrumButton(tk.Canvas):
         self._press_x = self._press_y = 0
         self._drag_started = False
         self._photo = None
+        self._glow = False
 
         self._draw()
         self.bind("<Button-1>", self._on_down)
@@ -54,6 +55,12 @@ class SpectrumButton(tk.Canvas):
             self._bars = [0.08]*self.BAR_COUNT; self._stop(); self._draw()
         else:
             self._start()
+
+    def set_glow(self, enabled: bool):
+        """Enable/disable bright glow ring (no animation)."""
+        self._glow = enabled
+        if self._state == "idle":
+            self._draw()
 
     def set_icon_mode(self, m):
         self._icon_mode = m
@@ -165,10 +172,14 @@ class SpectrumButton(tk.Canvas):
                   fill=(v, v, int(v*1.02), 255), width=w)
 
     def _ring_rainbow(self, d, cx, cy, r):
-        """Rainbow gradient ring for AI."""
-        w = 5
-        sat = 0.55 if self._hover else 0.35
-        val = 0.72 if self._hover else 0.5
+        """Rainbow gradient ring for AI. Bright when _glow is active."""
+        w = 6 if self._glow else 5
+        if self._glow:
+            sat, val = 0.85, 0.95
+        elif self._hover:
+            sat, val = 0.55, 0.72
+        else:
+            sat, val = 0.35, 0.5
         for i in range(60):
             rgb = colorsys.hsv_to_rgb(i/60, sat, val)
             c = (int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255), 255)

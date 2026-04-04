@@ -14,6 +14,8 @@ import ctypes.wintypes
 import struct
 import os
 import io
+import time
+import math
 import tempfile
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Callable
@@ -56,22 +58,23 @@ def _get_pen_cursor():
         img = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
 
-        # Pen shape: tip at bottom-left (~2,29), body tilting upper-right
-        # Outer outline (white for visibility on dark backgrounds)
+        # Thick pen: tip at bottom-left, body upper-right
+        # White outer body (visible on dark backgrounds)
         d.polygon([
-            (1, 30), (3, 28), (26, 5), (30, 1),
-            (31, 2), (29, 4), (6, 27), (4, 31)
-        ], fill=None, outline=(255, 255, 255, 255))
-        # Inner body (dark)
+            (0, 31), (2, 27), (25, 4), (29, 0),
+            (31, 2), (8, 25), (4, 29), (2, 31)
+        ], fill=(255, 255, 255, 255))
+        # Black inner body (visible on light backgrounds)
         d.polygon([
-            (2, 29), (4, 27), (27, 4), (29, 2),
-            (30, 3), (28, 5), (5, 28), (3, 30)
-        ], fill=(30, 30, 30, 255))
-        # Pen tip accent
-        d.polygon([(1, 30), (2, 29), (4, 27), (3, 28)],
-                  fill=(80, 80, 80, 255))
-        # Tip point
-        d.point((1, 30), fill=(0, 0, 0, 255))
+            (1, 29), (3, 27), (26, 4), (28, 2),
+            (29, 3), (7, 25), (5, 27), (3, 29)
+        ], fill=(20, 20, 20, 255))
+        # Colored pen tip
+        d.polygon([
+            (0, 31), (1, 29), (3, 27), (2, 27), (0, 29)
+        ], fill=(200, 50, 50, 255))
+        # White tip dot for precision
+        d.rectangle([(0, 30), (1, 31)], fill=(255, 255, 255, 255))
 
         # Save as ICO, then patch to CUR
         buf = io.BytesIO()
@@ -98,13 +101,18 @@ def _get_pen_cursor():
 
 @dataclass
 class Stroke:
-    """Single drawn stroke with all its data."""
+    """Single drawn stroke or text item."""
     points: List[Tuple[float, float]] = field(default_factory=list)
     color: str = "#FF0000"
     width: int = 4
     is_highlighter: bool = False
     canvas_ids: List[int] = field(default_factory=list)
     smoothed_points: List[Tuple[float, float]] = field(default_factory=list)
+    # Text-specific fields
+    is_text: bool = False
+    text: str = ""
+    font_family: str = "Segoe UI"
+    font_size: int = 16
 
 
 class PenOverlay:
@@ -137,6 +145,23 @@ class PenOverlay:
         self._pen_width = self.DEFAULT_WIDTH
         self._tool = "pen"
         self._highlighter_color = "#FFFF44"
+
+        # Text tool state
+        self._text_active = False
+        self._text_buffer = ""
+        self._text_pos = (0, 0)
+        self._text_canvas_id = None
+        self._text_cursor_id = None
+        self._text_cursor_visible = True
+        self._text_cursor_job = None
+        self._font_family = "Segoe UI"
+        self._dragging_stroke = None
+        self._drag_offset = (0, 0)
+
+        # Shape detection state
+        self._shape_hold_start = None
+        self._shape_hold_job = None
+        self._last_move_pos = (0, 0)
 
         # EMA smoothing state
         self._ema_x = 0.0
@@ -251,14 +276,37 @@ class PenOverlay:
         self._input_canvas.bind("<ButtonRelease-1>", self._on_mouse_up)
         self._input_win.bind("<Control-z>", lambda e: self.undo())
         self._input_win.bind("<Control-y>", lambda e: self.redo())
-        self._input_win.bind("<Escape>", lambda e: self.close())
+        self._input_win.bind("<Escape>", lambda e: self._on_escape())
+        self._input_win.bind("<Key>", self._on_key)
+
+    def _on_escape(self):
+        """Escape: finalize text if active, otherwise close."""
+        if self._text_active:
+            self._finalize_text()
+        else:
+            self.close()
 
     def _on_mouse_down(self, event):
         x, y = event.x, event.y
 
+        if self._tool == "text":
+            # Check if clicking on an existing text item → drag it
+            hit = self._find_text_at(x, y)
+            if hit:
+                self._dragging_stroke = hit
+                px, py = hit.points[0]
+                self._drag_offset = (x - px, y - py)
+                return
+            self._start_text_at(x, y)
+            return
+
         if self._tool == "eraser":
             self._erase_at(x, y)
             return
+
+        # Finalize any active text before drawing
+        if self._text_active:
+            self._finalize_text()
 
         color = self._highlighter_color if self._tool == "highlighter" else self._pen_color
         width = self._pen_width * 3 if self._tool == "highlighter" else self._pen_width
@@ -268,6 +316,8 @@ class PenOverlay:
             points=[(x, y)], color=color, width=width,
             is_highlighter=is_hl,
         )
+        self._shape_hold_start = None
+        self._cancel_shape_hold()
         self._ema_x = float(x)
         self._ema_y = float(y)
 
@@ -280,6 +330,15 @@ class PenOverlay:
         self._current_stroke.canvas_ids.append(dot_id)
 
     def _on_mouse_move(self, event):
+        # Handle text dragging
+        if self._dragging_stroke:
+            nx = event.x - self._drag_offset[0]
+            ny = event.y - self._drag_offset[1]
+            self._dragging_stroke.points[0] = (nx, ny)
+            for cid in self._dragging_stroke.canvas_ids:
+                self._canvas.coords(cid, nx, ny)
+            return
+
         if not self._current_stroke:
             if self._tool == "eraser":
                 self._erase_at(event.x, event.y)
@@ -296,40 +355,36 @@ class PenOverlay:
         if pts:
             dx = x - pts[-1][0]
             dy = y - pts[-1][1]
-            if dx * dx + dy * dy < 9:
+            if dx * dx + dy * dy < 16:  # < 4px — less items, better performance
                 return
 
         pts.append((x, y))
-        stipple = "gray50" if self._current_stroke.is_highlighter else ""
 
-        if len(pts) >= 4:
-            smoothed = self._catmull_rom_segment(
-                pts[-4], pts[-3], pts[-2], pts[-1], num_points=8
-            )
-            flat = []
-            for p in smoothed:
-                flat.extend(p)
-            flat.extend([pts[-1][0], pts[-1][1]])
-
-            if len(flat) >= 4:
-                line_id = self._canvas.create_line(
-                    *flat, fill=self._current_stroke.color,
-                    width=self._current_stroke.width,
-                    smooth=True, splinesteps=16,
-                    capstyle=tk.ROUND, joinstyle=tk.ROUND,
-                    stipple=stipple, tags="stroke"
-                )
-                self._current_stroke.canvas_ids.append(line_id)
-        elif len(pts) >= 2:
+        # Simple line segment only (smoothing happens on mouse_up)
+        if len(pts) >= 2:
+            stipple = "gray50" if self._current_stroke.is_highlighter else ""
             line_id = self._canvas.create_line(
-                pts[-2][0], pts[-2][1], pts[-1][0], pts[-1][1],
+                pts[-2][0], pts[-2][1], x, y,
                 fill=self._current_stroke.color,
                 width=self._current_stroke.width,
                 capstyle=tk.ROUND, stipple=stipple, tags="stroke"
             )
             self._current_stroke.canvas_ids.append(line_id)
 
+        # ── Shape hold detection ──
+        # Every new movement resets the 3-second timer
+        self._last_move_pos = (x, y)
+        self._cancel_shape_hold()
+        if len(pts) > 5:
+            self._shape_hold_job = self._parent.after(3000, self._try_snap_shape)
+
     def _on_mouse_up(self, event):
+        self._cancel_shape_hold()
+
+        if self._dragging_stroke:
+            self._dragging_stroke = None
+            return
+
         if not self._current_stroke:
             return
 
@@ -424,23 +479,278 @@ class PenOverlay:
             segment = self._catmull_rom_segment(p0, p1, p2, p3, num_points=10)
             result.extend(segment)
         result.append(pts[-1])
-        result = self._chaikin_smooth(result, iterations=1)
         return result
 
-    @staticmethod
-    def _chaikin_smooth(points, iterations=1):
-        if len(points) < 3:
-            return list(points)
-        pts = list(points)
-        for _ in range(iterations):
-            new_pts = [pts[0]]
-            for i in range(len(pts) - 1):
-                p0, p1 = pts[i], pts[i+1]
-                new_pts.append((0.75*p0[0]+0.25*p1[0], 0.75*p0[1]+0.25*p1[1]))
-                new_pts.append((0.25*p0[0]+0.75*p1[0], 0.25*p0[1]+0.75*p1[1]))
-            new_pts.append(pts[-1])
-            pts = new_pts
-        return pts
+    # ── Text Tool ─────────────────────────────────────
+
+    def _find_text_at(self, x, y):
+        """Find a finalized text stroke under (x, y) for dragging."""
+        for stroke in reversed(self._strokes):
+            if not stroke.is_text:
+                continue
+            for cid in stroke.canvas_ids:
+                bbox = self._canvas.bbox(cid)
+                if bbox and bbox[0] <= x <= bbox[2] and bbox[1] <= y <= bbox[3]:
+                    return stroke
+        return None
+
+    def auto_place_text(self):
+        """Auto-start text at the endpoint of the last drawn stroke."""
+        if self._text_active:
+            self._finalize_text()
+
+        # Find last non-text stroke
+        last_stroke = None
+        for s in reversed(self._strokes):
+            if not s.is_text:
+                last_stroke = s
+                break
+
+        if last_stroke:
+            pts = last_stroke.smoothed_points or last_stroke.points
+            if pts:
+                ex, ey = pts[-1]
+                self._start_text_at(ex, ey)
+                return
+
+        # No stroke found — don't auto-place, wait for click
+        self._input_win.focus_force()
+
+    def _get_text_font(self):
+        """Get tkinter font tuple for current text settings."""
+        size = self._pen_width * 4  # slider 1-100 → text 4-400
+        return (self._font_family, size)
+
+    def _start_text_at(self, x, y):
+        """Start text entry at click position."""
+        # Finalize previous text if any
+        if self._text_active:
+            self._finalize_text()
+
+        self._text_active = True
+        self._text_buffer = ""
+        self._text_pos = (x, y)
+
+        font = self._get_text_font()
+        self._text_canvas_id = self._canvas.create_text(
+            x, y, text="", anchor="w",
+            fill=self._pen_color, font=font, tags="stroke"
+        )
+        # Blinking cursor
+        self._text_cursor_visible = True
+        self._text_cursor_id = self._canvas.create_text(
+            x, y, text="|", anchor="w",
+            fill=self._pen_color, font=font, tags="text_cursor"
+        )
+        self._blink_cursor()
+        # Focus input window for keyboard events
+        self._input_win.focus_force()
+
+    def _blink_cursor(self):
+        """Blink the text cursor."""
+        if not self._text_active:
+            return
+        self._text_cursor_visible = not self._text_cursor_visible
+        if self._text_cursor_id:
+            try:
+                state = "normal" if self._text_cursor_visible else "hidden"
+                self._canvas.itemconfigure(self._text_cursor_id, state=state)
+            except:
+                pass
+        self._text_cursor_job = self._parent.after(500, self._blink_cursor)
+
+    def _update_text_display(self):
+        """Update the canvas text and cursor position."""
+        if not self._text_canvas_id:
+            return
+        font = self._get_text_font()
+        self._canvas.itemconfigure(self._text_canvas_id,
+                                   text=self._text_buffer, font=font,
+                                   fill=self._pen_color)
+        # Move cursor after text
+        bbox = self._canvas.bbox(self._text_canvas_id)
+        if bbox and self._text_cursor_id:
+            # Place cursor at end of text
+            cx = bbox[2]
+            cy = self._text_pos[1]
+            self._canvas.coords(self._text_cursor_id, cx, cy)
+            self._canvas.itemconfigure(self._text_cursor_id, font=font,
+                                       fill=self._pen_color)
+        elif self._text_cursor_id:
+            # No text yet, cursor at start
+            self._canvas.coords(self._text_cursor_id,
+                                self._text_pos[0], self._text_pos[1])
+
+    def _on_key(self, event):
+        """Handle keyboard input for text tool."""
+        if not self._text_active:
+            return
+
+        if event.keysym == "Return":
+            self._finalize_text()
+            return
+        if event.keysym == "BackSpace":
+            if self._text_buffer:
+                self._text_buffer = self._text_buffer[:-1]
+                self._update_text_display()
+            return
+        if event.keysym == "Escape":
+            # Cancel text (remove it)
+            if self._text_canvas_id:
+                self._canvas.delete(self._text_canvas_id)
+                self._text_canvas_id = None
+            self._cleanup_text_cursor()
+            self._text_active = False
+            return
+
+        # Skip modifier keys, function keys, etc.
+        if event.char and event.char.isprintable():
+            self._text_buffer += event.char
+            self._update_text_display()
+
+    def _finalize_text(self):
+        """Commit current text to strokes."""
+        self._cleanup_text_cursor()
+
+        if self._text_buffer.strip() and self._text_canvas_id:
+            font = self._get_text_font()
+            # Update final appearance
+            self._canvas.itemconfigure(self._text_canvas_id,
+                                       text=self._text_buffer, font=font)
+            stroke = Stroke(
+                points=[self._text_pos],
+                color=self._pen_color,
+                width=self._pen_width,
+                canvas_ids=[self._text_canvas_id],
+                is_text=True,
+                text=self._text_buffer,
+                font_family=self._font_family,
+                font_size=self._pen_width * 4,
+            )
+            self._strokes.append(stroke)
+            self._undo_stack.clear()
+        elif self._text_canvas_id:
+            # Empty text, remove
+            self._canvas.delete(self._text_canvas_id)
+
+        self._text_canvas_id = None
+        self._text_active = False
+        self._text_buffer = ""
+
+    def _cleanup_text_cursor(self):
+        """Remove blinking cursor."""
+        if self._text_cursor_job:
+            self._parent.after_cancel(self._text_cursor_job)
+            self._text_cursor_job = None
+        if self._text_cursor_id:
+            try:
+                self._canvas.delete(self._text_cursor_id)
+            except:
+                pass
+            self._text_cursor_id = None
+
+    def set_font(self, font_family: str):
+        """Set font for text tool."""
+        self._font_family = font_family
+        if self._text_active:
+            self._update_text_display()
+
+    # ── Shape Detection ─────────────────────────────────
+
+    def _cancel_shape_hold(self):
+        if self._shape_hold_job:
+            self._parent.after_cancel(self._shape_hold_job)
+            self._shape_hold_job = None
+
+    def _try_snap_shape(self):
+        """Called after 3s of no movement while mouse is held. Snap to shape."""
+        self._shape_hold_job = None
+        if not self._current_stroke:
+            return
+
+        stroke = self._current_stroke
+        pts = stroke.points
+        if len(pts) < 5:
+            return
+
+        self._current_stroke = None
+
+        # Bounding box
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        w = max_x - min_x
+        h = max_y - min_y
+
+        # Delete old stroke canvas items
+        for cid in stroke.canvas_ids:
+            self._canvas.delete(cid)
+        stroke.canvas_ids.clear()
+
+        stipple = "gray50" if stroke.is_highlighter else ""
+
+        # ── Detect shape type ──
+        # Check if start and end are close (closed shape)
+        start_pt = pts[0]
+        end_pt = pts[-1]
+        close_dist = math.hypot(end_pt[0] - start_pt[0], end_pt[1] - start_pt[1])
+        is_closed = close_dist < max(50, (w + h) * 0.15)
+
+        if not is_closed or w < 15 or h < 15:
+            # ── Straight line ──
+            shape_id = self._canvas.create_line(
+                start_pt[0], start_pt[1], end_pt[0], end_pt[1],
+                fill=stroke.color, width=stroke.width,
+                capstyle=tk.ROUND, stipple=stipple, tags="stroke"
+            )
+        else:
+            # Closed shape: circle vs rectangle
+            cx = (min_x + max_x) / 2
+            cy = (min_y + max_y) / 2
+
+            # Circularity: coefficient of variation of distance from center
+            dists = [math.hypot(p[0] - cx, p[1] - cy) for p in pts]
+            mean_dist = sum(dists) / len(dists)
+            variance = sum((d - mean_dist)**2 for d in dists) / len(dists)
+            cv = (variance ** 0.5) / mean_dist if mean_dist > 0 else 1
+
+            if cv < 0.18:
+                # Circle
+                # Aspect ratio close to 1 → perfect circle
+                if 0.75 < (w / h if h > 0 else 1) < 1.33:
+                    r = max(w, h) / 2
+                    shape_id = self._canvas.create_oval(
+                        cx - r, cy - r, cx + r, cy + r,
+                        outline=stroke.color, width=stroke.width,
+                        stipple=stipple, tags="stroke"
+                    )
+                else:
+                    # Ellipse
+                    shape_id = self._canvas.create_oval(
+                        min_x, min_y, max_x, max_y,
+                        outline=stroke.color, width=stroke.width,
+                        stipple=stipple, tags="stroke"
+                    )
+            else:
+                # Rectangle / Square
+                aspect = w / h if h > 0 else 1
+                if 0.8 < aspect < 1.25:
+                    side = max(w, h)
+                    min_x = cx - side / 2
+                    min_y = cy - side / 2
+                    max_x = cx + side / 2
+                    max_y = cy + side / 2
+                shape_id = self._canvas.create_rectangle(
+                    min_x, min_y, max_x, max_y,
+                    outline=stroke.color, width=stroke.width,
+                    stipple=stipple, tags="stroke"
+                )
+
+        stroke.canvas_ids = [shape_id]
+        stroke.smoothed_points = pts
+        self._strokes.append(stroke)
+        self._undo_stack.clear()
 
     # ── Eraser ────────────────────────────────────────
 
@@ -472,6 +782,20 @@ class PenOverlay:
         if not self._undo_stack:
             return
         stroke = self._undo_stack.pop()
+
+        # Text redo
+        if stroke.is_text:
+            stroke.canvas_ids.clear()
+            font = (stroke.font_family, stroke.font_size)
+            tid = self._canvas.create_text(
+                stroke.points[0][0], stroke.points[0][1],
+                text=stroke.text, anchor="w",
+                fill=stroke.color, font=font, tags="stroke"
+            )
+            stroke.canvas_ids = [tid]
+            self._strokes.append(stroke)
+            return
+
         pts = stroke.smoothed_points or stroke.points
         stroke.canvas_ids.clear()
         stipple = "gray50" if stroke.is_highlighter else ""
@@ -513,7 +837,12 @@ class PenOverlay:
                 self._input_canvas.configure(cursor="arrow")
             else:
                 style &= ~WS_EX_TRANSPARENT
-                cursor = "circle" if self._tool == "eraser" else self._pen_cursor
+                if self._tool == "eraser":
+                    cursor = "circle"
+                elif self._tool == "text":
+                    cursor = "xterm"
+                else:
+                    cursor = self._pen_cursor
                 self._input_canvas.configure(cursor=cursor)
             user32.SetWindowLongW(self._input_hwnd, GWL_EXSTYLE, style)
             user32.SetWindowPos(
@@ -539,11 +868,16 @@ class PenOverlay:
         self._pen_width = width
 
     def set_tool(self, tool: str):
+        # Finalize text if switching away from text tool
+        if self._text_active and tool != "text":
+            self._finalize_text()
         self._tool = tool
         if self._click_through:
             return
         if tool == "eraser":
             self._input_canvas.configure(cursor="circle")
+        elif tool == "text":
+            self._input_canvas.configure(cursor="xterm")
         else:
             self._input_canvas.configure(cursor=self._pen_cursor)
 
@@ -604,6 +938,7 @@ class PenOverlay:
 
     def destroy(self):
         self._destroyed = True
+        self._cleanup_text_cursor()
         try:
             self._input_win.destroy()
         except:

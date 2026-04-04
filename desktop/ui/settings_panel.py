@@ -104,6 +104,8 @@ class SettingsPanel(ctk.CTkToplevel):
         """Read all textbox values into settings before save."""
         if hasattr(self, '_sys_box') and self._sys_box.winfo_exists():
             self.s["ai_system_prompt"] = self._sys_box.get("1.0", "end-1c").strip()
+        if hasattr(self, '_img_sys_box') and self._img_sys_box.winfo_exists():
+            self.s["image_system_prompt"] = self._img_sys_box.get("1.0", "end-1c").strip()
         if hasattr(self, '_kb_box') and self._kb_box.winfo_exists():
             self.s["knowledge_base"] = self._kb_box.get("1.0", "end-1c").strip()
 
@@ -386,6 +388,19 @@ class SettingsPanel(ctk.CTkToplevel):
                        "\u09a4\u09c1\u09ae\u09bf \u098f\u0995\u099c\u09a8 \u09a6\u0995\u09cd\u09b7 \u09ac\u09be\u0982\u09b2\u09be \u0993 \u0987\u0982\u09b0\u09c7\u099c\u09bf \u09b2\u09c7\u0996\u0995 \u09b8\u09b9\u0995\u09be\u09b0\u09c0\u0964 \u09b8\u0982\u0995\u09cd\u09b7\u09bf\u09aa\u09cd\u09a4 \u0989\u09a4\u09cd\u09a4\u09b0 \u09a6\u09be\u0993\u0964"))
         self._sys_box.bind("<KeyRelease>", lambda e: self.s.update(
             {"ai_system_prompt": self._sys_box.get("1.0", "end-1c").strip()}))
+
+        # Image System Instruction
+        self._section(frame, "\U0001f5bc\ufe0f ইমেজ সিস্টেম ইন্সট্রাকশন (স্ক্রিনশট AI)")
+        ctk.CTkLabel(frame,
+                     text="স্ক্রিনশট নিয়ে AI বাটন চাপলে এই ইন্সট্রাকশন ব্যবহার হবে।  খালি রাখলে ডিফল্ট ব্যবহার হবে।",
+                     font=("Segoe UI", 10), text_color="#555555").pack(anchor="w", padx=28, pady=(0, 6))
+        self._img_sys_box = ctk.CTkTextbox(frame, height=130, font=("Segoe UI", 11),
+                                  fg_color="#1A1A20", border_color="#2A2A3A",
+                                  border_width=1, wrap="word")
+        self._img_sys_box.pack(fill="x", padx=28)
+        self._img_sys_box.insert("1.0", self.s.get("image_system_prompt", ""))
+        self._img_sys_box.bind("<KeyRelease>", lambda e: self.s.update(
+            {"image_system_prompt": self._img_sys_box.get("1.0", "end-1c").strip()}))
 
         # Knowledge Base
         self._section(frame, "\U0001f4da \u09a8\u09b2\u09c7\u099c \u09ac\u09c7\u099c (Smart Paste-\u098f\u09b0 \u099c\u09a8\u09cd\u09af)")
