@@ -37,9 +37,9 @@ PAGE_PRESETS = {
     "Square":   (1080, 1080),
 }
 
-GAP = 20          # pixels between pages
-BG_COLOR = "#3A3A4A"
-PAGE_OUTLINE = "#666"
+GAP = 30          # pixels between pages
+BG_COLOR = "#2B2B35"
+PAGE_SHADOW = "#1A1A22"
 
 
 class EditorPage:
@@ -57,11 +57,17 @@ class EditorPage:
         self._rect_id = None
         self._canvas = canvas
         self._parent = parent_widget
+        self._shadow_id = None
 
-        # Draw page rectangle
+        # Drop shadow
+        self._shadow_id = canvas.create_rectangle(
+            4, y_offset + 4, width + 4, y_offset + height + 4,
+            fill=PAGE_SHADOW, outline="", tags="page_bg"
+        )
+        # Page rectangle
         self._rect_id = canvas.create_rectangle(
             0, y_offset, width, y_offset + height,
-            fill="white", outline=PAGE_OUTLINE, width=1, tags="page_bg"
+            fill="white", outline="#444", width=1, tags="page_bg"
         )
 
         # Background image
@@ -165,10 +171,9 @@ class EditorWindow(tk.Toplevel):
         self._fullscreen = False
         self._plus_buttons = []
         self._pen_toolbar = None
-        self._pan_start_x = 0
-        self._pan_start_y = 0
 
         self._zoom_level = 1.0
+        self._base_scrollregion = (0, 0, 1920, 1120)
         self._selection_mgr = None
 
         self._setup_window()
@@ -279,20 +284,23 @@ class EditorWindow(tk.Toplevel):
         old = self._zoom_level
         if abs(level - old) < 0.001:
             return
-        self._zoom_level = level
         factor = level / old
-        cx = self._canvas.canvasx(self._canvas.winfo_width() / 2)
-        cy = self._canvas.canvasy(self._canvas.winfo_height() / 2)
-        self._canvas.scale("all", cx, cy, factor, factor)
-        # Update scroll region
-        sr = self._canvas.cget("scrollregion")
-        if sr:
-            parts = sr.split()
-            if len(parts) == 4:
-                x1, y1, x2, y2 = [float(v) for v in parts]
-                self._canvas.configure(scrollregion=(
-                    x1 * factor, y1 * factor, x2 * factor, y2 * factor))
+        self._apply_zoom(factor)
+        self._zoom_level = level
         self._update_status()
+
+    def _apply_zoom(self, factor: float, cx: float = None, cy: float = None):
+        """Scale all canvas items by factor, centered on (cx,cy)."""
+        if cx is None:
+            cx = self._canvas.canvasx(self._canvas.winfo_width() / 2)
+        if cy is None:
+            cy = self._canvas.canvasy(self._canvas.winfo_height() / 2)
+        self._canvas.scale("all", cx, cy, factor, factor)
+        # Update scrollregion from base (no compounding)
+        sr = self._base_scrollregion
+        z = self._zoom_level * factor
+        self._canvas.configure(scrollregion=(
+            sr[0] * z, sr[1] * z, sr[2] * z, sr[3] * z))
 
     def close(self):
         """Called by PenToolbar close button — hide toolbar only."""
@@ -306,11 +314,11 @@ class EditorWindow(tk.Toplevel):
     # ── Menu ──────────────────────────────────────────
 
     def _build_menu(self):
-        self._menubar = tk.Menu(self, bg="#1A1A2A", fg="#CCC",
-                                activebackground="#4A4A6A",
+        self._menubar = tk.Menu(self, bg="#1E1E28", fg="#AAA",
+                                activebackground="#3A3A50",
                                 activeforeground="#FFF")
-        file_menu = tk.Menu(self._menubar, tearoff=0, bg="#1A1A2A", fg="#CCC",
-                            activebackground="#4A4A6A", activeforeground="#FFF")
+        file_menu = tk.Menu(self._menubar, tearoff=0, bg="#1E1E28", fg="#AAA",
+                            activebackground="#3A3A50", activeforeground="#FFF")
         file_menu.add_command(label="নতুন", command=self._new_file_dialog,
                               accelerator="Ctrl+N")
         file_menu.add_command(label="খুলুন...", command=self._open_file,
@@ -322,8 +330,8 @@ class EditorWindow(tk.Toplevel):
         file_menu.add_command(label="সেভ অ্যাজ...", command=self._save_as)
         file_menu.add_separator()
 
-        export_menu = tk.Menu(file_menu, tearoff=0, bg="#1A1A2A", fg="#CCC",
-                              activebackground="#4A4A6A", activeforeground="#FFF")
+        export_menu = tk.Menu(file_menu, tearoff=0, bg="#1E1E28", fg="#AAA",
+                              activebackground="#3A3A50", activeforeground="#FFF")
         export_menu.add_command(label="PDF", command=lambda: self._export("pdf"))
         export_menu.add_command(label="PNG", command=lambda: self._export("png"))
         export_menu.add_command(label="JPG", command=lambda: self._export("jpg"))
@@ -349,21 +357,11 @@ class EditorWindow(tk.Toplevel):
         self._canvas_frame = tk.Frame(self, bg=BG_COLOR)
         self._canvas_frame.pack(fill="both", expand=True)
 
-        self._vscroll = tk.Scrollbar(self._canvas_frame, orient="vertical")
-        self._vscroll.pack(side="right", fill="y")
-
-        self._hscroll = tk.Scrollbar(self._canvas_frame, orient="horizontal")
-        self._hscroll.pack(side="bottom", fill="x")
-
         self._canvas = tk.Canvas(
             self._canvas_frame, bg=BG_COLOR, highlightthickness=0,
-            xscrollcommand=self._hscroll.set,
-            yscrollcommand=self._vscroll.set,
             cursor="pencil"
         )
         self._canvas.pack(fill="both", expand=True)
-        self._vscroll.config(command=self._canvas.yview)
-        self._hscroll.config(command=self._canvas.xview)
 
         self._canvas.bind("<ButtonPress-1>", self._on_canvas_click)
         self._canvas.bind("<B1-Motion>", self._on_canvas_drag)
@@ -374,13 +372,13 @@ class EditorWindow(tk.Toplevel):
         self._canvas.bind("<MouseWheel>", self._on_mousewheel)
 
     def _build_status_bar(self):
-        self._status = tk.Frame(self, bg="#1A1A2A", height=22)
+        self._status = tk.Frame(self, bg="#1E1E28", height=24)
         self._status.pack(fill="x", side="bottom")
         self._status_label = tk.Label(
-            self._status, text="পেজ: 0 | টুল: পেন",
-            bg="#1A1A2A", fg="#888", font=("Segoe UI", 8)
+            self._status, text="",
+            bg="#1E1E28", fg="#666", font=("Segoe UI", 8)
         )
-        self._status_label.pack(side="left", padx=6)
+        self._status_label.pack(side="left", padx=8)
 
     def _update_status(self):
         tool_names = {"pen": "পেন", "highlighter": "হাইলাইটার",
@@ -417,6 +415,10 @@ class EditorWindow(tk.Toplevel):
         max_w = 0
         for i, page in enumerate(self._pages):
             page.y_offset = y
+            # Shadow
+            if page._shadow_id:
+                self._canvas.coords(page._shadow_id,
+                                    4, y + 4, page.width + 4, y + page.height + 4)
             self._canvas.coords(page._rect_id, 0, y, page.width, y + page.height)
             if page._bg_canvas_id:
                 self._canvas.coords(page._bg_canvas_id, 0, y)
@@ -426,14 +428,16 @@ class EditorWindow(tk.Toplevel):
 
             plus_y = y - GAP // 2
             bid = self._canvas.create_text(
-                max_w // 2, plus_y, text="＋", fill="#666",
-                font=("Segoe UI", 14, "bold"), tags="plus_btn"
+                max_w // 2, plus_y, text="＋", fill="#555",
+                font=("Segoe UI", 16, "bold"), tags="plus_btn"
             )
             self._plus_buttons.append(bid)
             self._canvas.tag_bind(bid, "<ButtonPress-1>",
                                   lambda e, idx=i: self._on_plus_click(idx + 1))
 
-        self._canvas.configure(scrollregion=(0, 0, max_w, y + GAP))
+        sr = (0, 0, max_w, y + GAP)
+        self._base_scrollregion = sr
+        self._canvas.configure(scrollregion=sr)
         self._canvas.tag_lower("page_bg")
 
     def _on_plus_click(self, insert_idx):
@@ -447,8 +451,10 @@ class EditorWindow(tk.Toplevel):
         self._add_page(w, h, insert_at=insert_idx)
 
     def _get_page_at(self, canvas_y: float) -> Optional[int]:
+        """Find page at canvas Y — uses actual canvas coords (works after zoom)."""
         for i, page in enumerate(self._pages):
-            if page.y_offset <= canvas_y <= page.y_offset + page.height:
+            coords = self._canvas.coords(page._rect_id)
+            if len(coords) >= 4 and coords[1] <= canvas_y <= coords[3]:
                 return i
         return None
 
@@ -470,8 +476,7 @@ class EditorWindow(tk.Toplevel):
     def _on_canvas_click(self, event):
         cx, cy = self._canvas_coords(event)
         if self._active_tool == "pan":
-            self._pan_start_x = event.x
-            self._pan_start_y = event.y
+            self._canvas.scan_mark(event.x, event.y)
             return
         if self._active_tool == "select":
             page_idx = self._get_page_at(cy)
@@ -493,12 +498,7 @@ class EditorWindow(tk.Toplevel):
             return
         cx, cy = self._canvas_coords(event)
         if self._active_tool == "pan":
-            dx = event.x - self._pan_start_x
-            dy = event.y - self._pan_start_y
-            self._canvas.xview_scroll(int(-dx), "units")
-            self._canvas.yview_scroll(int(-dy), "units")
-            self._pan_start_x = event.x
-            self._pan_start_y = event.y
+            self._canvas.scan_dragto(event.x, event.y, gain=1)
             return
         if self._active_tool == "select":
             self._selection_mgr.on_mouse_move(cx, cy)
@@ -527,32 +527,28 @@ class EditorWindow(tk.Toplevel):
 
     def _on_mousewheel(self, event):
         if self._active_tool == "pan":
-            # Zoom centered on cursor
-            factor = 1.1 if event.delta > 0 else (1 / 1.1)
+            # Natural zoom centered on cursor
+            factor = 1.08 if event.delta > 0 else (1 / 1.08)
             new_zoom = max(0.25, min(4.0, self._zoom_level * factor))
             if abs(new_zoom - self._zoom_level) < 0.001:
                 return
             scale_factor = new_zoom / self._zoom_level
             cx = self._canvas.canvasx(event.x)
             cy = self._canvas.canvasy(event.y)
-            self._canvas.scale("all", cx, cy, scale_factor, scale_factor)
+            self._apply_zoom(scale_factor, cx, cy)
             self._zoom_level = new_zoom
-            sr = self._canvas.cget("scrollregion")
-            if sr:
-                parts = sr.split()
-                if len(parts) == 4:
-                    x1, y1, x2, y2 = [float(v) for v in parts]
-                    self._canvas.configure(scrollregion=(
-                        x1 * scale_factor, y1 * scale_factor,
-                        x2 * scale_factor, y2 * scale_factor))
             # Sync toolbar slider
-            if self._pen_toolbar and hasattr(self._pen_toolbar, '_zoom_var'):
-                self._pen_toolbar._zoom_var.set(int(new_zoom * 100))
-                self._pen_toolbar._zoom_label.configure(
-                    text=f"{int(new_zoom * 100)}%")
+            self._sync_zoom_slider()
             self._update_status()
         else:
             self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _sync_zoom_slider(self):
+        """Keep toolbar zoom slider in sync with current zoom level."""
+        if self._pen_toolbar and hasattr(self._pen_toolbar, '_zoom_var'):
+            z = int(self._zoom_level * 100)
+            self._pen_toolbar._zoom_var.set(z)
+            self._pen_toolbar._zoom_label.configure(text=f"{z}%")
 
     def _on_escape(self, event):
         if self._fullscreen:
@@ -564,28 +560,16 @@ class EditorWindow(tk.Toplevel):
         self._fullscreen = not self._fullscreen
         self.attributes('-fullscreen', self._fullscreen)
         if self._fullscreen:
-            # Hide chrome
             self._status.pack_forget()
             self.config(menu="")
-            self._vscroll.pack_forget()
-            self._hscroll.pack_forget()
-            # Hide plus buttons
             for bid in self._plus_buttons:
                 self._canvas.itemconfigure(bid, state="hidden")
-            # Fit active page to screen
             self._fit_page_to_screen()
         else:
-            # Restore chrome
             self.config(menu=self._menubar)
-            self._canvas.pack_forget()
-            self._vscroll.pack(side="right", fill="y")
-            self._hscroll.pack(side="bottom", fill="x")
-            self._canvas.pack(fill="both", expand=True)
             self._status.pack(fill="x", side="bottom")
-            # Show plus buttons
             for bid in self._plus_buttons:
                 self._canvas.itemconfigure(bid, state="normal")
-            # Restore scroll region
             self._relayout_pages()
             self._update_scroll()
 

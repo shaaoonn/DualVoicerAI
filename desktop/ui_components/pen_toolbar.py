@@ -146,13 +146,16 @@ class PenToolbar(tk.Toplevel):
         )
         self._btn_text.pack(side="left", padx=1)
 
-        self._btn_hand = tk.Button(
-            tools_frame, text=self.ICON_HAND, bg=self.BG, fg="#CCC",
-            font=("Segoe UI Emoji", 11), relief="flat", bd=0,
-            activebackground=self.BG_HOVER,
-            command=lambda: self._toggle_tool("pan")
-        )
-        self._btn_hand.pack(side="left", padx=1)
+        # ── Hand + Zoom (editor mode only) ──
+        self._btn_hand = None
+        if not getattr(self._overlay, '_supports_view_mode', True):
+            self._btn_hand = tk.Button(
+                tools_frame, text=self.ICON_HAND, bg=self.BG, fg="#CCC",
+                font=("Segoe UI Emoji", 11), relief="flat", bd=0,
+                activebackground=self.BG_HOVER,
+                command=lambda: self._toggle_tool("pan")
+            )
+            self._btn_hand.pack(side="left", padx=1)
 
         # ── Zoom slider (editor mode only) ──
         if not getattr(self._overlay, '_supports_view_mode', True):
@@ -287,13 +290,11 @@ class PenToolbar(tk.Toplevel):
 
     def _toggle_tool(self, tool):
         if tool == "pan":
-            if getattr(self._overlay, '_supports_view_mode', True):
-                self._enter_view_mode()
-            else:
-                self._active_tool = "pan"
-                self._overlay.set_tool("pan")
-                self._draw_mode = True
-                self._update_tool_icons()
+            # Pan is editor-only
+            self._active_tool = "pan"
+            self._overlay.set_tool("pan")
+            self._draw_mode = True
+            self._update_tool_icons()
             return
 
         if self._active_tool == tool and self._draw_mode:
@@ -344,15 +345,17 @@ class PenToolbar(tk.Toplevel):
             txt_font = ("Segoe UI Emoji", 11) if active == "text" else ("Segoe UI", 12, "bold")
             self._btn_text.configure(text=txt_icon, font=txt_font,
                 bg=self.BG_ACTIVE if active == "text" else self.BG)
-            self._btn_hand.configure(
-                bg=self.BG_ACTIVE if active == "pan" else self.BG)
+            if self._btn_hand:
+                self._btn_hand.configure(
+                    bg=self.BG_ACTIVE if active == "pan" else self.BG)
         else:
             self._btn_pen.configure(text=self.ICON_PEN, bg=self.BG)
             self._btn_highlight.configure(text=self.ICON_HIGHLIGHTER, bg=self.BG)
             self._btn_eraser.configure(text=self.ICON_ERASER, bg=self.BG)
             self._btn_text.configure(text=self.ICON_TEXT,
                 font=("Segoe UI", 12, "bold"), bg=self.BG)
-            self._btn_hand.configure(bg=self.BG)
+            if self._btn_hand:
+                self._btn_hand.configure(bg=self.BG)
 
     def sync_draw_mode(self):
         self._draw_mode = True

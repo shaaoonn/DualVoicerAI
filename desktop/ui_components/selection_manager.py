@@ -7,6 +7,7 @@ and corner-handle resize. Works with DrawingEngine Stroke objects."""
 import tkinter as tk
 from typing import List, Optional, Tuple
 
+from PIL import Image, ImageTk
 from ui_components.drawing_engine import Stroke
 
 
@@ -29,6 +30,7 @@ class SelectionManager:
         self._resize_idx: Optional[int] = None
         self._rubber_band_id: Optional[int] = None
         self._anchor = (0.0, 0.0)  # opposite corner for resize
+        self._image_refs: list = []  # prevent GC of resized images
 
     # ── Public API ───────────────────────────────────
 
@@ -266,37 +268,67 @@ class SelectionManager:
         new_w = abs(x - ax)
         new_h = abs(y - ay)
 
-        if old_w < 1 or old_h < 1:
+        if old_w < 5 or old_h < 5:
             return
 
         sx = new_w / old_w if old_w > 0 else 1.0
         sy = new_h / old_h if old_h > 0 else 1.0
-        # Clamp
-        sx = max(0.1, min(5.0, sx))
-        sy = max(0.1, min(5.0, sy))
+        # Clamp to prevent items from disappearing
+        sx = max(0.2, min(5.0, sx))
+        sy = max(0.2, min(5.0, sy))
 
         for stroke in self._selected:
-            for cid in stroke.canvas_ids:
-                self._canvas.scale(cid, ax, ay, sx, sy)
-            # Update stroke points
-            stroke.points = [
-                (ax + (px - ax) * sx, ay + (py - ay) * sy)
-                for px, py in stroke.points
-            ]
-            if stroke.smoothed_points:
-                stroke.smoothed_points = [
-                    (ax + (px - ax) * sx, ay + (py - ay) * sy)
-                    for px, py in stroke.smoothed_points
-                ]
-            # Scale width for drawing strokes
-            if not stroke.is_text and not getattr(stroke, '_is_image', False):
-                new_w_val = max(1, int(stroke.width * max(sx, sy)))
-                stroke.width = new_w_val
+            if getattr(stroke, '_is_image', False):
+                # Image stroke: recreate at new size
+                self._resize_image_stroke(stroke, ax, ay, sx, sy)
+            else:
                 for cid in stroke.canvas_ids:
-                    try:
-                        self._canvas.itemconfigure(cid, width=new_w_val)
-                    except tk.TclError:
-                        pass
+                    self._canvas.scale(cid, ax, ay, sx, sy)
+                # Update stroke points
+                stroke.points = [
+                    (ax + (px - ax) * sx, ay + (py - ay) * sy)
+                    for px, py in stroke.points
+                ]
+                if stroke.smoothed_points:
+                    stroke.smoothed_points = [
+                        (ax + (px - ax) * sx, ay + (py - ay) * sy)
+                        for px, py in stroke.smoothed_points
+                    ]
+                # Scale width for drawing strokes
+                if not stroke.is_text:
+                    new_w_val = max(1, int(stroke.width * max(sx, sy)))
+                    stroke.width = new_w_val
+                    for cid in stroke.canvas_ids:
+                        try:
+                            self._canvas.itemconfigure(cid, width=new_w_val)
+                        except tk.TclError:
+                            pass
 
         # Refresh visuals
         self._draw_selection_visuals()
+
+    def _resize_image_stroke(self, stroke: Stroke, ax, ay, sx, sy):
+        """Resize an image stroke by recreating the image at new size."""
+        pil_img = getattr(stroke, '_pil_image', None)
+        if not pil_img:
+            return
+        # Calculate new position
+        old_x, old_y = stroke.points[0]
+        new_x = ax + (old_x - ax) * sx
+        new_y = ay + (old_y - ay) * sy
+        # Calculate new image size
+        new_img_w = max(10, int(pil_img.width * sx))
+        new_img_h = max(10, int(pil_img.height * sy))
+        resized = pil_img.resize((new_img_w, new_img_h), Image.LANCZOS)
+        # Update PIL reference
+        stroke._pil_image = resized
+        stroke.points = [(new_x, new_y)]
+        # Delete old canvas item, create new
+        for cid in stroke.canvas_ids:
+            self._canvas.delete(cid)
+        tk_img = ImageTk.PhotoImage(resized)
+        self._image_refs.append(tk_img)
+        new_cid = self._canvas.create_image(
+            int(new_x), int(new_y), anchor="nw", image=tk_img, tags="stroke"
+        )
+        stroke.canvas_ids = [new_cid]
