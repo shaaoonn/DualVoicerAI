@@ -106,7 +106,7 @@ class EditorPage:
                 rel_y = int(y - self.y_offset)
                 try:
                     result.paste(pil_img, (int(x), rel_y), pil_img)
-                except:
+                except ValueError:
                     result.paste(pil_img, (int(x), rel_y))
                 draw = ImageDraw.Draw(result)
                 continue
@@ -116,10 +116,10 @@ class EditorPage:
                 try:
                     font = ImageFont.truetype(stroke.font_family + ".ttf",
                                               stroke.font_size)
-                except:
+                except OSError:
                     try:
                         font = ImageFont.truetype("arial.ttf", stroke.font_size)
-                    except:
+                    except OSError:
                         font = ImageFont.load_default()
                 draw.text((x, rel_y), stroke.text, fill=stroke.color, font=font,
                           anchor="lm")
@@ -203,7 +203,7 @@ class EditorWindow(tk.Toplevel):
         try:
             self.iconbitmap(os.path.join(os.path.dirname(os.path.dirname(__file__)),
                                         "DualVoicerLogo.ico"))
-        except:
+        except (tk.TclError, FileNotFoundError):
             pass
 
     def _open_toolbar(self):
@@ -307,7 +307,7 @@ class EditorWindow(tk.Toplevel):
         if self._pen_toolbar:
             try:
                 self._pen_toolbar.destroy()
-            except:
+            except tk.TclError:
                 pass
             self._pen_toolbar = None
 
@@ -849,7 +849,7 @@ class EditorWindow(tk.Toplevel):
                         try:
                             pasted = Image.open(path).convert("RGBA")
                             self._place_image_on_page(pasted)
-                        except:
+                        except (OSError, Exception):
                             pass
                         break
         except Exception:
@@ -1042,7 +1042,7 @@ class EditorWindow(tk.Toplevel):
         if self._pen_toolbar:
             try:
                 self._pen_toolbar.destroy()
-            except:
+            except tk.TclError:
                 pass
             self._pen_toolbar = None
         for page in self._pages:

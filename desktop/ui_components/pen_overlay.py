@@ -149,11 +149,11 @@ class PenOverlay:
             vh = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
             if vw > 0 and vh > 0:
                 return vx, vy, vw, vh
-        except:
+        except (OSError, ctypes.ArgumentError):
             pass
         try:
             return 0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
-        except:
+        except (OSError, ctypes.ArgumentError):
             return 0, 0, 1920, 1080
 
     def _setup_render_window(self):
@@ -323,14 +323,14 @@ class PenOverlay:
         """Lift only the input window (goes BELOW main widget)."""
         try:
             self._input_win.lift()
-        except:
+        except tk.TclError:
             pass
 
     def lift_render(self):
         """Lift only the render window (goes ABOVE main widget)."""
         try:
             self._render_win.lift()
-        except:
+        except tk.TclError:
             pass
 
     # ── Tkinter-Compatible API ────────────────────────
@@ -338,35 +338,35 @@ class PenOverlay:
     def winfo_exists(self):
         try:
             return self._render_win.winfo_exists() and self._input_win.winfo_exists()
-        except:
+        except tk.TclError:
             return False
 
     def attributes(self, *args, **kwargs):
         try:
             self._render_win.attributes(*args, **kwargs)
             self._input_win.attributes(*args, **kwargs)
-        except:
+        except tk.TclError:
             pass
 
     def lift(self):
         try:
             self._input_win.lift()
             self._render_win.lift()
-        except:
+        except tk.TclError:
             pass
 
     def withdraw(self):
         try:
             self._render_win.withdraw()
             self._input_win.withdraw()
-        except:
+        except tk.TclError:
             pass
 
     def deiconify(self):
         try:
             self._input_win.deiconify()
             self._render_win.deiconify()
-        except:
+        except tk.TclError:
             pass
 
     def destroy(self):
@@ -375,11 +375,11 @@ class PenOverlay:
             self._engine.cleanup()
         try:
             self._input_win.destroy()
-        except:
+        except tk.TclError:
             pass
         try:
             self._render_win.destroy()
-        except:
+        except tk.TclError:
             pass
 
     def get_hwnd(self):

@@ -389,7 +389,7 @@ class DrawingEngine:
             try:
                 state = "normal" if self._text_cursor_visible else "hidden"
                 self._canvas.itemconfigure(self._text_cursor_id, state=state)
-            except:
+            except tk.TclError:
                 pass
         self._text_cursor_job = self._parent.after(500, self._blink_cursor)
 
@@ -444,7 +444,7 @@ class DrawingEngine:
         if self._text_cursor_id:
             try:
                 self._canvas.delete(self._text_cursor_id)
-            except:
+            except tk.TclError:
                 pass
             self._text_cursor_id = None
 

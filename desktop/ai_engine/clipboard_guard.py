@@ -6,7 +6,7 @@ class ClipboardGuard:
 
     def get_selected_text(self) -> str:
         try:    self._saved = pyperclip.paste()
-        except: self._saved = ""
+        except Exception: self._saved = ""
         pyautogui.hotkey("ctrl", "c")
         time.sleep(0.18)
         return pyperclip.paste()
@@ -21,7 +21,7 @@ class ClipboardGuard:
                 pyautogui.hotkey("ctrl", "v")
                 time.sleep(0.12)
                 try: pyperclip.copy(self._saved)
-                except: pass
+                except Exception: pass
                 return
 
         # Plain text fallback
@@ -30,4 +30,4 @@ class ClipboardGuard:
         pyautogui.hotkey("ctrl", "v")
         time.sleep(0.12)
         try: pyperclip.copy(self._saved)
-        except: pass
+        except Exception: pass

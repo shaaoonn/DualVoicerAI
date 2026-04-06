@@ -13,7 +13,7 @@ class FreemiumGate:
         if os.path.exists(self._file):
             try:
                 with open(self._file) as f: return json.load(f)
-            except: pass
+            except (json.JSONDecodeError, OSError): pass
         data = {"first_install": datetime.datetime.now().isoformat()}
         self._save(data)
         return data
@@ -22,13 +22,13 @@ class FreemiumGate:
         try:
             os.makedirs(os.path.dirname(self._file), exist_ok=True)
             with open(self._file, "w") as f: json.dump(data, f)
-        except: pass
+        except (json.JSONDecodeError, OSError): pass
 
     def is_trial_active(self) -> bool:
         try:
             installed = datetime.datetime.fromisoformat(self._data["first_install"])
             return (datetime.datetime.now()-installed).total_seconds() < self.TRIAL_HOURS*3600
-        except: return False
+        except (KeyError, ValueError): return False
 
     def is_subscribed(self, app) -> bool:
         return getattr(app, "is_authenticated", False)
@@ -47,7 +47,7 @@ class FreemiumGate:
             installed = datetime.datetime.fromisoformat(self._data["first_install"])
             remaining = self.TRIAL_HOURS*3600 - (datetime.datetime.now()-installed).total_seconds()
             return max(0.0, remaining/3600)
-        except: return 0.0
+        except (KeyError, ValueError): return 0.0
 
     def get_lock_message(self, feature: str) -> str:
         msgs = {

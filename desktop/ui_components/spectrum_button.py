@@ -93,7 +93,7 @@ class SpectrumButton(tk.Canvas):
         try:
             c = self._toolbar_bg.lstrip("#")
             bg_rgba = (int(c[0:2],16), int(c[2:4],16), int(c[4:6],16), 255)
-        except:
+        except (ValueError, IndexError):
             bg_rgba = (46, 48, 94, 255)
         img = Image.new("RGBA", (big, big), bg_rgba)
         d = ImageDraw.Draw(img, "RGBA")
@@ -136,9 +136,9 @@ class SpectrumButton(tk.Canvas):
         emoji_sz = int(sz * 0.52)  # ~52% of button size — bigger, clearer
         try:
             efont = ImageFont.truetype("seguiemj.ttf", emoji_sz)
-        except:
+        except OSError:
             try: efont = ImageFont.truetype("segoeui.ttf", emoji_sz)
-            except: efont = ImageFont.load_default()
+            except OSError: efont = ImageFont.load_default()
 
         bb = d.textbbox((0, 0), emoji, font=efont)
         ew, eh = bb[2]-bb[0], bb[3]-bb[1]
@@ -150,9 +150,9 @@ class SpectrumButton(tk.Canvas):
         if self._show_label:
             lbl_sz = max(10, int(sz * 0.36))
             try: lfont = ImageFont.truetype("segoeuib.ttf", lbl_sz)
-            except:
+            except OSError:
                 try: lfont = ImageFont.truetype("segoeui.ttf", lbl_sz)
-                except: lfont = ImageFont.load_default()
+                except OSError: lfont = ImageFont.load_default()
             lbb = d.textbbox((0, 0), self._display_label, font=lfont)
             lw = lbb[2] - lbb[0]
             lh = lbb[3] - lbb[1]
@@ -203,7 +203,7 @@ class SpectrumButton(tk.Canvas):
         try:
             c = self._toolbar_bg.lstrip("#")
             bg_rgba = (int(c[0:2],16), int(c[2:4],16), int(c[4:6],16), 255)
-        except:
+        except (ValueError, IndexError):
             bg_rgba = (48, 45, 94, 255)
 
         img = Image.new("RGBA", (big, big), bg_rgba)
@@ -248,9 +248,9 @@ class SpectrumButton(tk.Canvas):
         if self._show_label:
             lbl_sz = max(10, int(sz * 0.36))
             try: lfont = ImageFont.truetype("segoeuib.ttf", lbl_sz)
-            except:
+            except OSError:
                 try: lfont = ImageFont.truetype("segoeui.ttf", lbl_sz)
-                except: lfont = ImageFont.load_default()
+                except OSError: lfont = ImageFont.load_default()
             lbb = d.textbbox((0, 0), self._display_label, font=lfont)
             lw = lbb[2] - lbb[0]
             ly = big - (lbb[3] - lbb[1]) - pad - 2

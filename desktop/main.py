@@ -11,10 +11,10 @@ if sys.platform == 'win32':
     os.environ.setdefault('PYTHONUTF8', '1')
     if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
         try: sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-        except: pass
+        except Exception: pass
     if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
         try: sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-        except: pass
+        except Exception: pass
 
 # 1. ডামি ক্লাস যা সব আউটপুট 'গিলে' ফেলবে
 class NullWriter:
@@ -147,9 +147,9 @@ def silent_restart(app_instance=None):
         try:
             if os.path.exists(lock_file):
                 os.remove(lock_file)
-        except:
+        except OSError:
             pass
-        
+
         if getattr(sys, 'frozen', False):
             # FROZEN (PyInstaller EXE)
             executable = sys.executable
@@ -167,7 +167,7 @@ def silent_restart(app_instance=None):
         if app_instance:
             try:
                 app_instance.quit()
-            except:
+            except Exception:
                 pass
         
         # Force kill current process
@@ -260,7 +260,7 @@ class VoiceTypingApp(ctk.CTk):
                     return True
                 except OSError:
                     return False
-            except: return False
+            except (ValueError, OSError): return False
 
         # Cleanup stale lock file if process is dead
         if os.path.exists(self.lock_file):
@@ -271,19 +271,19 @@ class VoiceTypingApp(ctk.CTk):
                 if not is_process_running(old_pid):
                     print(f"[INFO] Removing stale lock file (PID {old_pid} not running)")
                     try: os.remove(self.lock_file)
-                    except: pass
+                    except OSError: pass
                 else:
                     # App is running, bring to front instead of launching new
                     print(f"[INFO] App already running (PID {old_pid})")
                     try:
                         messagebox.showinfo("Dual Voicer", "App is already running! Check the tray icon or press Alt+Z.")
-                    except: pass
+                    except tk.TclError: pass
                     sys.exit(0)
             except Exception as e:
                 print(f"[WARNING] Lock file check failed: {e}")
                 # Try to remove if corrupted
                 try: os.remove(self.lock_file)
-                except: pass
+                except OSError: pass
 
         # Create new lock file
         try:
@@ -321,7 +321,7 @@ class VoiceTypingApp(ctk.CTk):
             try:
                 self._sfx_start = pygame.mixer.Sound(resource_path("start-sound.wav"))
                 self._sfx_end = pygame.mixer.Sound(resource_path("end-sound.wav"))
-            except:
+            except (pygame.error, FileNotFoundError):
                 self._sfx_start = None
                 self._sfx_end = None
         except Exception as e:
@@ -346,11 +346,11 @@ class VoiceTypingApp(ctk.CTk):
             self.config_file = os.path.join(self.app_data_dir, ".dual_voicer_config.json")
             
             if os.path.exists(self.settings_file):
-                with open(self.settings_file, "r") as f:
+                with open(self.settings_file, "r", encoding="utf-8") as f:
                     self.settings = json.load(f)
             else:
                 self.settings = DEFAULT_SETTINGS.copy()
-        except:
+        except (OSError, json.JSONDecodeError, KeyError):
             # Fallback to defaults if AppData fails
             self.settings = DEFAULT_SETTINGS.copy()
             self.config_file = os.path.join(os.path.expanduser("~"), ".dual_voicer_config.json")
@@ -520,7 +520,7 @@ class VoiceTypingApp(ctk.CTk):
             try:
                 # Play notification sound if possible
                 try: winsound.MessageBeep(winsound.MB_ICONASTERISK)
-                except: pass
+                except Exception: pass
                 
                 msg = f"🎉 New Update Ready! (v{version})\n\nIt has been downloaded in the background.\nWould you like to install it now?"
                 if messagebox.askyesno("Update Ready", msg):
@@ -582,32 +582,32 @@ class VoiceTypingApp(ctk.CTk):
             output = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=5).decode().strip()
             if output and output.lower() not in ["", "none", "to be filled by o.e.m."]:
                 hwid_parts.append(f"MB:{output}")
-        except:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
             pass
-        
+
         # Component 2: CPU ID
         try:
             cmd = 'powershell -Command "(Get-CimInstance -ClassName Win32_Processor).ProcessorId"'
             output = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=5).decode().strip()
             if output and output != "":
                 hwid_parts.append(f"CPU:{output}")
-        except:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
             pass
-        
+
         # Component 3: Disk Serial
         try:
             cmd = 'powershell -Command "(Get-CimInstance -ClassName Win32_DiskDrive | Select-Object -First 1).SerialNumber"'
             output = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=5).decode().strip()
             if output and output != "":
                 hwid_parts.append(f"DISK:{output}")
-        except:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
             pass
-        
+
         # Component 4: MAC Address
         try:
             mac = format(uuid.getnode(), '012x')
             hwid_parts.append(f"MAC:{mac}")
-        except:
+        except Exception:
             pass
         
         # Create HWID from components or generate random
@@ -690,11 +690,11 @@ class VoiceTypingApp(ctk.CTk):
                 key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_ALL_ACCESS)
                 try:
                     winreg.SetValueEx(key, "DualVoicer", 0, winreg.REG_SZ, exe_path)
-                except:
+                except OSError:
                     pass
                 finally:
                     winreg.CloseKey(key)
-        except: pass
+        except OSError: pass
 
     def _cache_microphones(self):
         """Cache microphone list in background for fast settings panel loading"""
@@ -712,7 +712,7 @@ class VoiceTypingApp(ctk.CTk):
                 name = dev.get('name')
                 try:
                     if isinstance(name, bytes): name = name.decode('utf-8', 'ignore')
-                except: pass
+                except UnicodeDecodeError: pass
                 
                 lower_name = name.lower()
                 if any(x in lower_name for x in ["mapper", "primary sound", "stereo mix", "speaker", "output", "hands-free"]):
@@ -736,7 +736,7 @@ class VoiceTypingApp(ctk.CTk):
         try:
             # Clean slate - remove ALL previous hooks
             try: keyboard.unhook_all()
-            except: pass
+            except Exception: pass
 
             # ONLY register hotkeys — no suppress, no trigger_on_release
             keyboard.add_hotkey('alt+z', lambda: self.after(0, lambda: self.switch_language('bn-BD')))
@@ -913,7 +913,7 @@ class VoiceTypingApp(ctk.CTk):
                 draw = ImageDraw.Draw(img)
                 try:
                     font = ImageFont.truetype("arial.ttf", int(height * 0.36))
-                except:
+                except OSError:
                     font = ImageFont.load_default()
                 
                 bbox = draw.textbbox((0, 0), label, font=font)
@@ -1001,7 +1001,7 @@ class VoiceTypingApp(ctk.CTk):
                 from PIL import Image
                 img = Image.open(self.icon_path)
                 self.logo_img = ctk.CTkImage(light_image=img, dark_image=img, size=(45, 45))
-            except: pass
+            except (OSError, tk.TclError): pass
 
     def apply_size_preset(self, preset=None):
         """Called from settings panel when size changes."""
@@ -1024,7 +1024,7 @@ class VoiceTypingApp(ctk.CTk):
                     if not self._editor_win._pen_toolbar:
                         self._editor_win._open_toolbar()
                     return
-            except:
+            except tk.TclError:
                 pass
 
         # Close pen overlay — its fullscreen input window blocks editor
@@ -1086,14 +1086,14 @@ class VoiceTypingApp(ctk.CTk):
             if hasattr(self, '_pen_toolbar') and self._pen_toolbar:
                 try:
                     self._pen_toolbar.destroy()
-                except:
+                except tk.TclError:
                     pass
                 self._pen_toolbar = None
 
             if hasattr(self, '_pen_overlay') and self._pen_overlay:
                 try:
                     self._pen_overlay.destroy()
-                except:
+                except tk.TclError:
                     pass
                 self._pen_overlay = None
 
@@ -1113,7 +1113,7 @@ class VoiceTypingApp(ctk.CTk):
             if hasattr(self, '_pen_toolbar') and self._pen_toolbar and self._pen_toolbar.winfo_exists():
                 self._pen_toolbar.attributes('-topmost', True)
                 self._pen_toolbar.lift()
-        except:
+        except tk.TclError:
             pass
 
     def take_screenshot(self):
@@ -1167,7 +1167,7 @@ class VoiceTypingApp(ctk.CTk):
                             img.save(path)
                             print(f"[SCREENSHOT] Saved: {path}")
                         break
-                except:
+                except (OSError, Exception):
                     pass
             if not captured:
                 print("[SCREENSHOT] No image captured after 15s")
@@ -1209,7 +1209,7 @@ class VoiceTypingApp(ctk.CTk):
         if self.is_reading and not self.is_paused:
             try:
                 pygame.mixer.music.pause()
-            except: pass
+            except pygame.error: pass
             self.is_paused = True
             self.after(0, lambda: self.btn_read.set_state("idle"))
             self.after(0, lambda: self.btn_read.set_icon_mode("pause"))
@@ -1219,7 +1219,7 @@ class VoiceTypingApp(ctk.CTk):
         if self.is_reading and self.is_paused:
             try:
                 pygame.mixer.music.unpause()
-            except: pass
+            except pygame.error: pass
             self.is_paused = False
             self.after(0, lambda: self.btn_read.set_state("listening"))
             self.after(0, lambda: self.btn_read.set_icon_mode("play"))
@@ -1253,7 +1253,7 @@ class VoiceTypingApp(ctk.CTk):
                 if hasattr(self, 'btn_settings'):
                     settings_w = int(20 * 1.05)
                     self.btn_settings.configure(width=settings_w, height=settings_w)
-        except: pass
+        except tk.TclError: pass
 
     def on_button_hover_leave(self, event, button, original_size):
         """Restore button to original size on hover leave"""
@@ -1270,7 +1270,7 @@ class VoiceTypingApp(ctk.CTk):
             if button == getattr(self, 'btn_read', None):
                 if hasattr(self, 'btn_settings'):
                     self.btn_settings.configure(width=20, height=20)
-        except: pass
+        except tk.TclError: pass
 
     def animate_button_press(self, button, original_size):
         """Quick press animation - shrink then restore"""
@@ -1282,21 +1282,21 @@ class VoiceTypingApp(ctk.CTk):
             
             # Restore after 100ms
             self.after(100, lambda: button.configure(width=original_size[0], height=original_size[1]))
-        except: pass
+        except tk.TclError: pass
 
     def on_settings_hover_enter(self, event):
         """Settings icon gets extra big when hovered (on top of sound hover effect)"""
         try:
             # Settings goes to 110% (extra 5% on top of sound's 5%)
             self.btn_settings.configure(width=24, height=24)
-        except: pass
+        except tk.TclError: pass
 
     def on_settings_hover_leave(self, event):
         """Restore settings to sound hover size (not original - sound might still be hovered)"""
         try:
             # Back to 105% (sound hover size)
             self.btn_settings.configure(width=21, height=21)
-        except: pass
+        except tk.TclError: pass
 
 
     # ── AI Trigger Flow (Ctrl+Shift+A) ────────────────────────
@@ -1437,7 +1437,7 @@ class VoiceTypingApp(ctk.CTk):
             return
 
         try:    clipboard_text = pyperclip.paste()
-        except: clipboard_text = ""
+        except Exception: clipboard_text = ""
 
         if not clipboard_text or not clipboard_text.strip():
             self._show_ai_error("\U0001f4cb \u0995\u09cd\u09b2\u09bf\u09aa\u09ac\u09cb\u09b0\u09cd\u09a1 \u0996\u09be\u09b2\u09bf\u0964 \u0986\u0997\u09c7 \u0995\u09bf\u099b\u09c1 \u0995\u09aa\u09bf \u0995\u09b0\u09c1\u09a8\u0964")
@@ -1476,7 +1476,7 @@ class VoiceTypingApp(ctk.CTk):
                         pyautogui.hotkey("ctrl", "v")
                         time.sleep(0.12)
                         try: pyperclip.copy(saved)
-                        except: pass
+                        except Exception: pass
                     else:
                         # fallback plain
                         pyperclip.copy(final)
@@ -1484,14 +1484,14 @@ class VoiceTypingApp(ctk.CTk):
                         pyautogui.hotkey("ctrl", "v")
                         time.sleep(0.12)
                         try: pyperclip.copy(saved)
-                        except: pass
+                        except Exception: pass
                 else:
                     pyperclip.copy(final)
                     import time; time.sleep(0.05)
                     pyautogui.hotkey("ctrl", "v")
                     time.sleep(0.12)
                     try: pyperclip.copy(saved)
-                    except: pass
+                    except Exception: pass
             except Exception as e:
                 self.after(0, lambda: self._show_ai_error(f"Smart Paste \u09b8\u09ae\u09b8\u09cd\u09af\u09be: {e}"))
             finally:
@@ -1650,7 +1650,7 @@ class VoiceTypingApp(ctk.CTk):
                 x = self.settings_window.winfo_x() + self.settings_window.winfo_width() + 10
                 y = self.settings_window.winfo_y()
                 info_win.geometry(f"500x750+{x}+{y}")
-            except:
+            except tk.TclError:
                 info_win.geometry("500x750")
         else:
             info_win.geometry("500x750")
@@ -1663,7 +1663,7 @@ class VoiceTypingApp(ctk.CTk):
         info_win.after(100, lambda: info_win.lift())
 
         try: info_win.iconbitmap(self.icon_path)
-        except: pass
+        except tk.TclError: pass
         
         # Header with Logo
         head_frame = ctk.CTkFrame(info_win, fg_color="transparent")
@@ -1675,8 +1675,8 @@ class VoiceTypingApp(ctk.CTk):
                 img = Image.open(self.icon_path)
                 logo_img = ctk.CTkImage(light_image=img, dark_image=img, size=(50, 50))
                 ctk.CTkLabel(head_frame, text="", image=logo_img).pack(side="left", padx=10)
-        except: pass
-        
+        except (OSError, tk.TclError): pass
+
         l = ctk.CTkLabel(head_frame, text="ডুয়েল ভয়েসার গাইডলাইন", font=("Segoe UI", 18, "bold"), text_color="#f39c12")
         l.pack(side="left")
         
@@ -1712,7 +1712,7 @@ class VoiceTypingApp(ctk.CTk):
                 dialog.geometry(f"450x540+{x}+{y}")
             else:
                 dialog.geometry("450x540+100+100")
-        except:
+        except tk.TclError:
             dialog.geometry("450x540+100+100")
         
         dialog.lift()  # Bring to front
@@ -1721,7 +1721,7 @@ class VoiceTypingApp(ctk.CTk):
         dialog.after(100, lambda: dialog.lift())
             
         try: dialog.after(200, lambda: dialog.iconbitmap(self.icon_path))
-        except: pass
+        except tk.TclError: pass
         
         # Logo and Title
         header_frame = ctk.CTkFrame(dialog, fg_color="transparent")
@@ -1734,7 +1734,7 @@ class VoiceTypingApp(ctk.CTk):
                 img = Image.open(self.icon_path)
                 logo_img = ctk.CTkImage(light_image=img, dark_image=img, size=(64, 64))
                 ctk.CTkLabel(header_frame, text="", image=logo_img).pack(pady=(0, 5))
-        except: pass
+        except (OSError, tk.TclError): pass
 
         ctk.CTkLabel(
             header_frame, text="Dual Voicer Premium", 
@@ -1896,7 +1896,7 @@ class VoiceTypingApp(ctk.CTk):
                 elif hasattr(self, 'phone_entry_ref'):
                     try:
                         phone_number = self.phone_entry_ref.get().strip()
-                    except: pass
+                    except (tk.TclError, AttributeError): pass
                 
                 payload = {
                     "email": email,
@@ -1942,7 +1942,7 @@ class VoiceTypingApp(ctk.CTk):
                                     try:
                                         if hasattr(self, 'config_file') and os.path.exists(self.config_file):
                                             os.remove(self.config_file)
-                                    except: pass
+                                    except OSError: pass
                                     
                                     if is_auto_login:
                                         print(f"[SECURITY] Auto-login blocked: Trial/Subscription expired")
@@ -1977,7 +1977,7 @@ class VoiceTypingApp(ctk.CTk):
                         if is_auto_login:
                              print(f"[API] Auto-login blocked: {error_msg}")
                              try: os.remove(self.config_file)
-                             except: pass
+                             except OSError: pass
                              return
                         
                         self.after(0, lambda: self.login_failed(error_msg, status_label))
@@ -2004,7 +2004,7 @@ class VoiceTypingApp(ctk.CTk):
         # Close login dialog immediately to prevent "stuck" UI
         if dialog:
             try: dialog.destroy()
-            except: pass
+            except tk.TclError: pass
             
         self.user_email = email
         self.user_phone = phone # Store phone for background verification
@@ -2090,8 +2090,8 @@ class VoiceTypingApp(ctk.CTk):
                                 print("[SECURITY] API says: Expired")
                                 self.after(0, self.force_logout_expired)
                                 return
-                        except: pass
-                     
+                        except (KeyError, ValueError, TypeError): pass
+
                      # Check if device is still in allowed list (API handles this logic too, but good to check user obj)
                      # Actually, if API returns success=True, it means device is allowed.
                      
@@ -2211,7 +2211,7 @@ class VoiceTypingApp(ctk.CTk):
                         # Parse YYYY-MM-DD
                         exp_date = datetime.datetime.strptime(expiry_str, '%Y-%m-%d')
                         days_remaining = (exp_date - datetime.datetime.now()).days
-                    except:
+                    except (ValueError, TypeError):
                         pass
 
             # Update button with plan info - SIDE BY SIDE LAYOUT using GRID
@@ -2390,7 +2390,7 @@ class VoiceTypingApp(ctk.CTk):
         if hasattr(self, '_settings_win') and self._settings_win and self._settings_win.winfo_exists():
             self._settings_win.destroy()
         try: self.on_hover_leave(None)
-        except: pass
+        except Exception: pass
 
     def update_max_opacity(self, v):
         self.settings["max_opacity"] = v
@@ -2447,7 +2447,7 @@ class VoiceTypingApp(ctk.CTk):
         # Save the currently focused window to restore focus after button click
         try:
             self._previous_foreground = ctypes.windll.user32.GetForegroundWindow()
-        except:
+        except (OSError, AttributeError):
             self._previous_foreground = None
 
     def on_drag(self, event):
@@ -2471,7 +2471,7 @@ class VoiceTypingApp(ctk.CTk):
                 self.settings["window_x"] = self.winfo_x()
                 self.settings["window_y"] = self.winfo_y()
                 self.save_settings()
-            except:
+            except Exception:
                 pass
         self.is_dragging = False
 
@@ -2517,7 +2517,7 @@ class VoiceTypingApp(ctk.CTk):
                 try:
                     if self._sfx_channel and self._sfx_end:
                         self._sfx_channel.play(self._sfx_end)
-                except: pass
+                except pygame.error: pass
             # FULL RESET: Clear all stuck states
             self.after(200, self._silent_reset)
         else:
@@ -2541,7 +2541,7 @@ class VoiceTypingApp(ctk.CTk):
                     try:
                         if self._sfx_channel and self._sfx_start:
                             self._sfx_channel.play(self._sfx_start)
-                    except: pass
+                    except pygame.error: pass
             threading.Thread(target=_play_start_sound_when_ready, daemon=True).start()
 
     def update_ui_state(self):
@@ -2585,11 +2585,11 @@ class VoiceTypingApp(ctk.CTk):
             def dismiss():
                 try:
                     toast.destroy()
-                except: pass
+                except tk.TclError: pass
                 self._network_toast_showing = False
 
             toast.after(1500, dismiss)
-        except:
+        except tk.TclError:
             self._network_toast_showing = False
 
 
@@ -2659,7 +2659,7 @@ class VoiceTypingApp(ctk.CTk):
                                 allowed = 999999  # infinite
                             else:
                                 allowed = float(timeout_val)
-                        except: allowed = 15.0
+                        except (ValueError, TypeError): allowed = 15.0
 
                         if allowed < 999999 and time.time() - self.last_speech_time > allowed:
                             print("[INFO] Auto-stop timeout reached")
@@ -2670,7 +2670,7 @@ class VoiceTypingApp(ctk.CTk):
                                 try:
                                     if self._sfx_channel and self._sfx_end:
                                         self._sfx_channel.play(self._sfx_end)
-                                except: pass
+                                except pygame.error: pass
                             # Silent reset: clear cache & refresh engine
                             self.after(200, self._silent_reset)
                             break
@@ -2852,7 +2852,7 @@ class VoiceTypingApp(ctk.CTk):
                         to_type = (" " + part_stripped) if add_space else part_stripped
                         try:
                             keyboard.write(to_type, delay=0)
-                        except:
+                        except Exception:
                             pyperclip.copy(to_type)
                             pyautogui.hotkey('ctrl', 'v')
                     if i < len(parts) - 1:  # Press shift+enter between parts
@@ -2891,13 +2891,13 @@ class VoiceTypingApp(ctk.CTk):
             try:
                 keyboard.write(to_type, delay=0)
                 return
-            except:
+            except Exception:
                 pass
 
             # Method 2: Fallback to clipboard paste
             pyperclip.copy(to_type)
             pyautogui.hotkey('ctrl', 'v')
-        except: pass
+        except Exception: pass
 
     def handle_reader_click(self):
         from config import DEV_MODE
@@ -2921,7 +2921,7 @@ class VoiceTypingApp(ctk.CTk):
         try:
             saved = ""
             try: saved = pyperclip.paste()
-            except: pass
+            except Exception: pass
             pyperclip.copy("")
             pyautogui.hotkey('ctrl', 'c')
             time.sleep(0.2)
@@ -2932,7 +2932,7 @@ class VoiceTypingApp(ctk.CTk):
                 new_text = pyperclip.paste().strip()
             if not new_text:
                 try: pyperclip.copy(saved)
-                except: pass
+                except Exception: pass
                 return
             self.current_text = new_text
             self._run_tts_async()
@@ -2945,7 +2945,7 @@ class VoiceTypingApp(ctk.CTk):
         try:
             saved = ""
             try: saved = pyperclip.paste()
-            except: pass
+            except Exception: pass
             pyperclip.copy("")
             pyautogui.hotkey('ctrl', 'c')
             time.sleep(0.2)
@@ -2953,7 +2953,7 @@ class VoiceTypingApp(ctk.CTk):
             if not new_text:
                 # No new selection → just resume
                 try: pyperclip.copy(saved)
-                except: pass
+                except Exception: pass
                 self._resume_reader()
                 return
             if new_text != self.current_text:
@@ -3011,7 +3011,7 @@ class VoiceTypingApp(ctk.CTk):
             with open(log_path, 'a', encoding='utf-8') as f:
                 f.write(f"\n[{datetime.datetime.now()}] {message}\n")
                 f.write(traceback.format_exc())
-        except:
+        except OSError:
             pass
 
     async def stream_audio_chunks(self, session_id):
@@ -3098,7 +3098,7 @@ class VoiceTypingApp(ctk.CTk):
                     print(f"[TTS] Produced Chunk {i+1}/{len(sentences)}")
                 else:
                     try: os.remove(filename)
-                    except: pass
+                    except OSError: pass
 
             # Signal End of Stream
             if self.is_reading and self._tts_session_id == session_id:
@@ -3141,7 +3141,7 @@ class VoiceTypingApp(ctk.CTk):
                     # Cleanup after play
                     pygame.mixer.music.unload()
                     try: os.remove(current_file); current_file = None
-                    except: pass
+                    except OSError: pass
 
                     self.playback_queue.task_done()
 
@@ -3151,7 +3151,7 @@ class VoiceTypingApp(ctk.CTk):
                     print(f"[TTS] Playback error: {e}")
                     if current_file:
                         try: os.remove(current_file)
-                        except: pass
+                        except OSError: pass
 
         except Exception as e:
             self._log_tts_error(f"TTS Consumer Error: {e}")
@@ -3170,7 +3170,7 @@ class VoiceTypingApp(ctk.CTk):
         try: 
             pygame.mixer.music.stop()
             pygame.mixer.music.unload()
-        except: pass
+        except pygame.error: pass
         
         # CLEAR QUEUE (Critical for instant switching)
         if hasattr(self, 'playback_queue'):
@@ -3180,14 +3180,14 @@ class VoiceTypingApp(ctk.CTk):
                         f = self.playback_queue.get_nowait()
                         if f and os.path.exists(f): os.remove(f)
                         self.playback_queue.task_done()
-                    except: pass
-            except: pass
+                    except (OSError, Exception): pass
+            except Exception: pass
 
         # Restore sound button to idle + play icon
         try:
             self.after(0, lambda: self.btn_read.set_state("idle"))
             self.after(0, lambda: self.btn_read.set_icon_mode("play"))
-        except: pass
+        except tk.TclError: pass
 
     def init_tray_icon(self):
         try:
@@ -3195,7 +3195,7 @@ class VoiceTypingApp(ctk.CTk):
             menu = (item('Show', self.show_from_tray), item('Exit', self.quit_app_tray))
             self.tray_icon = pystray.Icon("DV", image, "Dual Voicer", menu)
             self.tray_icon.run()
-        except: pass
+        except Exception: pass
 
     def withdraw_to_tray(self): 
         self.withdraw()
@@ -3236,7 +3236,7 @@ class VoiceTypingApp(ctk.CTk):
                     tb_hwnd = self._pen_toolbar.get_hwnd()
                     if tb_hwnd and foreground_hwnd == tb_hwnd:
                         return False
-            except: pass
+            except (tk.TclError, OSError): pass
             
             # Get window class name - exclude desktop/shell
             class_name = ctypes.create_unicode_buffer(256)
@@ -3303,7 +3303,7 @@ class VoiceTypingApp(ctk.CTk):
             try:
                 is_fs = self.is_fullscreen_app_running()
                 self._handle_fullscreen_result(is_fs)
-            except:
+            except Exception:
                 pass
 
             # RE-ENFORCE topmost: prevent widget from going behind other windows
@@ -3323,17 +3323,17 @@ class VoiceTypingApp(ctk.CTk):
                                 and self._pen_toolbar.winfo_exists()):
                             self._pen_toolbar.attributes('-topmost', True)
                             self._pen_toolbar.lift()          # Toolbar on top
-                    except:
+                    except tk.TclError:
                         pass
                 else:
                     self.attributes('-topmost', True)
                     self.lift()
 
             self.after(1500, self.monitor_topmost)
-        except:
+        except Exception:
             try:
                 self.after(1500, self.monitor_topmost)
-            except:
+            except tk.TclError:
                 pass
     
     def _handle_fullscreen_result(self, is_fullscreen):
@@ -3355,7 +3355,7 @@ class VoiceTypingApp(ctk.CTk):
                     self.attributes('-topmost', True)
                     self.lift()
                     print("[FULLSCREEN] Widget shown")
-        except:
+        except tk.TclError:
             pass
 
     def processing_loop(self):
@@ -3459,7 +3459,7 @@ class VoiceTypingApp(ctk.CTk):
                                 pyperclip.copy(content)
                                 time.sleep(0.01) 
                                 pyautogui.hotkey('ctrl', 'v')
-                            except: pass
+                            except Exception: pass
                         else:
                             # Normal Typing
                             processed_txt, punc_found = self.process_punctuation(txt, lang)

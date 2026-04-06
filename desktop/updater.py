@@ -91,7 +91,7 @@ class UpdateChecker:
             current_parts = tuple(map(int, current.split('.')))
             
             return latest_parts > current_parts
-        except:
+        except (ValueError, AttributeError):
             # Fallback to string comparison
             return latest > current
 

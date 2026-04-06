@@ -85,7 +85,7 @@ class PenToolbar(tk.Toplevel):
         try:
             wx = self._app.winfo_x()
             wy = self._app.winfo_y() + self._app.winfo_height() + 5
-        except:
+        except tk.TclError:
             wx, wy = 100, 100
         self.geometry(f"+{wx}+{wy}")
         self._drag_data = {"x": 0, "y": 0}
@@ -98,7 +98,7 @@ class PenToolbar(tk.Toplevel):
             style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
             style |= WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
             user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
-        except:
+        except (OSError, ctypes.ArgumentError):
             pass
 
     def _build_ui(self):
