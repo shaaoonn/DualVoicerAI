@@ -34,6 +34,7 @@ class PenToolbar(tk.Toplevel):
     ICON_ERASER = "\U0001f9f9"
     ICON_MOUSE = "\U0001f5b1\ufe0f"
     ICON_TEXT = "T"
+    ICON_HANDWRITE = "\u270d\ufe0f"
     ICON_HAND = "\u270b"
 
     POPULAR_FONTS = [
@@ -145,6 +146,14 @@ class PenToolbar(tk.Toplevel):
             command=lambda: self._toggle_tool("text")
         )
         self._btn_text.pack(side="left", padx=1)
+
+        self._btn_handwrite = tk.Button(
+            tools_frame, text=self.ICON_HANDWRITE, bg=self.BG, fg="#CCC",
+            font=("Segoe UI Emoji", 11), relief="flat", bd=0,
+            activebackground=self.BG_HOVER,
+            command=lambda: self._toggle_tool("handwrite")
+        )
+        self._btn_handwrite.pack(side="left", padx=1)
 
         # ── Hand + Zoom (editor mode only) ──
         self._btn_hand = None
@@ -297,6 +306,8 @@ class PenToolbar(tk.Toplevel):
             self._update_tool_icons()
             return
 
+        prev_tool = self._active_tool
+
         if self._active_tool == tool and self._draw_mode:
             if getattr(self._overlay, '_supports_view_mode', True):
                 self._enter_view_mode()
@@ -312,6 +323,19 @@ class PenToolbar(tk.Toplevel):
             self._enter_draw_mode()
             if tool == "text":
                 self._overlay.auto_place_text()
+
+        # Swap slider between pen thickness ↔ font size
+        if prev_tool != "handwrite" and tool == "handwrite":
+            # Entering handwrite: save pen thickness, show font size
+            self._saved_pen_thickness = self._thickness_var.get()
+            engine = getattr(self._overlay, '_engine', None)
+            hw_size = getattr(engine, '_hw_font_size', 24) if engine else 24
+            self._thickness_var.set(hw_size)
+        elif prev_tool == "handwrite" and tool != "handwrite":
+            # Leaving handwrite: restore pen thickness
+            saved = getattr(self, '_saved_pen_thickness', 4)
+            self._thickness_var.set(saved)
+            self._overlay.set_width(saved)
 
     def _activate_eraser(self):
         self._active_tool = "eraser"
@@ -345,6 +369,10 @@ class PenToolbar(tk.Toplevel):
             txt_font = ("Segoe UI Emoji", 11) if active == "text" else ("Segoe UI", 12, "bold")
             self._btn_text.configure(text=txt_icon, font=txt_font,
                 bg=self.BG_ACTIVE if active == "text" else self.BG)
+            hw_icon = self.ICON_MOUSE if active == "handwrite" else self.ICON_HANDWRITE
+            hw_font = ("Segoe UI Emoji", 11)
+            self._btn_handwrite.configure(text=hw_icon, font=hw_font,
+                bg=self.BG_ACTIVE if active == "handwrite" else self.BG)
             if self._btn_hand:
                 self._btn_hand.configure(
                     bg=self.BG_ACTIVE if active == "pan" else self.BG)
@@ -354,12 +382,13 @@ class PenToolbar(tk.Toplevel):
             self._btn_eraser.configure(text=self.ICON_ERASER, bg=self.BG)
             self._btn_text.configure(text=self.ICON_TEXT,
                 font=("Segoe UI", 12, "bold"), bg=self.BG)
+            self._btn_handwrite.configure(text=self.ICON_HANDWRITE, bg=self.BG)
             if self._btn_hand:
                 self._btn_hand.configure(bg=self.BG)
 
     def sync_draw_mode(self):
         self._draw_mode = True
-        if self._active_tool not in ("pen", "highlighter", "eraser", "text"):
+        if self._active_tool not in ("pen", "highlighter", "eraser", "text", "handwrite"):
             self._active_tool = "pen"
         self._overlay.set_tool(self._active_tool)
         self._overlay.set_click_through(False)
@@ -395,7 +424,14 @@ class PenToolbar(tk.Toplevel):
         self._enter_draw_mode()
 
     def _on_thickness_change(self, value):
-        self._overlay.set_width(int(value))
+        val = int(value)
+        if self._active_tool == "handwrite":
+            # Slider controls font size in handwrite mode
+            self._overlay._engine.set_hw_font(
+                self._overlay._engine._hw_font, val
+            )
+        else:
+            self._overlay.set_width(val)
 
     def _undo(self):
         self._overlay.undo()

@@ -294,7 +294,14 @@ class VoiceTypingApp(ctk.CTk):
             print(f"[ERROR] Could not create lock file: {e}")
 
         super().__init__()
-        
+
+        # Register bundled fonts (handwriting fonts for 20+ languages)
+        try:
+            from font_manager import register_all_fonts
+            register_all_fonts()
+        except Exception as e:
+            print(f"[FONTS] Registration failed: {e}")
+
         # Hide window initially to prevent black square artifact
         self.withdraw()
 
@@ -2532,6 +2539,17 @@ class VoiceTypingApp(ctk.CTk):
             self.mic_ready_event.clear()
             self.active_lang = lang; self.is_listening = True
             self.mic_start_event.set()  # Instant wakeup for mic thread
+            # Propagate language to handwriting recognizer
+            if hasattr(self, '_pen_overlay') and self._pen_overlay:
+                hw_lang = "bn" if lang == "bn-BD" else "en"
+                self._pen_overlay._engine.set_hw_language(hw_lang)
+                # Auto-set font for language
+                try:
+                    from font_manager import get_font_for_language
+                    hw_font = get_font_for_language(hw_lang)
+                    self._pen_overlay._engine.set_hw_font(hw_font)
+                except Exception:
+                    pass
             self.update_ui_state(); self.last_speech_time = time.time()
 
             # Wait for mic to be ready (max 800ms), THEN play start sound via SFX channel
@@ -3679,7 +3697,7 @@ class VoiceTypingApp(ctk.CTk):
 if __name__ == "__main__":
     app = VoiceTypingApp()
     
-    # Cleanup handler - Remove lock file on exit
+    # Cleanup handler - Remove lock file + unregister fonts on exit
     def cleanup():
         try:
             if hasattr(app, 'lock_file') and os.path.exists(app.lock_file):
@@ -3687,6 +3705,11 @@ if __name__ == "__main__":
                 print("[INFO] Lock file removed")
         except Exception as e:
             print(f"[WARNING] Lock file cleanup failed: {e}")
+        try:
+            from font_manager import unregister_all_fonts
+            unregister_all_fonts()
+        except Exception:
+            pass
     
     import atexit
     atexit.register(cleanup)

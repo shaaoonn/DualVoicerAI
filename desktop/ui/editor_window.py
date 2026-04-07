@@ -90,44 +90,92 @@ class EditorPage:
     def cleanup(self):
         self.engine.cleanup()
 
-    def composite(self) -> Image.Image:
-        """Render page to PIL Image (bg + strokes)."""
+    def composite(self, skip_text=False) -> Image.Image:
+        """Render page to PIL Image (bg + strokes).
+        Reads actual canvas item coordinates to handle zoom correctly."""
         result = Image.new("RGBA", (self.width, self.height), (255, 255, 255, 255))
 
         if self.bg_image:
             bg = self.bg_image.convert("RGBA")
             result.paste(bg, (0, 0))
 
+        # Get page rect in current (possibly zoomed) canvas coords
+        page_coords = self._canvas.coords(self._rect_id)
+        if len(page_coords) >= 4:
+            px1, py1, px2, py2 = page_coords
+            zw = px2 - px1
+            zh = py2 - py1
+        else:
+            px1, py1 = 0.0, float(self.y_offset)
+            zw, zh = float(self.width), float(self.height)
+
+        sx = self.width / zw if zw > 0 else 1.0
+        sy = self.height / zh if zh > 0 else 1.0
+
+        # DPI factor: tkinter renders fonts at screen DPI, PIL at 72
+        try:
+            dpi = self._parent.winfo_fpixels('1i')
+        except Exception:
+            dpi = 96
+        dpi_factor = dpi / 72.0
+
         draw = ImageDraw.Draw(result)
         for stroke in self.engine.get_strokes():
             if getattr(stroke, '_is_image', False):
-                pil_img = stroke._pil_image
-                x, y = stroke.points[0]
-                rel_y = int(y - self.y_offset)
                 try:
-                    result.paste(pil_img, (int(x), rel_y), pil_img)
+                    coords = self._canvas.coords(stroke.canvas_ids[0])
+                    ix = (coords[0] - px1) * sx
+                    iy = (coords[1] - py1) * sy
+                except (tk.TclError, IndexError):
+                    ix, iy = stroke.points[0][0], stroke.points[0][1] - self.y_offset
+                pil_img = stroke._pil_image
+                try:
+                    result.paste(pil_img, (int(ix), int(iy)), pil_img)
                 except ValueError:
-                    result.paste(pil_img, (int(x), rel_y))
+                    result.paste(pil_img, (int(ix), int(iy)))
                 draw = ImageDraw.Draw(result)
                 continue
+
             if stroke.is_text:
-                x, y = stroke.points[0]
-                rel_y = y - self.y_offset
+                if skip_text:
+                    continue
+                # Read actual canvas text position
                 try:
-                    font = ImageFont.truetype(stroke.font_family + ".ttf",
-                                              stroke.font_size)
-                except OSError:
-                    try:
-                        font = ImageFont.truetype("arial.ttf", stroke.font_size)
-                    except OSError:
-                        font = ImageFont.load_default()
-                draw.text((x, rel_y), stroke.text, fill=stroke.color, font=font,
-                          anchor="lm")
+                    coords = self._canvas.coords(stroke.canvas_ids[0])
+                    cx, cy = coords[0], coords[1]
+                except (tk.TclError, IndexError):
+                    cx, cy = stroke.points[0]
+                rx = (cx - px1) * sx
+                ry = (cy - py1) * sy
+                font_size = max(8, int(stroke.font_size * dpi_factor))
+                font = self._resolve_font(stroke.font_family, font_size)
+                # Map tkinter anchor to PIL anchor
+                pil_anchor = "lt" if stroke.anchor == "nw" else "lm"
+                draw.text((rx, ry), stroke.text, fill=stroke.color,
+                          font=font, anchor=pil_anchor)
             else:
-                pts = stroke.smoothed_points or stroke.points
-                adjusted = [(p[0], p[1] - self.y_offset) for p in pts]
+                # Read canvas item coords (handles zoom correctly)
+                all_points = []
+                for cid in stroke.canvas_ids:
+                    try:
+                        itype = self._canvas.type(cid)
+                        coords = self._canvas.coords(cid)
+                    except tk.TclError:
+                        continue
+                    if itype == "line" and len(coords) >= 4:
+                        for j in range(0, len(coords), 2):
+                            all_points.append((coords[j], coords[j + 1]))
+                    elif itype == "oval" and len(coords) >= 4:
+                        ocx = (coords[0] + coords[2]) / 2
+                        ocy = (coords[1] + coords[3]) / 2
+                        all_points.append((ocx, ocy))
+
+                # Convert to page-relative coordinates
+                adjusted = [((x - px1) * sx, (y - py1) * sy)
+                            for x, y in all_points]
+                w = max(1, int(stroke.width * sy))
+
                 if len(adjusted) >= 2:
-                    w = max(1, stroke.width)
                     color = stroke.color
                     if stroke.is_highlighter:
                         overlay = Image.new("RGBA", result.size, (0, 0, 0, 0))
@@ -139,16 +187,79 @@ class EditorPage:
                     else:
                         draw.line(adjusted, fill=color, width=w, joint="curve")
                 elif len(adjusted) == 1:
-                    r = max(1, stroke.width // 2)
+                    r = max(1, w // 2)
                     x, y = adjusted[0]
-                    draw.ellipse([x-r, y-r, x+r, y+r], fill=stroke.color)
+                    draw.ellipse([x - r, y - r, x + r, y + r],
+                                 fill=stroke.color)
 
         return result
+
+    @staticmethod
+    def _resolve_font(family, size):
+        """Resolve font family name to a PIL ImageFont, searching bundled fonts."""
+        import os
+        fonts_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "fonts")
+
+        # Try direct family name + .ttf
+        candidates = [
+            os.path.join(fonts_dir, family + ".ttf"),
+            os.path.join(fonts_dir, family.replace(" ", "") + "-Regular.ttf"),
+        ]
+        # Also search all files in fonts/ for a matching name
+        if os.path.isdir(fonts_dir):
+            for fname in os.listdir(fonts_dir):
+                if fname.lower().endswith(".ttf"):
+                    # Match by family name in filename (case-insensitive)
+                    if family.lower().replace(" ", "") in fname.lower().replace(" ", ""):
+                        candidates.insert(0, os.path.join(fonts_dir, fname))
+
+        for path in candidates:
+            if os.path.isfile(path):
+                try:
+                    return ImageFont.truetype(path, size)
+                except OSError:
+                    continue
+
+        # System font fallback
+        for sys_name in [family + ".ttf", family, "arial.ttf", "segoeui.ttf"]:
+            try:
+                return ImageFont.truetype(sys_name, size)
+            except OSError:
+                continue
+        return ImageFont.load_default()
 
     @staticmethod
     def _hex_to_rgb(hex_color):
         h = hex_color.lstrip("#")
         return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+    @staticmethod
+    def _resolve_font_path(family):
+        """Resolve font family name to a file path for PyMuPDF."""
+        fonts_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "fonts")
+        if os.path.isdir(fonts_dir):
+            for fname in os.listdir(fonts_dir):
+                if fname.lower().endswith(".ttf"):
+                    if family.lower().replace(" ", "") in fname.lower().replace(" ", ""):
+                        return os.path.join(fonts_dir, fname)
+        # Direct name match
+        path = os.path.join(fonts_dir, family + ".ttf")
+        if os.path.isfile(path):
+            return path
+        return None
+
+    @staticmethod
+    def _hex_to_rgb_float(hex_color):
+        """Convert hex color to (r, g, b) floats 0..1 for PyMuPDF."""
+        h = hex_color.lstrip("#")
+        try:
+            return (int(h[0:2], 16) / 255.0,
+                    int(h[2:4], 16) / 255.0,
+                    int(h[4:6], 16) / 255.0)
+        except (ValueError, IndexError):
+            return (0, 0, 0)
 
 
 class EditorWindow(tk.Toplevel):
@@ -193,6 +304,9 @@ class EditorWindow(tk.Toplevel):
         self.bind("<F11>", lambda e: self._toggle_fullscreen())
         self.bind("<Escape>", self._on_escape)
         self.bind("<Control-v>", lambda e: self._paste_from_clipboard())
+        # Ensure canvas gets focus when editor window is activated
+        self.bind("<FocusIn>", lambda e: self._canvas.focus_set()
+                  if e.widget == self else None)
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
 
     def _setup_window(self):
@@ -215,6 +329,13 @@ class EditorWindow(tk.Toplevel):
 
     # ── PenOverlay-Compatible API (used by PenToolbar) ──
 
+    @property
+    def _engine(self):
+        """Active page's DrawingEngine — used by PenToolbar."""
+        if self._pages:
+            return self._pages[self._active_page_idx].engine
+        return None
+
     def set_tool(self, tool: str):
         # Deselect when switching away from select
         if self._active_tool == "select" and tool != "select":
@@ -228,7 +349,7 @@ class EditorWindow(tk.Toplevel):
         pen_cursor = _get_pen_cursor()
         cursors = {"pen": pen_cursor, "highlighter": pen_cursor,
                    "eraser": "circle", "text": "xterm", "pan": "fleur",
-                   "select": "arrow"}
+                   "select": "arrow", "handwrite": "pencil"}
         cursor = cursors.get(tool, pen_cursor)
         try:
             self._canvas.configure(cursor=cursor)
@@ -301,6 +422,9 @@ class EditorWindow(tk.Toplevel):
         z = self._zoom_level * factor
         self._canvas.configure(scrollregion=(
             sr[0] * z, sr[1] * z, sr[2] * z, sr[3] * z))
+        # Scale text font sizes to match zoom
+        for page in self._pages:
+            page.engine.set_display_scale(z)
 
     def close(self):
         """Called by PenToolbar close button — hide toolbar only."""
@@ -367,8 +491,11 @@ class EditorWindow(tk.Toplevel):
         self._canvas.bind("<B1-Motion>", self._on_canvas_drag)
         self._canvas.bind("<ButtonRelease-1>", self._on_canvas_release)
         self.bind("<Key>", self._on_key)
+        self._canvas.bind("<Key>", self._on_key)
         self.bind("<Control-z>", lambda e: self.undo())
         self.bind("<Control-y>", lambda e: self.redo())
+        self._canvas.bind("<Control-z>", lambda e: self.undo())
+        self._canvas.bind("<Control-y>", lambda e: self.redo())
         self._canvas.bind("<MouseWheel>", self._on_mousewheel)
 
     def _build_status_bar(self):
@@ -383,7 +510,7 @@ class EditorWindow(tk.Toplevel):
     def _update_status(self):
         tool_names = {"pen": "পেন", "highlighter": "হাইলাইটার",
                       "eraser": "ইরেজার", "text": "টেক্সট", "pan": "প্যান",
-                      "select": "সিলেক্ট"}
+                      "select": "সিলেক্ট", "handwrite": "হাতে লেখা"}
         t = tool_names.get(self._active_tool, self._active_tool)
         n = len(self._pages)
         p = self._active_page_idx + 1 if self._pages else 0
@@ -451,12 +578,24 @@ class EditorWindow(tk.Toplevel):
         self._add_page(w, h, insert_at=insert_idx)
 
     def _get_page_at(self, canvas_y: float) -> Optional[int]:
-        """Find page at canvas Y — uses actual canvas coords (works after zoom)."""
+        """Find page at canvas Y — uses actual canvas coords (works after zoom).
+        Falls back to nearest page so pen tool never silently drops clicks."""
+        if not self._pages:
+            return None
+        best_idx = 0
+        best_dist = float("inf")
         for i, page in enumerate(self._pages):
             coords = self._canvas.coords(page._rect_id)
-            if len(coords) >= 4 and coords[1] <= canvas_y <= coords[3]:
-                return i
-        return None
+            if len(coords) < 4:
+                continue
+            if coords[1] <= canvas_y <= coords[3]:
+                return i  # exact hit
+            # Track nearest page
+            dist = min(abs(canvas_y - coords[1]), abs(canvas_y - coords[3]))
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = i
+        return best_idx
 
     def _update_scroll(self):
         if not self._pages:
@@ -474,21 +613,21 @@ class EditorWindow(tk.Toplevel):
         return cx, cy
 
     def _on_canvas_click(self, event):
+        self._canvas.focus_set()
+        if not self._pages:
+            return
         cx, cy = self._canvas_coords(event)
         if self._active_tool == "pan":
             self._canvas.scan_mark(event.x, event.y)
-            return
-        if self._active_tool == "select":
-            page_idx = self._get_page_at(cy)
-            if page_idx is not None:
-                self._active_page_idx = page_idx
-            strokes = self._pages[self._active_page_idx].engine.get_strokes()
-            self._selection_mgr.on_mouse_down(cx, cy, strokes)
             return
         page_idx = self._get_page_at(cy)
         if page_idx is None:
             return
         self._active_page_idx = page_idx
+        if self._active_tool == "select":
+            strokes = self._pages[page_idx].engine.get_strokes()
+            self._selection_mgr.on_mouse_down(cx, cy, strokes)
+            return
         self._update_status()
         fake = type('Event', (), {'x': cx, 'y': cy})()
         self._pages[page_idx].engine.on_mouse_down(fake)
@@ -996,13 +1135,55 @@ class EditorWindow(tk.Toplevel):
         try:
             doc = fitz.open()
             for page_obj in self._pages:
-                img = page_obj.composite().convert("RGB")
+                # Render non-text content as image
+                img = page_obj.composite(skip_text=True).convert("RGB")
                 img_bytes = io.BytesIO()
                 img.save(img_bytes, format="PNG")
                 img_bytes.seek(0)
-                pdf_page = doc.new_page(width=page_obj.width, height=page_obj.height)
+                pdf_page = doc.new_page(width=page_obj.width,
+                                        height=page_obj.height)
                 rect = fitz.Rect(0, 0, page_obj.width, page_obj.height)
                 pdf_page.insert_image(rect, stream=img_bytes.getvalue())
+
+                # Insert text via PyMuPDF (proper Bengali/Unicode shaping)
+                page_coords = page_obj._canvas.coords(page_obj._rect_id)
+                if len(page_coords) >= 4:
+                    ppx1, ppy1 = page_coords[0], page_coords[1]
+                    pzw = page_coords[2] - page_coords[0]
+                    pzh = page_coords[3] - page_coords[1]
+                else:
+                    ppx1, ppy1 = 0, float(page_obj.y_offset)
+                    pzw = float(page_obj.width)
+                    pzh = float(page_obj.height)
+                tsx = page_obj.width / pzw if pzw > 0 else 1.0
+                tsy = page_obj.height / pzh if pzh > 0 else 1.0
+
+                for stroke in page_obj.engine.get_strokes():
+                    if not stroke.is_text:
+                        continue
+                    try:
+                        coords = page_obj._canvas.coords(
+                            stroke.canvas_ids[0])
+                        tcx, tcy = coords[0], coords[1]
+                    except (tk.TclError, IndexError):
+                        tcx, tcy = stroke.points[0]
+                    tx = (tcx - ppx1) * tsx
+                    ty = (tcy - ppy1) * tsy
+                    font_path = EditorPage._resolve_font_path(
+                        stroke.font_family)
+                    fs = max(6, int(stroke.font_size * 1.33))
+                    try:
+                        pdf_page.insert_text(
+                            (tx, ty), stroke.text,
+                            fontfile=font_path, fontsize=fs,
+                            color=EditorPage._hex_to_rgb_float(stroke.color),
+                        )
+                    except Exception:
+                        pdf_page.insert_text(
+                            (tx, ty), stroke.text, fontsize=fs,
+                            color=EditorPage._hex_to_rgb_float(stroke.color),
+                        )
+
             doc.save(path)
             doc.close()
             messagebox.showinfo("সফল", f"PDF এক্সপোর্ট হয়েছে:\n{path}", parent=self)

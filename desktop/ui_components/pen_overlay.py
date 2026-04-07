@@ -314,6 +314,8 @@ class PenOverlay:
             self._input_canvas.configure(cursor="circle")
         elif tool == "text":
             self._input_canvas.configure(cursor="xterm")
+        elif tool == "handwrite":
+            self._input_canvas.configure(cursor="pencil")
         else:
             self._input_canvas.configure(cursor=self._pen_cursor)
 

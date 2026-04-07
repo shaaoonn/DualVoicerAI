@@ -28,6 +28,7 @@ class Stroke:
     text: str = ""
     font_family: str = "Segoe UI"
     font_size: int = 16
+    anchor: str = "w"  # canvas text anchor: "w" or "nw"
 
 
 class DrawingEngine:
@@ -67,9 +68,11 @@ class DrawingEngine:
         self._text_cursor_id = None
         self._text_cursor_visible = True
         self._text_cursor_job = None
+        self._text_cursor_idx = 0       # cursor position within text_buffer
         self._font_family = "Segoe UI"
         self._dragging_stroke = None
         self._drag_offset = (0, 0)
+        self._editing_stroke = None     # existing stroke being edited
 
         # Shape detection state
         self._shape_hold_job = None
@@ -80,10 +83,28 @@ class DrawingEngine:
         self._ema_y = 0.0
         self._ema_alpha = 0.35
 
+        # Display scale (zoom) — original font sizes are stored in Stroke,
+        # canvas items use font_size * _display_scale
+        self._display_scale = 1.0
+
+        # Handwriting recognition — batch-based (one recognition per batch)
+        self._hw_points = []            # current batch stroke points
+        self._hw_batch_strokes = []     # current batch Stroke objects on canvas
+        self._hw_inflight_strokes = []  # strokes sent for recognition (in-flight)
+        self._hw_debounce_job = None    # recognition timer
+        self._hw_font = "Li Alinur Nobin Unicode"  # Bengali default
+        self._hw_font_size = 24
+        self._hw_lang = "bn"
+        self._hw_recognizer = None
+        self._hw_active_text = None     # most recent recognized text Stroke (for appending)
+        self._hw_pre_context = ""       # previously recognized text for API context
+        self._hw_last_pen_width = 4     # pen thickness preserved from pen tool
+
     # ── Public API (called by toolbar) ────────────────
 
     def set_color(self, color: str):
         self._pen_color = color
+        self._hw_active_text = None  # new sentence on color change
 
     def set_width(self, width: int):
         self._pen_width = width
@@ -91,15 +112,54 @@ class DrawingEngine:
     def set_tool(self, tool: str):
         if self._text_active and tool != "text":
             self._finalize_text()
+        # Switching away from handwrite → reset state, restore pen width
+        if self._tool == "handwrite" and tool != "handwrite":
+            self._reset_hw()
+            self._pen_width = self._hw_last_pen_width
+        # Switching to handwrite → save current pen width
+        if tool == "handwrite" and self._tool != "handwrite":
+            self._hw_last_pen_width = self._pen_width
         self._tool = tool
 
     def set_font(self, font_family: str):
         self._font_family = font_family
         if self._text_active:
             self._update_text_display()
+        # Also update handwrite font
+        self._hw_font = font_family
+        self._hw_active_text = None
 
     def set_highlighter_color(self, color: str):
         self._highlighter_color = color
+
+    def set_hw_language(self, lang: str):
+        """Set handwriting recognition language ('bn' or 'en')."""
+        self._hw_lang = lang
+
+    def set_hw_font(self, font_family: str, font_size: int = None):
+        """Set font for handwriting recognition output."""
+        self._hw_font = font_family
+        if font_size is not None:
+            self._hw_font_size = font_size
+        self._hw_active_text = None  # new sentence on font/size change
+
+    def set_display_scale(self, scale: float):
+        """Set display zoom scale. Updates all text items' canvas font sizes."""
+        self._display_scale = scale
+        for stroke in self._strokes:
+            if stroke.is_text:
+                ds = max(1, int(stroke.font_size * scale))
+                for cid in stroke.canvas_ids:
+                    try:
+                        self._canvas.itemconfigure(
+                            cid, font=(stroke.font_family, ds))
+                    except tk.TclError:
+                        pass
+
+    def _display_font(self, family, size):
+        """Get display-scaled font tuple for canvas rendering."""
+        ds = max(1, int(size * self._display_scale))
+        return (family, ds)
 
     def get_strokes(self) -> List[Stroke]:
         return self._strokes
@@ -121,9 +181,7 @@ class DrawingEngine:
         if self._tool == "text":
             hit = self._find_text_at(x, y)
             if hit:
-                self._dragging_stroke = hit
-                px, py = hit.points[0]
-                self._drag_offset = (x - px, y - py)
+                self._edit_existing_text(hit, click_x=x)
                 return
             self._start_text_at(x, y)
             return
@@ -134,6 +192,11 @@ class DrawingEngine:
 
         if self._text_active:
             self._finalize_text()
+
+        # Cancel handwriting debounce — user is still drawing
+        if self._tool == "handwrite" and self._hw_debounce_job:
+            self._parent.after_cancel(self._hw_debounce_job)
+            self._hw_debounce_job = None
 
         color = self._highlighter_color if self._tool == "highlighter" else self._pen_color
         width = self._pen_width * 3 if self._tool == "highlighter" else self._pen_width
@@ -238,28 +301,86 @@ class DrawingEngine:
         self._strokes.append(stroke)
         self._undo_stack.clear()
 
+        # Handwriting recognition: accumulate strokes, recognize after pause
+        if self._tool == "handwrite" and len(stroke.points) >= 2:
+            self._hw_points.append(list(stroke.points))
+            self._hw_batch_strokes.append(stroke)
+
+            # Debounce: fires only after user truly stops drawing
+            # (cancelled in on_mouse_down when new stroke starts)
+            if self._hw_debounce_job:
+                self._parent.after_cancel(self._hw_debounce_job)
+            debounce_ms = 700 if self._hw_lang == "bn" else 500
+            self._hw_debounce_job = self._parent.after(
+                debounce_ms, self._recognize_handwriting
+            )
+
     def on_key(self, event):
         if not self._text_active:
             return
 
         if event.keysym == "Return":
-            self._finalize_text()
+            self._text_buffer = (self._text_buffer[:self._text_cursor_idx] +
+                                 "\n" +
+                                 self._text_buffer[self._text_cursor_idx:])
+            self._text_cursor_idx += 1
+            self._update_text_display()
             return
         if event.keysym == "BackSpace":
-            if self._text_buffer:
-                self._text_buffer = self._text_buffer[:-1]
+            if self._text_cursor_idx > 0:
+                self._text_buffer = (self._text_buffer[:self._text_cursor_idx - 1] +
+                                     self._text_buffer[self._text_cursor_idx:])
+                self._text_cursor_idx -= 1
                 self._update_text_display()
             return
+        if event.keysym == "Delete":
+            if self._text_cursor_idx < len(self._text_buffer):
+                self._text_buffer = (self._text_buffer[:self._text_cursor_idx] +
+                                     self._text_buffer[self._text_cursor_idx + 1:])
+                self._update_text_display()
+            return
+        if event.keysym == "Left":
+            if self._text_cursor_idx > 0:
+                self._text_cursor_idx -= 1
+                self._update_text_display()
+            return
+        if event.keysym == "Right":
+            if self._text_cursor_idx < len(self._text_buffer):
+                self._text_cursor_idx += 1
+                self._update_text_display()
+            return
+        if event.keysym == "Home":
+            self._text_cursor_idx = 0
+            self._update_text_display()
+            return
+        if event.keysym == "End":
+            self._text_cursor_idx = len(self._text_buffer)
+            self._update_text_display()
+            return
         if event.keysym == "Escape":
-            if self._text_canvas_id:
+            if self._editing_stroke:
+                # Cancel edit — restore original text
+                dfont = self._display_font(self._editing_stroke.font_family,
+                                           self._editing_stroke.font_size)
+                try:
+                    self._canvas.itemconfigure(
+                        self._text_canvas_id, text=self._editing_stroke.text,
+                        font=dfont)
+                except tk.TclError:
+                    pass
+                self._editing_stroke = None
+            elif self._text_canvas_id:
                 self._canvas.delete(self._text_canvas_id)
-                self._text_canvas_id = None
+            self._text_canvas_id = None
             self._cleanup_text_cursor()
             self._text_active = False
             return
 
         if event.char and event.char.isprintable():
-            self._text_buffer += event.char
+            self._text_buffer = (self._text_buffer[:self._text_cursor_idx] +
+                                 event.char +
+                                 self._text_buffer[self._text_cursor_idx:])
+            self._text_cursor_idx += 1
             self._update_text_display()
 
     # ── Catmull-Rom Smoothing ─────────────────────────
@@ -366,20 +487,92 @@ class DrawingEngine:
             self._finalize_text()
 
         self._text_active = True
+        self._editing_stroke = None
         self._text_buffer = ""
+        self._text_cursor_idx = 0
         self._text_pos = (x, y)
 
         font = self._get_text_font()
+        dfont = self._display_font(font[0], font[1])
+        # Auto-wrap: remaining width to canvas edge
+        wrap_w = max(200, int(self._canvas.winfo_width() - x - 20))
         self._text_canvas_id = self._canvas.create_text(
-            x, y, text="", anchor="w",
-            fill=self._pen_color, font=font, tags="stroke"
+            x, y, text="", anchor="nw",
+            fill=self._pen_color, font=dfont, tags="stroke",
+            width=wrap_w,
         )
         self._text_cursor_visible = True
         self._text_cursor_id = self._canvas.create_text(
             x, y, text="|", anchor="w",
-            fill=self._pen_color, font=font, tags="text_cursor"
+            fill=self._pen_color, font=dfont, tags="text_cursor"
         )
         self._blink_cursor()
+
+    def _edit_existing_text(self, stroke, click_x=None):
+        """Enter edit mode for an existing text stroke (OneNote-like).
+        If click_x is provided, places cursor at the clicked character position."""
+        if self._text_active:
+            self._finalize_text()
+
+        self._text_active = True
+        self._editing_stroke = stroke
+        self._text_buffer = stroke.text
+        self._text_pos = stroke.points[0]
+
+        dfont = self._display_font(stroke.font_family, stroke.font_size)
+        self._text_canvas_id = stroke.canvas_ids[0]
+
+        # Determine cursor index from click position
+        bbox = self._canvas.bbox(self._text_canvas_id)
+        if click_x is not None and bbox and stroke.text:
+            import tkinter.font as tkFont
+            try:
+                f = tkFont.Font(family=dfont[0], size=dfont[1])
+                rel_x = click_x - bbox[0]
+                best_idx = len(stroke.text)
+                for i in range(1, len(stroke.text) + 1):
+                    w = f.measure(stroke.text[:i])
+                    if w >= rel_x:
+                        w_prev = f.measure(stroke.text[:i - 1])
+                        best_idx = i - 1 if (rel_x - w_prev) < (w - rel_x) else i
+                        break
+                self._text_cursor_idx = best_idx
+            except Exception:
+                self._text_cursor_idx = len(stroke.text)
+        else:
+            self._text_cursor_idx = len(stroke.text)
+
+        # Position cursor at calculated index
+        self._text_cursor_visible = True
+        cursor_x, cursor_y = self._calc_cursor_pos(dfont)
+
+        self._text_cursor_id = self._canvas.create_text(
+            cursor_x, cursor_y, text="|", anchor="w",
+            fill=stroke.color, font=dfont, tags="text_cursor"
+        )
+        self._blink_cursor()
+
+    def _calc_cursor_pos(self, font):
+        """Calculate cursor x,y from _text_cursor_idx. Handles multiline."""
+        bbox = self._canvas.bbox(self._text_canvas_id) if self._text_canvas_id else None
+        if not bbox:
+            return self._text_pos
+
+        text_before = self._text_buffer[:self._text_cursor_idx]
+
+        try:
+            import tkinter.font as tkFont
+            f = tkFont.Font(family=font[0], size=font[1])
+            line_h = f.metrics('linespace')
+            # Handle multiline: cursor is on the last line of text_before
+            lines_before = text_before.split('\n')
+            last_line = lines_before[-1]
+            line_num = len(lines_before) - 1
+            cx = bbox[0] + f.measure(last_line)
+            cy = bbox[1] + line_h * line_num + line_h // 2
+        except Exception:
+            cx = bbox[2]
+        return cx, cy
 
     def _blink_cursor(self):
         if not self._text_active:
@@ -396,28 +589,50 @@ class DrawingEngine:
     def _update_text_display(self):
         if not self._text_canvas_id:
             return
-        font = self._get_text_font()
+        if self._editing_stroke:
+            family = self._editing_stroke.font_family
+            size = self._editing_stroke.font_size
+            color = self._editing_stroke.color
+        else:
+            font = self._get_text_font()
+            family, size = font
+            color = self._pen_color
+        dfont = self._display_font(family, size)
         self._canvas.itemconfigure(self._text_canvas_id,
-                                   text=self._text_buffer, font=font,
-                                   fill=self._pen_color)
-        bbox = self._canvas.bbox(self._text_canvas_id)
-        if bbox and self._text_cursor_id:
-            cx = bbox[2]
-            cy = self._text_pos[1]
+                                   text=self._text_buffer, font=dfont,
+                                   fill=color)
+        # Clamp cursor index
+        self._text_cursor_idx = max(0, min(self._text_cursor_idx,
+                                           len(self._text_buffer)))
+        if self._text_cursor_id:
+            cx, cy = self._calc_cursor_pos(dfont)
             self._canvas.coords(self._text_cursor_id, cx, cy)
-            self._canvas.itemconfigure(self._text_cursor_id, font=font,
-                                       fill=self._pen_color)
-        elif self._text_cursor_id:
-            self._canvas.coords(self._text_cursor_id,
-                                self._text_pos[0], self._text_pos[1])
+            self._canvas.itemconfigure(self._text_cursor_id, font=dfont,
+                                       fill=color)
 
     def _finalize_text(self):
         self._cleanup_text_cursor()
 
-        if self._text_buffer.strip() and self._text_canvas_id:
+        if self._editing_stroke:
+            # Editing existing text stroke
+            if self._text_buffer.strip():
+                self._editing_stroke.text = self._text_buffer
+                # Canvas item already updated via _update_text_display
+            else:
+                # Empty → delete the stroke
+                for cid in self._editing_stroke.canvas_ids:
+                    try:
+                        self._canvas.delete(cid)
+                    except tk.TclError:
+                        pass
+                if self._editing_stroke in self._strokes:
+                    self._strokes.remove(self._editing_stroke)
+            self._editing_stroke = None
+        elif self._text_buffer.strip() and self._text_canvas_id:
             font = self._get_text_font()
+            dfont = self._display_font(font[0], font[1])
             self._canvas.itemconfigure(self._text_canvas_id,
-                                       text=self._text_buffer, font=font)
+                                       text=self._text_buffer, font=dfont)
             stroke = Stroke(
                 points=[self._text_pos],
                 color=self._pen_color,
@@ -426,7 +641,8 @@ class DrawingEngine:
                 is_text=True,
                 text=self._text_buffer,
                 font_family=self._font_family,
-                font_size=self._pen_width * 4,
+                font_size=font[1],  # original (un-zoomed) size
+                anchor="nw",  # text tool uses nw for multiline
             )
             self._strokes.append(stroke)
             self._undo_stack.clear()
@@ -558,6 +774,8 @@ class DrawingEngine:
         for cid in stroke.canvas_ids:
             self._canvas.delete(cid)
         self._undo_stack.append(stroke)
+        if stroke is self._hw_active_text:
+            self._hw_active_text = None
 
     def redo(self):
         if not self._undo_stack:
@@ -566,11 +784,11 @@ class DrawingEngine:
 
         if stroke.is_text:
             stroke.canvas_ids.clear()
-            font = (stroke.font_family, stroke.font_size)
+            dfont = self._display_font(stroke.font_family, stroke.font_size)
             tid = self._canvas.create_text(
                 stroke.points[0][0], stroke.points[0][1],
-                text=stroke.text, anchor="w",
-                fill=stroke.color, font=font, tags="stroke"
+                text=stroke.text, anchor=stroke.anchor,
+                fill=stroke.color, font=dfont, tags="stroke"
             )
             stroke.canvas_ids = [tid]
             self._strokes.append(stroke)
@@ -600,12 +818,154 @@ class DrawingEngine:
             stroke.canvas_ids = [dot_id]
         self._strokes.append(stroke)
 
+    # ── Handwriting Recognition ─────────────────────────
+
+    def _recognize_handwriting(self):
+        """Debounced: send batch strokes to Google API."""
+        self._hw_debounce_job = None
+        if not self._hw_points:
+            return
+
+        # Move batch to inflight (isolate from new incoming strokes)
+        strokes_to_send = list(self._hw_points[:150])  # API limit ~150
+        self._hw_inflight_strokes = list(self._hw_batch_strokes)
+        self._hw_points.clear()
+        self._hw_batch_strokes.clear()
+
+        lang = self._hw_lang
+        w = self._canvas.winfo_width()
+        h = self._canvas.winfo_height()
+
+        if not self._hw_recognizer:
+            from ai_engine.handwriting import HandwritingRecognizer
+            self._hw_recognizer = HandwritingRecognizer(
+                on_result=lambda text: self._parent.after(
+                    0, self._on_hw_result, text
+                ),
+                on_error=lambda e: print(f"[HW] {e}"),
+            )
+
+        self._hw_recognizer.recognize(
+            strokes_to_send, lang, w, h,
+            pre_context=self._hw_pre_context,
+        )
+
+    def _on_hw_result(self, text):
+        """API result — delete drawn strokes, place/append text, show cursor."""
+        if not text:
+            return
+
+        inflight = self._hw_inflight_strokes
+        self._hw_inflight_strokes = []
+
+        # Delete only the inflight drawn strokes from canvas
+        all_pts = []
+        for s in inflight:
+            all_pts.extend(s.points)
+            for cid in s.canvas_ids:
+                try:
+                    self._canvas.delete(cid)
+                except tk.TclError:
+                    pass
+            if s in self._strokes:
+                self._strokes.remove(s)
+
+        if not all_pts:
+            return
+
+        hw_min_x = min(p[0] for p in all_pts)
+        hw_min_y = min(p[1] for p in all_pts)
+        hw_max_y = max(p[1] for p in all_pts)
+        hw_center_y = (hw_min_y + hw_max_y) / 2
+
+        # If currently editing the active text, update buffer directly
+        if (self._text_active and self._editing_stroke and
+                self._editing_stroke == self._hw_active_text and
+                self._hw_active_text in self._strokes):
+            try:
+                bbox = self._canvas.bbox(self._hw_active_text.canvas_ids[0])
+            except tk.TclError:
+                bbox = None
+            if bbox:
+                active_cy = (bbox[1] + bbox[3]) / 2
+                if abs(hw_center_y - active_cy) < 120:
+                    sep = "" if text.startswith(" ") else " "
+                    self._text_buffer += sep + text
+                    self._text_cursor_idx = len(self._text_buffer)
+                    self._editing_stroke.text = self._text_buffer
+                    self._update_text_display()
+                    self._hw_pre_context = self._text_buffer
+                    return
+
+        # Finalize any active text editing before creating/updating
+        if self._text_active:
+            self._finalize_text()
+
+        # Check if should append to active text (same line, nearby)
+        if self._hw_active_text and self._hw_active_text in self._strokes:
+            try:
+                bbox = self._canvas.bbox(self._hw_active_text.canvas_ids[0])
+            except tk.TclError:
+                bbox = None
+            if bbox:
+                active_cy = (bbox[1] + bbox[3]) / 2
+                if abs(hw_center_y - active_cy) < 120:
+                    sep = "" if text.startswith(" ") else " "
+                    new_text = self._hw_active_text.text + sep + text
+                    try:
+                        self._canvas.itemconfig(
+                            self._hw_active_text.canvas_ids[0], text=new_text
+                        )
+                    except tk.TclError:
+                        pass
+                    self._hw_active_text.text = new_text
+                    self._hw_pre_context = new_text
+                    # Enter edit mode with cursor at end
+                    self._edit_existing_text(self._hw_active_text)
+                    return
+
+        # New text block at the handwriting position
+        dfont = self._display_font(self._hw_font, self._hw_font_size)
+        text_id = self._canvas.create_text(
+            hw_min_x, hw_center_y, text=text, anchor="w",
+            fill=self._pen_color, font=dfont, tags="stroke",
+        )
+
+        stroke = Stroke(
+            points=[(hw_min_x, hw_center_y)],
+            color=self._pen_color,
+            width=self._hw_last_pen_width,
+            canvas_ids=[text_id],
+            is_text=True,
+            text=text,
+            font_family=self._hw_font,
+            font_size=self._hw_font_size,
+        )
+        self._strokes.append(stroke)
+        self._hw_active_text = stroke
+        self._hw_pre_context = text
+        # Enter edit mode with cursor at end
+        self._edit_existing_text(stroke)
+
+    def _reset_hw(self):
+        """Reset handwriting state. Called on tool switch, clear, cleanup."""
+        if self._hw_debounce_job:
+            self._parent.after_cancel(self._hw_debounce_job)
+            self._hw_debounce_job = None
+        self._hw_points.clear()
+        self._hw_batch_strokes.clear()
+        self._hw_inflight_strokes.clear()
+        self._hw_active_text = None
+        self._hw_pre_context = ""
+
     def clear_all(self):
         self._canvas.delete("stroke")
         self._strokes.clear()
         self._undo_stack.clear()
+        self._reset_hw()
 
     def cleanup(self):
         """Clean up scheduled jobs."""
         self._cleanup_text_cursor()
         self._cancel_shape_hold()
+        self._reset_hw()
