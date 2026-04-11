@@ -369,6 +369,16 @@ class EditorWindow(tk.Toplevel):
         for page in self._pages:
             page.engine.set_font(font_family)
 
+    def set_hw_font(self, font_family, font_size=None):
+        for page in self._pages:
+            page.engine.set_hw_font(font_family, font_size)
+
+    def set_text_font_size(self, size: int):
+        for page in self._pages:
+            page.engine._text_font_size = size
+            if page.engine._text_active:
+                page.engine._update_text_display()
+
     def set_highlighter_color(self, color: str):
         for page in self._pages:
             page.engine.set_highlighter_color(color)
@@ -417,12 +427,16 @@ class EditorWindow(tk.Toplevel):
         if cy is None:
             cy = self._canvas.canvasy(self._canvas.winfo_height() / 2)
         self._canvas.scale("all", cx, cy, factor, factor)
-        # Update scrollregion from base (no compounding)
-        sr = self._base_scrollregion
-        z = self._zoom_level * factor
-        self._canvas.configure(scrollregion=(
-            sr[0] * z, sr[1] * z, sr[2] * z, sr[3] * z))
+        # Scroll region from actual item bounds (allows scroll in all directions)
+        bbox = self._canvas.bbox("all")
+        if bbox:
+            pad_x = max(self._canvas.winfo_width(), 200)
+            pad_y = max(self._canvas.winfo_height(), 200)
+            self._canvas.configure(scrollregion=(
+                bbox[0] - pad_x, bbox[1] - pad_y,
+                bbox[2] + pad_x, bbox[3] + pad_y))
         # Scale text font sizes to match zoom
+        z = self._zoom_level * factor
         for page in self._pages:
             page.engine.set_display_scale(z)
 
@@ -468,6 +482,18 @@ class EditorWindow(tk.Toplevel):
         file_menu.add_command(label="বন্ধ", command=self._on_close_window)
 
         self._menubar.add_cascade(label="ফাইল", menu=file_menu)
+
+        # ── Page menu ──
+        page_menu = tk.Menu(self._menubar, tearoff=0, bg="#1E1E28", fg="#AAA",
+                            activebackground="#3A3A50", activeforeground="#FFF")
+        page_menu.add_command(label="নতুন পেজ যোগ", command=self._add_page_dialog)
+        page_menu.add_command(label="বর্তমান পেজ ডিলিট",
+                              command=self._delete_current_page)
+        page_menu.add_separator()
+        page_menu.add_command(label="ফিট করুন",
+                              command=self._zoom_to_fit)
+        self._menubar.add_cascade(label="পেজ", menu=page_menu)
+
         self.config(menu=self._menubar)
 
         self.bind("<Control-n>", lambda e: self._new_file_dialog())
@@ -490,13 +516,11 @@ class EditorWindow(tk.Toplevel):
         self._canvas.bind("<ButtonPress-1>", self._on_canvas_click)
         self._canvas.bind("<B1-Motion>", self._on_canvas_drag)
         self._canvas.bind("<ButtonRelease-1>", self._on_canvas_release)
-        self.bind("<Key>", self._on_key)
         self._canvas.bind("<Key>", self._on_key)
-        self.bind("<Control-z>", lambda e: self.undo())
-        self.bind("<Control-y>", lambda e: self.redo())
         self._canvas.bind("<Control-z>", lambda e: self.undo())
         self._canvas.bind("<Control-y>", lambda e: self.redo())
         self._canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self._canvas.bind("<ButtonPress-3>", self._on_canvas_right_click)
 
     def _build_status_bar(self):
         self._status = tk.Frame(self, bg="#1E1E28", height=24)
@@ -538,31 +562,38 @@ class EditorWindow(tk.Toplevel):
             self._canvas.delete(bid)
         self._plus_buttons.clear()
 
+        max_w = max((p.width for p in self._pages), default=0)
+        # Use viewport width for centering if larger than max page width
+        vw = max(self._canvas.winfo_width(), max_w)
+        center_x = vw // 2
+
         y = GAP
-        max_w = 0
         for i, page in enumerate(self._pages):
             page.y_offset = y
+            x_off = center_x - page.width // 2
             # Shadow
             if page._shadow_id:
                 self._canvas.coords(page._shadow_id,
-                                    4, y + 4, page.width + 4, y + page.height + 4)
-            self._canvas.coords(page._rect_id, 0, y, page.width, y + page.height)
+                                    x_off + 4, y + 4,
+                                    x_off + page.width + 4, y + page.height + 4)
+            self._canvas.coords(page._rect_id,
+                                x_off, y, x_off + page.width, y + page.height)
             if page._bg_canvas_id:
-                self._canvas.coords(page._bg_canvas_id, 0, y)
+                self._canvas.coords(page._bg_canvas_id, x_off, y)
 
-            max_w = max(max_w, page.width)
             y += page.height + GAP
 
             plus_y = y - GAP // 2
             bid = self._canvas.create_text(
-                max_w // 2, plus_y, text="＋", fill="#555",
+                center_x, plus_y, text="＋", fill="#555",
                 font=("Segoe UI", 16, "bold"), tags="plus_btn"
             )
             self._plus_buttons.append(bid)
             self._canvas.tag_bind(bid, "<ButtonPress-1>",
                                   lambda e, idx=i: self._on_plus_click(idx + 1))
 
-        sr = (0, 0, max_w, y + GAP)
+        content_w = max(vw, max_w)
+        sr = (0, 0, content_w, y + GAP)
         self._base_scrollregion = sr
         self._canvas.configure(scrollregion=sr)
         self._canvas.tag_lower("page_bg")
@@ -576,6 +607,40 @@ class EditorWindow(tk.Toplevel):
         else:
             w, h = 1920, 1080
         self._add_page(w, h, insert_at=insert_idx)
+
+    def _add_page_dialog(self):
+        """Add a new page after current page using same size."""
+        idx = self._active_page_idx + 1 if self._pages else 0
+        self._on_plus_click(idx)
+
+    def _delete_current_page(self):
+        """Delete the currently active page."""
+        if not self._pages:
+            return
+        if len(self._pages) == 1:
+            messagebox.showinfo("ডিলিট", "শেষ পেজ ডিলিট করা যাবে না।",
+                                parent=self)
+            return
+        idx = self._active_page_idx
+        page = self._pages[idx]
+        confirm = messagebox.askyesno(
+            "পেজ ডিলিট",
+            f"পেজ {idx + 1} ডিলিট করতে চান?",
+            parent=self
+        )
+        if not confirm:
+            return
+        # Remove canvas items
+        page.cleanup()
+        self._pages.pop(idx)
+        # Adjust active page index
+        if self._active_page_idx >= len(self._pages):
+            self._active_page_idx = len(self._pages) - 1
+        # Re-layout and reset zoom
+        self._zoom_level = 1.0
+        self._relayout_pages()
+        self._sync_zoom_slider()
+        self._update_status()
 
     def _get_page_at(self, canvas_y: float) -> Optional[int]:
         """Find page at canvas Y — uses actual canvas coords (works after zoom).
@@ -600,10 +665,18 @@ class EditorWindow(tk.Toplevel):
     def _update_scroll(self):
         if not self._pages:
             return
-        last = self._pages[-1]
-        total_h = last.y_offset + last.height + GAP * 2
-        max_w = max(p.width for p in self._pages)
-        self._canvas.configure(scrollregion=(0, 0, max_w, total_h))
+        bbox = self._canvas.bbox("all")
+        if bbox:
+            pad_x = max(self._canvas.winfo_width(), 200)
+            pad_y = max(self._canvas.winfo_height(), 200)
+            self._canvas.configure(scrollregion=(
+                bbox[0] - pad_x, bbox[1] - pad_y,
+                bbox[2] + pad_x, bbox[3] + pad_y))
+        else:
+            last = self._pages[-1]
+            total_h = last.y_offset + last.height + GAP * 2
+            max_w = max(p.width for p in self._pages)
+            self._canvas.configure(scrollregion=(0, 0, max_w, total_h))
 
     # ── Canvas Event Routing ──────────────────────────
 
@@ -668,7 +741,7 @@ class EditorWindow(tk.Toplevel):
         if self._active_tool == "pan":
             # Natural zoom centered on cursor
             factor = 1.08 if event.delta > 0 else (1 / 1.08)
-            new_zoom = max(0.25, min(4.0, self._zoom_level * factor))
+            new_zoom = max(0.10, min(4.0, self._zoom_level * factor))
             if abs(new_zoom - self._zoom_level) < 0.001:
                 return
             scale_factor = new_zoom / self._zoom_level
@@ -682,12 +755,47 @@ class EditorWindow(tk.Toplevel):
         else:
             self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
+    def _on_canvas_right_click(self, event):
+        """Right-click context menu on canvas."""
+        if not self._pages:
+            return
+        cx, cy = self._canvas_coords(event)
+        page_idx = self._get_page_at(cy)
+        menu = tk.Menu(self._canvas, tearoff=0, bg="#2A2A40", fg="#CCC",
+                       activebackground="#4A4A6A", activeforeground="#FFF")
+        menu.add_command(
+            label=f"পেজ {(page_idx or 0) + 1} ডিলিট",
+            command=lambda: self._delete_page(page_idx)
+        )
+        menu.add_command(label="নতুন পেজ যোগ", command=self._add_page_dialog)
+        menu.add_separator()
+        menu.add_command(label="ফিট করুন", command=self._zoom_to_fit)
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def _delete_page(self, idx):
+        """Delete a specific page by index."""
+        if idx is None or not self._pages:
+            return
+        if len(self._pages) == 1:
+            messagebox.showinfo("ডিলিট", "শেষ পেজ ডিলিট করা যাবে না।",
+                                parent=self)
+            return
+        page = self._pages[idx]
+        page.cleanup()
+        self._pages.pop(idx)
+        if self._active_page_idx >= len(self._pages):
+            self._active_page_idx = len(self._pages) - 1
+        self._zoom_level = 1.0
+        self._relayout_pages()
+        self._sync_zoom_slider()
+        self._update_status()
+
     def _sync_zoom_slider(self):
         """Keep toolbar zoom slider in sync with current zoom level."""
         if self._pen_toolbar and hasattr(self._pen_toolbar, '_zoom_var'):
             z = int(self._zoom_level * 100)
             self._pen_toolbar._zoom_var.set(z)
-            self._pen_toolbar._zoom_label.configure(text=f"{z}%")
+            self._pen_toolbar._zoom_label.configure(text=f"জুম {z}%")
 
     def _on_escape(self, event):
         if self._fullscreen:
@@ -801,6 +909,22 @@ class EditorWindow(tk.Toplevel):
         bg_image = self._make_bg_image(w, h, bg_type)
         self._add_page(w, h, bg_image=bg_image)
         self.title("এডিটর — Dual Voicer AI")
+        self.after(100, self._zoom_to_fit)
+
+    def _zoom_to_fit(self):
+        """Auto-fit: zoom so the widest page fits in the viewport with margin."""
+        if not self._pages:
+            return
+        max_w = max(p.width for p in self._pages)
+        vw = self._canvas.winfo_width() - 40  # 20px margin each side
+        if vw <= 0 or max_w <= 0:
+            return
+        target = vw / max_w
+        target = max(0.10, min(4.0, target))
+        if abs(target - self._zoom_level) < 0.01:
+            return
+        self.set_zoom(target)
+        self._sync_zoom_slider()
 
     def _make_bg_image(self, w, h, bg_type):
         if bg_type == "white":

@@ -225,7 +225,11 @@ class PenOverlay:
     # ── Events ────────────────────────────────────────
 
     def _bind_events(self):
-        self._input_canvas.bind("<ButtonPress-1>", self._engine.on_mouse_down)
+        def _on_mouse_down(event):
+            if self._engine.tool in ("text", "handwrite"):
+                self._grab_focus()
+            self._engine.on_mouse_down(event)
+        self._input_canvas.bind("<ButtonPress-1>", _on_mouse_down)
         self._input_canvas.bind("<B1-Motion>", self._engine.on_mouse_move)
         self._input_canvas.bind("<ButtonRelease-1>", self._engine.on_mouse_up)
         self._input_win.bind("<Control-z>", lambda e: self._engine.undo())
@@ -248,6 +252,14 @@ class PenOverlay:
 
     def set_font(self, font_family: str):
         self._engine.set_font(font_family)
+
+    def set_hw_font(self, font_family, font_size=None):
+        self._engine.set_hw_font(font_family, font_size)
+
+    def set_text_font_size(self, size: int):
+        self._engine._text_font_size = size
+        if self._engine._text_active:
+            self._engine._update_text_display()
 
     def undo(self):
         self._engine.undo()
@@ -302,9 +314,21 @@ class PenOverlay:
     def set_tool(self, tool: str):
         self._engine.set_tool(tool)
         self._update_cursor()
+        if tool in ("text", "handwrite"):
+            self._grab_focus()
 
     def set_highlighter_color(self, color: str):
         self._engine.set_highlighter_color(color)
+
+    def _grab_focus(self):
+        """Steal OS-level focus to input window so keystrokes land here."""
+        try:
+            if hasattr(self, '_input_hwnd'):
+                user32.SetForegroundWindow(self._input_hwnd)
+            self._input_win.focus_force()
+            self._input_canvas.focus_set()
+        except Exception:
+            pass
 
     def _update_cursor(self):
         if self._click_through:

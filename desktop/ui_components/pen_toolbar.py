@@ -172,13 +172,13 @@ class PenToolbar(tk.Toplevel):
             zoom_frame = tk.Frame(row, bg=self.BG)
             zoom_frame.pack(side="left", padx=(0, 4))
             self._zoom_label = tk.Label(
-                zoom_frame, text="100%", bg=self.BG, fg="#CCC",
-                font=("Segoe UI", 8), width=4
+                zoom_frame, text="জুম 100%", bg=self.BG, fg="#CCC",
+                font=("Segoe UI", 8), width=8
             )
             self._zoom_label.pack(side="left")
             self._zoom_var = tk.IntVar(value=100)
             self._zoom_slider = tk.Scale(
-                zoom_frame, from_=25, to=400, orient="horizontal",
+                zoom_frame, from_=10, to=400, orient="horizontal",
                 variable=self._zoom_var, length=80, sliderlength=12,
                 showvalue=False, bg=self.BG, fg="#CCC", troughcolor="#1A1A2A",
                 highlightthickness=0, bd=0, activebackground=self.BG_ACTIVE,
@@ -230,9 +230,15 @@ class PenToolbar(tk.Toplevel):
         # ── Separator ──
         tk.Frame(row, bg="#555", width=1, height=22).pack(side="left", padx=3)
 
-        # ── Thickness slider (1-100px) ──
+        # ── Thickness / Font-size slider ──
         thick_frame = tk.Frame(row, bg=self.BG)
         thick_frame.pack(side="left", padx=(0, 6))
+
+        self._slider_label = tk.Label(
+            thick_frame, text="পেন", bg=self.BG, fg="#CCC",
+            font=("Segoe UI", 7), width=4
+        )
+        self._slider_label.pack(side="left")
 
         self._thickness_var = tk.IntVar(value=4)
         self._slider = tk.Scale(
@@ -325,17 +331,30 @@ class PenToolbar(tk.Toplevel):
                 self._overlay.auto_place_text()
 
         # Swap slider between pen thickness ↔ font size
-        if prev_tool != "handwrite" and tool == "handwrite":
-            # Entering handwrite: save pen thickness, show font size
-            self._saved_pen_thickness = self._thickness_var.get()
+        font_tools = ("handwrite", "text")
+        entering_font = prev_tool not in font_tools and tool in font_tools
+        leaving_font = prev_tool in font_tools and tool not in font_tools
+        switching_font = prev_tool in font_tools and tool in font_tools
+
+        if entering_font or switching_font:
+            if entering_font:
+                self._saved_pen_thickness = self._thickness_var.get()
             engine = getattr(self._overlay, '_engine', None)
-            hw_size = getattr(engine, '_hw_font_size', 24) if engine else 24
-            self._thickness_var.set(hw_size)
-        elif prev_tool == "handwrite" and tool != "handwrite":
-            # Leaving handwrite: restore pen thickness
+            if tool == "handwrite":
+                hw_size = getattr(engine, '_hw_font_size', 24) if engine else 24
+                self._thickness_var.set(hw_size)
+            else:
+                txt_size = getattr(engine, '_text_font_size', 0) if engine else 0
+                if not txt_size:
+                    pen_w = getattr(engine, '_pen_width', 4) if engine else 4
+                    txt_size = pen_w * 4
+                self._thickness_var.set(txt_size)
+            self._slider_label.configure(text="ফন্ট")
+        elif leaving_font:
             saved = getattr(self, '_saved_pen_thickness', 4)
             self._thickness_var.set(saved)
             self._overlay.set_width(saved)
+            self._slider_label.configure(text="পেন")
 
     def _activate_eraser(self):
         self._active_tool = "eraser"
@@ -427,9 +446,22 @@ class PenToolbar(tk.Toplevel):
         val = int(value)
         if self._active_tool == "handwrite":
             # Slider controls font size in handwrite mode
-            self._overlay._engine.set_hw_font(
-                self._overlay._engine._hw_font, val
-            )
+            engine = getattr(self._overlay, '_engine', None)
+            hw_font = getattr(engine, '_hw_font', "Segoe UI") if engine else "Segoe UI"
+            if hasattr(self._overlay, 'set_hw_font'):
+                self._overlay.set_hw_font(hw_font, val)
+            elif engine:
+                engine.set_hw_font(hw_font, val)
+        elif self._active_tool == "text":
+            # Slider directly controls text font size
+            if hasattr(self._overlay, 'set_text_font_size'):
+                self._overlay.set_text_font_size(val)
+            else:
+                engine = getattr(self._overlay, '_engine', None)
+                if engine:
+                    engine._text_font_size = val
+                    if engine._text_active:
+                        engine._update_text_display()
         else:
             self._overlay.set_width(val)
 
@@ -448,7 +480,7 @@ class PenToolbar(tk.Toplevel):
     def _on_zoom_change(self, value):
         level = int(value)
         if hasattr(self, '_zoom_label'):
-            self._zoom_label.configure(text=f"{level}%")
+            self._zoom_label.configure(text=f"জুম {level}%")
         if hasattr(self._overlay, 'set_zoom'):
             self._overlay.set_zoom(level / 100.0)
 

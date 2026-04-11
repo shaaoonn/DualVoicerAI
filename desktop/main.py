@@ -2858,7 +2858,29 @@ class VoiceTypingApp(ctk.CTk):
 
     def type_text(self, text, leading_space=True):
         """Type text with smart spacing for punctuation"""
-        try: 
+        try:
+            # Route to drawing engine if text/handwrite tool is active
+            target_engine = None
+            # Check editor window first
+            if hasattr(self, '_editor_win') and self._editor_win:
+                try:
+                    if self._editor_win.winfo_exists():
+                        engine = getattr(self._editor_win, '_engine', None)
+                        if engine and engine._text_active:
+                            target_engine = engine
+                except Exception:
+                    pass
+            # Check pen overlay
+            if not target_engine and hasattr(self, '_pen_overlay') and self._pen_overlay:
+                engine = getattr(self._pen_overlay, '_engine', None)
+                if engine and engine._text_active:
+                    target_engine = engine
+            if target_engine:
+                cleaned = text.strip()
+                if cleaned:
+                    inject = (" " + cleaned) if leading_space else cleaned
+                    target_engine.inject_text(inject)
+                return
             # Handle embedded newlines FIRST (before strip removes them)
             if "\n" in text:
                 parts = text.split("\n")

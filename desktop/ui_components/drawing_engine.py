@@ -69,6 +69,7 @@ class DrawingEngine:
         self._text_cursor_visible = True
         self._text_cursor_job = None
         self._text_cursor_idx = 0       # cursor position within text_buffer
+        self._text_font_size = 0        # 0 = use _pen_width*4 fallback
         self._font_family = "Segoe UI"
         self._dragging_stroke = None
         self._drag_offset = (0, 0)
@@ -315,6 +316,16 @@ class DrawingEngine:
                 debounce_ms, self._recognize_handwriting
             )
 
+    def inject_text(self, text: str):
+        """Insert text at cursor (used by voice typing to bypass OS focus)."""
+        if not self._text_active:
+            return
+        self._text_buffer = (self._text_buffer[:self._text_cursor_idx] +
+                             text +
+                             self._text_buffer[self._text_cursor_idx:])
+        self._text_cursor_idx += len(text)
+        self._update_text_display()
+
     def on_key(self, event):
         if not self._text_active:
             return
@@ -479,7 +490,7 @@ class DrawingEngine:
                 return
 
     def _get_text_font(self):
-        size = self._pen_width * 4
+        size = self._text_font_size if self._text_font_size else self._pen_width * 4
         return (self._font_family, size)
 
     def _start_text_at(self, x, y):
