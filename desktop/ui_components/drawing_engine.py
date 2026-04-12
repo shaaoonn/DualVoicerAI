@@ -28,7 +28,7 @@ class Stroke:
     text: str = ""
     font_family: str = "Segoe UI"
     font_size: int = 16
-    anchor: str = "w"  # canvas text anchor: "w" or "nw"
+    anchor: str = "nw"  # canvas text anchor: "nw" for top-left growth
 
 
 class DrawingEngine:
@@ -938,12 +938,12 @@ class DrawingEngine:
         # New text block at the handwriting position
         dfont = self._display_font(self._hw_font, self._hw_font_size)
         text_id = self._canvas.create_text(
-            hw_min_x, hw_center_y, text=text, anchor="w",
+            hw_min_x, hw_min_y, text=text, anchor="nw",
             fill=self._pen_color, font=dfont, tags="stroke",
         )
 
         stroke = Stroke(
-            points=[(hw_min_x, hw_center_y)],
+            points=[(hw_min_x, hw_min_y)],
             color=self._pen_color,
             width=self._hw_last_pen_width,
             canvas_ids=[text_id],
@@ -951,6 +951,7 @@ class DrawingEngine:
             text=text,
             font_family=self._hw_font,
             font_size=self._hw_font_size,
+            anchor="nw",
         )
         self._strokes.append(stroke)
         self._hw_active_text = stroke

@@ -294,8 +294,19 @@ class SelectionManager:
                         (ax + (px - ax) * sx, ay + (py - ay) * sy)
                         for px, py in stroke.smoothed_points
                     ]
-                # Scale width for drawing strokes
-                if not stroke.is_text:
+                if stroke.is_text:
+                    # Scale font size for text strokes
+                    scale_factor = max(sx, sy)
+                    new_fs = max(8, int(stroke.font_size * scale_factor))
+                    stroke.font_size = new_fs
+                    for cid in stroke.canvas_ids:
+                        try:
+                            self._canvas.itemconfigure(
+                                cid, font=(stroke.font_family, new_fs))
+                        except tk.TclError:
+                            pass
+                else:
+                    # Scale width for drawing strokes
                     new_w_val = max(1, int(stroke.width * max(sx, sy)))
                     stroke.width = new_w_val
                     for cid in stroke.canvas_ids:

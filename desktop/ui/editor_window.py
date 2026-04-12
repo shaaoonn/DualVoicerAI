@@ -735,7 +735,10 @@ class EditorWindow(tk.Toplevel):
     def _on_key(self, event):
         if not self._pages:
             return
-        self._pages[self._active_page_idx].engine.on_key(event)
+        engine = self._pages[self._active_page_idx].engine
+        engine.on_key(event)
+        if engine._text_active:
+            return "break"
 
     def _on_mousewheel(self, event):
         if self._active_tool == "pan":
