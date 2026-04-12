@@ -70,10 +70,19 @@ class DrawingEngine:
         self._text_cursor_job = None
         self._text_cursor_idx = 0       # cursor position within text_buffer
         self._text_font_size = 0        # 0 = use _pen_width*4 fallback
+        self._text_sel_start = -1       # selection start index (-1 = no selection)
+        self._text_sel_end = -1         # selection end index
+        self._text_sel_id = None        # canvas rectangle for selection highlight
+        self._text_dragging = False     # True during text drag-select
         self._font_family = "Segoe UI"
         self._dragging_stroke = None
         self._drag_offset = (0, 0)
         self._editing_stroke = None     # existing stroke being edited
+        self._last_key_serial = -1      # dedup IME composition events
+        self._ime_debounce_job = None   # after() job for IME dedup
+        self._ime_pending_char = None   # pending char from IME
+        self._overlay_mode = False      # True for pen overlay (transparent bg)
+        self._tk_text_images = []       # keep PhotoImage refs alive (GC prevention)
 
         # Shape detection state
         self._shape_hold_job = None
@@ -149,7 +158,7 @@ class DrawingEngine:
         self._display_scale = scale
         for stroke in self._strokes:
             if stroke.is_text:
-                ds = max(1, int(stroke.font_size * scale))
+                ds = max(12, int(stroke.font_size * scale))
                 for cid in stroke.canvas_ids:
                     try:
                         self._canvas.itemconfigure(
@@ -158,8 +167,9 @@ class DrawingEngine:
                         pass
 
     def _display_font(self, family, size):
-        """Get display-scaled font tuple for canvas rendering."""
-        ds = max(1, int(size * self._display_scale))
+        """Get display-scaled font tuple for canvas rendering.
+        Min 12px so complex scripts (Bengali etc.) remain readable."""
+        ds = max(12, int(size * self._display_scale))
         return (family, ds)
 
     def get_strokes(self) -> List[Stroke]:
@@ -180,6 +190,18 @@ class DrawingEngine:
         x, y = event.x, event.y
 
         if self._tool == "text":
+            # If clicking on currently active text, start drag-select
+            if self._text_active and self._text_canvas_id:
+                bbox = self._canvas.bbox(self._text_canvas_id)
+                if bbox and bbox[0] <= x <= bbox[2] and bbox[1] <= y <= bbox[3]:
+                    idx = self._char_index_at(x, y)
+                    self._text_cursor_idx = idx
+                    self._text_sel_start = idx
+                    self._text_sel_end = idx
+                    self._text_dragging = True
+                    self._clear_sel_rect()  # only remove old rect, keep indices
+                    self._update_text_display()
+                    return
             hit = self._find_text_at(x, y)
             if hit:
                 self._edit_existing_text(hit, click_x=x)
@@ -220,6 +242,15 @@ class DrawingEngine:
         self._current_stroke.canvas_ids.append(dot_id)
 
     def on_mouse_move(self, event):
+        # Text drag-select
+        if self._text_dragging and self._text_active and self._text_canvas_id:
+            idx = self._char_index_at(event.x, event.y)
+            self._text_sel_end = idx
+            self._text_cursor_idx = idx
+            self._draw_text_selection()
+            self._update_text_display()
+            return
+
         if self._dragging_stroke:
             nx = event.x - self._drag_offset[0]
             ny = event.y - self._drag_offset[1]
@@ -267,6 +298,10 @@ class DrawingEngine:
 
     def on_mouse_up(self, event):
         self._cancel_shape_hold()
+
+        if self._text_dragging:
+            self._text_dragging = False
+            return
 
         if self._dragging_stroke:
             self._dragging_stroke = None
@@ -320,17 +355,46 @@ class DrawingEngine:
         """Insert text at cursor (used by voice typing to bypass OS focus)."""
         if not self._text_active:
             return
+        if self._has_text_selection():
+            self._delete_text_selection()
         self._text_buffer = (self._text_buffer[:self._text_cursor_idx] +
                              text +
                              self._text_buffer[self._text_cursor_idx:])
         self._text_cursor_idx += len(text)
         self._update_text_display()
 
+    def _commit_ime_char(self):
+        """Insert debounced IME character (called after 40ms delay)."""
+        self._ime_debounce_job = None
+        ch = self._ime_pending_char
+        if not ch or not self._text_active:
+            return
+        self._ime_pending_char = None
+        if self._has_text_selection():
+            self._delete_text_selection()
+        self._text_buffer = (self._text_buffer[:self._text_cursor_idx] +
+                             ch +
+                             self._text_buffer[self._text_cursor_idx:])
+        self._text_cursor_idx += 1
+        self._update_text_display()
+
     def on_key(self, event):
         if not self._text_active:
             return
 
+        # IME deduplication: skip duplicate events from IME composition
+        serial = getattr(event, 'serial', 0)
+        if serial and serial == self._last_key_serial:
+            return
+        self._last_key_serial = serial
+
+        # Filter IME composition keysyms (Windows Bengali IME)
+        if event.keysym in ('VoidSymbol', '??'):
+            return
+
         if event.keysym == "Return":
+            if self._has_text_selection():
+                self._delete_text_selection()
             self._text_buffer = (self._text_buffer[:self._text_cursor_idx] +
                                  "\n" +
                                  self._text_buffer[self._text_cursor_idx:])
@@ -338,24 +402,32 @@ class DrawingEngine:
             self._update_text_display()
             return
         if event.keysym == "BackSpace":
-            if self._text_cursor_idx > 0:
+            if self._has_text_selection():
+                self._delete_text_selection()
+                self._update_text_display()
+            elif self._text_cursor_idx > 0:
                 self._text_buffer = (self._text_buffer[:self._text_cursor_idx - 1] +
                                      self._text_buffer[self._text_cursor_idx:])
                 self._text_cursor_idx -= 1
                 self._update_text_display()
             return
         if event.keysym == "Delete":
-            if self._text_cursor_idx < len(self._text_buffer):
+            if self._has_text_selection():
+                self._delete_text_selection()
+                self._update_text_display()
+            elif self._text_cursor_idx < len(self._text_buffer):
                 self._text_buffer = (self._text_buffer[:self._text_cursor_idx] +
                                      self._text_buffer[self._text_cursor_idx + 1:])
                 self._update_text_display()
             return
         if event.keysym == "Left":
+            self._clear_text_selection()
             if self._text_cursor_idx > 0:
                 self._text_cursor_idx -= 1
                 self._update_text_display()
             return
         if event.keysym == "Right":
+            self._clear_text_selection()
             if self._text_cursor_idx < len(self._text_buffer):
                 self._text_cursor_idx += 1
                 self._update_text_display()
@@ -388,8 +460,23 @@ class DrawingEngine:
             return
 
         if event.char and event.char.isprintable():
+            ch = event.char
+            # IME dedup: non-ASCII chars (Bengali etc.) use debounce to absorb
+            # duplicate events from Windows IME composition
+            is_multibyte = ord(ch) > 127
+            if is_multibyte:
+                # Cancel pending insert and schedule new one (only last event wins)
+                if self._ime_debounce_job:
+                    self._parent.after_cancel(self._ime_debounce_job)
+                self._ime_pending_char = ch
+                self._ime_debounce_job = self._parent.after(
+                    40, self._commit_ime_char)
+                return
+
+            if self._has_text_selection():
+                self._delete_text_selection()
             self._text_buffer = (self._text_buffer[:self._text_cursor_idx] +
-                                 event.char +
+                                 ch +
                                  self._text_buffer[self._text_cursor_idx:])
             self._text_cursor_idx += 1
             self._update_text_display()
@@ -490,7 +577,7 @@ class DrawingEngine:
                 return
 
     def _get_text_font(self):
-        size = self._text_font_size if self._text_font_size else self._pen_width * 4
+        size = self._text_font_size if self._text_font_size else max(24, self._pen_width * 4)
         return (self._font_family, size)
 
     def _start_text_at(self, x, y):
@@ -513,9 +600,10 @@ class DrawingEngine:
             width=wrap_w,
         )
         self._text_cursor_visible = True
-        self._text_cursor_id = self._canvas.create_text(
-            x, y, text="|", anchor="w",
-            fill=self._pen_color, font=dfont, tags="text_cursor"
+        cursor_h = dfont[1] if isinstance(dfont[1], int) else 20
+        self._text_cursor_id = self._canvas.create_line(
+            x, y, x, y + cursor_h,
+            fill=self._pen_color, width=2, tags="text_cursor"
         )
         self._blink_cursor()
 
@@ -557,11 +645,135 @@ class DrawingEngine:
         self._text_cursor_visible = True
         cursor_x, cursor_y = self._calc_cursor_pos(dfont)
 
-        self._text_cursor_id = self._canvas.create_text(
-            cursor_x, cursor_y, text="|", anchor="w",
-            fill=stroke.color, font=dfont, tags="text_cursor"
+        cursor_h = dfont[1] if isinstance(dfont[1], int) else 20
+        self._text_cursor_id = self._canvas.create_line(
+            cursor_x, cursor_y, cursor_x, cursor_y + cursor_h,
+            fill=stroke.color, width=2, tags="text_cursor"
         )
         self._blink_cursor()
+
+    def _char_index_at(self, x, y):
+        """Find character index in text buffer at canvas position (x, y)."""
+        if not self._text_canvas_id or not self._text_buffer:
+            return 0
+        bbox = self._canvas.bbox(self._text_canvas_id)
+        if not bbox:
+            return 0
+        try:
+            import tkinter.font as tkFont
+            stroke = self._editing_stroke
+            if stroke:
+                dfont = self._display_font(stroke.font_family, stroke.font_size)
+            else:
+                font = self._get_text_font()
+                dfont = self._display_font(font[0], font[1])
+            f = tkFont.Font(family=dfont[0], size=dfont[1])
+            line_h = f.metrics('linespace')
+            # Which line?
+            rel_y = y - bbox[1]
+            line_num = max(0, int(rel_y / line_h)) if line_h > 0 else 0
+            lines = self._text_buffer.split('\n')
+            if line_num >= len(lines):
+                return len(self._text_buffer)
+            # Character offset within line
+            rel_x = x - bbox[0]
+            line = lines[line_num]
+            best_idx = len(line)
+            for i in range(1, len(line) + 1):
+                w = f.measure(line[:i])
+                if w >= rel_x:
+                    w_prev = f.measure(line[:i - 1])
+                    best_idx = i - 1 if (rel_x - w_prev) < (w - rel_x) else i
+                    break
+            # Convert to buffer index
+            buf_idx = sum(len(lines[j]) + 1 for j in range(line_num)) + best_idx
+            return min(buf_idx, len(self._text_buffer))
+        except Exception:
+            return len(self._text_buffer)
+
+    def _has_text_selection(self):
+        return (self._text_sel_start >= 0 and self._text_sel_end >= 0
+                and self._text_sel_start != self._text_sel_end)
+
+    def _get_selection_range(self):
+        """Return (start, end) of selection, ordered."""
+        s = min(self._text_sel_start, self._text_sel_end)
+        e = max(self._text_sel_start, self._text_sel_end)
+        return s, e
+
+    def _delete_text_selection(self):
+        """Delete selected text and update cursor."""
+        if not self._has_text_selection():
+            return False
+        s, e = self._get_selection_range()
+        self._text_buffer = self._text_buffer[:s] + self._text_buffer[e:]
+        self._text_cursor_idx = s
+        self._clear_text_selection()
+        return True
+
+    def _draw_text_selection(self):
+        """Draw highlight rectangle over selected text."""
+        self._clear_sel_rect()  # only remove old rect, keep indices
+        if not self._has_text_selection() or not self._text_canvas_id:
+            return
+        bbox = self._canvas.bbox(self._text_canvas_id)
+        if not bbox:
+            return
+        try:
+            import tkinter.font as tkFont
+            stroke = self._editing_stroke
+            if stroke:
+                dfont = self._display_font(stroke.font_family, stroke.font_size)
+            else:
+                font = self._get_text_font()
+                dfont = self._display_font(font[0], font[1])
+            f = tkFont.Font(family=dfont[0], size=dfont[1])
+            line_h = f.metrics('linespace')
+            s, e = self._get_selection_range()
+            text_before_s = self._text_buffer[:s]
+            text_before_e = self._text_buffer[:e]
+            lines_s = text_before_s.split('\n')
+            lines_e = text_before_e.split('\n')
+            line_s = len(lines_s) - 1
+            line_e = len(lines_e) - 1
+            x_s = bbox[0] + f.measure(lines_s[-1])
+            x_e = bbox[0] + f.measure(lines_e[-1])
+            if line_s == line_e:
+                # Single line selection
+                self._text_sel_id = self._canvas.create_rectangle(
+                    x_s, bbox[1] + line_s * line_h,
+                    x_e, bbox[1] + (line_s + 1) * line_h,
+                    fill="#3399FF", outline="", stipple="gray50",
+                    tags="text_sel"
+                )
+            else:
+                # Multi-line: just highlight the full bounding area
+                self._text_sel_id = self._canvas.create_rectangle(
+                    bbox[0], bbox[1] + line_s * line_h,
+                    bbox[2], bbox[1] + (line_e + 1) * line_h,
+                    fill="#3399FF", outline="", stipple="gray50",
+                    tags="text_sel"
+                )
+            # Ensure selection is behind text
+            if self._text_sel_id and self._text_canvas_id:
+                self._canvas.tag_lower(self._text_sel_id, self._text_canvas_id)
+        except Exception:
+            pass
+
+    def _clear_sel_rect(self):
+        """Remove only the visual selection rectangle (keep indices)."""
+        if self._text_sel_id:
+            try:
+                self._canvas.delete(self._text_sel_id)
+            except tk.TclError:
+                pass
+            self._text_sel_id = None
+
+    def _clear_text_selection(self):
+        """Remove selection highlight AND reset selection state."""
+        self._clear_sel_rect()
+        self._text_sel_start = -1
+        self._text_sel_end = -1
 
     def _calc_cursor_pos(self, font):
         """Calculate cursor x,y from _text_cursor_idx. Handles multiline."""
@@ -617,12 +829,23 @@ class DrawingEngine:
                                            len(self._text_buffer)))
         if self._text_cursor_id:
             cx, cy = self._calc_cursor_pos(dfont)
-            self._canvas.coords(self._text_cursor_id, cx, cy)
-            self._canvas.itemconfigure(self._text_cursor_id, font=dfont,
-                                       fill=color)
+            cursor_h = dfont[1] if isinstance(dfont[1], int) else 20
+            self._canvas.coords(self._text_cursor_id, cx, cy, cx, cy + cursor_h)
+            self._canvas.itemconfigure(self._text_cursor_id, fill=color)
 
     def _finalize_text(self):
+        # Commit any pending IME character before finalizing
+        if self._ime_debounce_job:
+            self._parent.after_cancel(self._ime_debounce_job)
+            self._ime_debounce_job = None
+            if self._ime_pending_char:
+                self._text_buffer = (self._text_buffer[:self._text_cursor_idx] +
+                                     self._ime_pending_char +
+                                     self._text_buffer[self._text_cursor_idx:])
+                self._text_cursor_idx += 1
+                self._ime_pending_char = None
         self._cleanup_text_cursor()
+        self._clear_text_selection()
 
         if self._editing_stroke:
             # Editing existing text stroke

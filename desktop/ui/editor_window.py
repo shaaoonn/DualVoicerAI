@@ -12,9 +12,12 @@ import json
 import base64
 import os
 import io
+import sys
+import struct
+import threading
 from typing import List, Optional
 
-from PIL import Image, ImageTk, ImageDraw, ImageFont
+from PIL import Image, ImageTk, ImageDraw, ImageFont, ImageChops
 from ui_components.drawing_engine import Stroke, DrawingEngine
 from ui_components.pen_overlay import _get_pen_cursor
 from ui_components.selection_manager import SelectionManager
@@ -40,6 +43,8 @@ PAGE_PRESETS = {
 GAP = 30          # pixels between pages
 BG_COLOR = "#2B2B35"
 PAGE_SHADOW = "#1A1A22"
+SESSION_FILE = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')),
+                            'DualVoicer', 'editor_session.dvai')
 
 
 class EditorPage:
@@ -148,11 +153,38 @@ class EditorPage:
                 rx = (cx - px1) * sx
                 ry = (cy - py1) * sy
                 font_size = max(8, int(stroke.font_size * dpi_factor))
+                text = stroke.text or ""
+
+                # Try Windows GDI first (proper Bengali/complex script shaping)
+                if sys.platform == "win32" and text.strip():
+                    self._register_bundled_fonts_gdi()
+                    gdi_img = self._gdi_render_text(
+                        text, stroke.font_family, font_size, stroke.color)
+                    if gdi_img:
+                        try:
+                            result.paste(gdi_img, (int(rx), int(ry)), gdi_img)
+                        except ValueError:
+                            result.paste(gdi_img, (int(rx), int(ry)))
+                        draw = ImageDraw.Draw(result)
+                        continue
+
+                # Fallback: PIL rendering
                 font = self._resolve_font(stroke.font_family, font_size)
-                # Map tkinter anchor to PIL anchor
-                pil_anchor = "lt" if stroke.anchor == "nw" else "lm"
-                draw.text((rx, ry), stroke.text, fill=stroke.color,
-                          font=font, anchor=pil_anchor)
+                if "\n" in text:
+                    lines = text.split("\n")
+                    line_y = ry
+                    for line in lines:
+                        draw.text((rx, line_y), line, fill=stroke.color,
+                                  font=font, anchor="lt")
+                        try:
+                            lh = font.getbbox("Ay")[3]
+                        except Exception:
+                            lh = font_size
+                        line_y += lh + 2
+                else:
+                    pil_anchor = "lt" if stroke.anchor == "nw" else "lm"
+                    draw.text((rx, ry), text, fill=stroke.color,
+                              font=font, anchor=pil_anchor)
             else:
                 # Read canvas item coords (handles zoom correctly)
                 all_points = []
@@ -234,6 +266,140 @@ class EditorPage:
         h = hex_color.lstrip("#")
         return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
 
+    # ── Windows GDI text renderer (proper Bengali/complex script shaping) ──
+
+    _gdi_fonts_registered = False
+
+    @classmethod
+    def _register_bundled_fonts_gdi(cls):
+        """Register bundled TTF fonts with Windows GDI (once per process)."""
+        if cls._gdi_fonts_registered:
+            return
+        cls._gdi_fonts_registered = True
+        try:
+            import ctypes
+            gdi32 = ctypes.windll.gdi32
+            fonts_dir = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "fonts")
+            if os.path.isdir(fonts_dir):
+                for fname in os.listdir(fonts_dir):
+                    if fname.lower().endswith((".ttf", ".otf")):
+                        path = os.path.join(fonts_dir, fname)
+                        gdi32.AddFontResourceExW(path, 0x10, 0)  # FR_PRIVATE
+        except Exception:
+            pass
+
+    @staticmethod
+    def _gdi_render_text(text, font_family, font_size_px, color_hex):
+        """Render text using Windows GDI for proper complex script shaping.
+        Returns RGBA PIL Image with transparent background, or None on failure."""
+        if not text or sys.platform != "win32":
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            gdi32 = ctypes.windll.gdi32
+            user32 = ctypes.windll.user32
+
+            # Parse color
+            c = color_hex.lstrip("#")
+            if len(c) >= 6:
+                cr, cg, cb = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+            else:
+                cr, cg, cb = 0, 0, 0
+
+            # Create memory DC and font
+            mem_dc = gdi32.CreateCompatibleDC(0)
+            hFont = gdi32.CreateFontW(
+                -font_size_px, 0, 0, 0,
+                400, 0, 0, 0,       # weight=NORMAL, no italic/underline/strikeout
+                0, 0, 0,            # charset=DEFAULT, precision defaults
+                4,                  # ANTIALIASED_QUALITY (grayscale, not ClearType)
+                0, font_family
+            )
+            old_font = gdi32.SelectObject(mem_dc, hFont)
+
+            # Measure each line
+            lines = text.split("\n")
+            max_w = 0
+            line_heights = []
+            for line in lines:
+                sz = wintypes.SIZE()
+                t = line if line else " "
+                gdi32.GetTextExtentPoint32W(mem_dc, t, len(t), ctypes.byref(sz))
+                max_w = max(max_w, sz.cx)
+                line_heights.append(sz.cy)
+
+            pad = 4
+            w = max(max_w + pad, 1)
+            h = max(sum(line_heights) + pad, 1)
+
+            # BITMAPINFOHEADER: 40 bytes, top-down 32bpp
+            bmi = (ctypes.c_byte * 40)()
+            struct.pack_into("iiiHHiiiiii", bmi, 0,
+                             40, w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
+
+            def _render_pass(bg_colorref):
+                ppv = ctypes.c_void_p()
+                hBmp = gdi32.CreateDIBSection(
+                    mem_dc, bmi, 0, ctypes.byref(ppv), None, 0)
+                if not hBmp:
+                    return None
+                old_bmp = gdi32.SelectObject(mem_dc, hBmp)
+                # Fill background
+                rect = wintypes.RECT(0, 0, w, h)
+                hBr = gdi32.CreateSolidBrush(bg_colorref)
+                user32.FillRect(mem_dc, ctypes.byref(rect), hBr)
+                gdi32.DeleteObject(hBr)
+                # Draw text
+                gdi32.SetTextColor(mem_dc, cr | (cg << 8) | (cb << 16))
+                gdi32.SetBkMode(mem_dc, 1)  # TRANSPARENT
+                y = 0
+                for i, line in enumerate(lines):
+                    if line:
+                        gdi32.TextOutW(mem_dc, 0, y, line, len(line))
+                    y += line_heights[i]
+                # Read pixels
+                buf = (ctypes.c_ubyte * (w * h * 4))()
+                ctypes.memmove(buf, ppv, w * h * 4)
+                gdi32.SelectObject(mem_dc, old_bmp)
+                gdi32.DeleteObject(hBmp)
+                return bytes(buf)
+
+            buf_w = _render_pass(0xFFFFFF)   # white background
+            buf_b = _render_pass(0x000000)   # black background
+
+            # Cleanup GDI
+            gdi32.SelectObject(mem_dc, old_font)
+            gdi32.DeleteObject(hFont)
+            gdi32.DeleteDC(mem_dc)
+
+            if not buf_w or not buf_b:
+                return None
+
+            # Compute alpha via dual-render: alpha = 255 - (W - B) per channel
+            img_w = Image.frombuffer("RGBA", (w, h), buf_w, "raw", "BGRA", 0, 1)
+            img_b = Image.frombuffer("RGBA", (w, h), buf_b, "raw", "BGRA", 0, 1)
+
+            rw, gw, bw, _ = img_w.split()
+            rb, gb, bb, _ = img_b.split()
+
+            ones = Image.new("L", (w, h), 255)
+            diff_r = ImageChops.subtract(rw, rb)
+            diff_g = ImageChops.subtract(gw, gb)
+            diff_b = ImageChops.subtract(bw, bb)
+            max_diff = ImageChops.lighter(
+                ImageChops.lighter(diff_r, diff_g), diff_b)
+            alpha = ImageChops.subtract(ones, max_diff)
+
+            result = Image.new("RGBA", (w, h), (cr, cg, cb, 255))
+            result.putalpha(alpha)
+            return result
+
+        except Exception:
+            return None
+
     @staticmethod
     def _resolve_font_path(family):
         """Resolve font family name to a file path for PyMuPDF."""
@@ -281,6 +447,7 @@ class EditorWindow(tk.Toplevel):
         self._save_path: Optional[str] = None
         self._fullscreen = False
         self._plus_buttons = []
+        self._page_number_labels = []
         self._pen_toolbar = None
 
         self._zoom_level = 1.0
@@ -308,6 +475,9 @@ class EditorWindow(tk.Toplevel):
         self.bind("<FocusIn>", lambda e: self._canvas.focus_set()
                   if e.widget == self else None)
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
+        # Start periodic auto-save (every 60s)
+        self._autosave_job = None
+        self._schedule_autosave()
 
     def _setup_window(self):
         self.title("এডিটর — Dual Voicer AI")
@@ -348,8 +518,8 @@ class EditorWindow(tk.Toplevel):
         # Update cursor
         pen_cursor = _get_pen_cursor()
         cursors = {"pen": pen_cursor, "highlighter": pen_cursor,
-                   "eraser": "circle", "text": "xterm", "pan": "fleur",
-                   "select": "arrow", "handwrite": "pencil"}
+                   "eraser": "circle", "text": pen_cursor, "pan": "fleur",
+                   "select": "arrow", "handwrite": pen_cursor}
         cursor = cursors.get(tool, pen_cursor)
         try:
             self._canvas.configure(cursor=cursor)
@@ -441,13 +611,8 @@ class EditorWindow(tk.Toplevel):
             page.engine.set_display_scale(z)
 
     def close(self):
-        """Called by PenToolbar close button — hide toolbar only."""
-        if self._pen_toolbar:
-            try:
-                self._pen_toolbar.destroy()
-            except tk.TclError:
-                pass
-            self._pen_toolbar = None
+        """Called by PenToolbar close button — auto-save and hide editor."""
+        self._on_close_window()
 
     # ── Menu ──────────────────────────────────────────
 
@@ -511,7 +676,18 @@ class EditorWindow(tk.Toplevel):
             self._canvas_frame, bg=BG_COLOR, highlightthickness=0,
             cursor="pencil"
         )
-        self._canvas.pack(fill="both", expand=True)
+        self._v_scroll = tk.Scrollbar(self._canvas_frame, orient="vertical",
+                                       command=self._canvas.yview)
+        self._h_scroll = tk.Scrollbar(self._canvas_frame, orient="horizontal",
+                                       command=self._canvas.xview)
+        self._canvas.configure(yscrollcommand=self._v_scroll.set,
+                               xscrollcommand=self._h_scroll.set)
+
+        self._canvas.grid(row=0, column=0, sticky="nsew")
+        self._v_scroll.grid(row=0, column=1, sticky="ns")
+        self._h_scroll.grid(row=1, column=0, sticky="ew")
+        self._canvas_frame.grid_rowconfigure(0, weight=1)
+        self._canvas_frame.grid_columnconfigure(0, weight=1)
 
         self._canvas.bind("<ButtonPress-1>", self._on_canvas_click)
         self._canvas.bind("<B1-Motion>", self._on_canvas_drag)
@@ -545,7 +721,8 @@ class EditorWindow(tk.Toplevel):
 
     def _add_page(self, width: int, height: int,
                   bg_image: Optional[Image.Image] = None,
-                  insert_at: Optional[int] = None):
+                  insert_at: Optional[int] = None,
+                  batch: bool = False):
         if insert_at is not None:
             idx = insert_at
         else:
@@ -554,13 +731,17 @@ class EditorWindow(tk.Toplevel):
         page = EditorPage(self._canvas, self, width, height, 0, bg_image)
         self._pages.insert(idx, page)
         self._active_page_idx = idx
-        self._relayout_pages()
-        self._update_status()
+        if not batch:
+            self._relayout_pages()
+            self._update_status()
 
     def _relayout_pages(self):
         for bid in self._plus_buttons:
             self._canvas.delete(bid)
         self._plus_buttons.clear()
+        for lid in self._page_number_labels:
+            self._canvas.delete(lid)
+        self._page_number_labels.clear()
 
         max_w = max((p.width for p in self._pages), default=0)
         # Use viewport width for centering if larger than max page width
@@ -589,6 +770,12 @@ class EditorWindow(tk.Toplevel):
                 font=("Segoe UI", 16, "bold"), tags="plus_btn"
             )
             self._plus_buttons.append(bid)
+            # Page number label
+            num_id = self._canvas.create_text(
+                center_x, plus_y + 20, text=f"── {i + 1} ──",
+                fill="#555", font=("Segoe UI", 9), tags="page_label"
+            )
+            self._page_number_labels.append(num_id)
             self._canvas.tag_bind(bid, "<ButtonPress-1>",
                                   lambda e, idx=i: self._on_plus_click(idx + 1))
 
@@ -711,6 +898,9 @@ class EditorWindow(tk.Toplevel):
         cx, cy = self._canvas_coords(event)
         if self._active_tool == "pan":
             self._canvas.scan_dragto(event.x, event.y, gain=1)
+            # Sync scrollbar positions after pan drag
+            self._v_scroll.set(*self._canvas.yview())
+            self._h_scroll.set(*self._canvas.xview())
             return
         if self._active_tool == "select":
             self._selection_mgr.on_mouse_move(cx, cy)
@@ -814,12 +1004,20 @@ class EditorWindow(tk.Toplevel):
             self.config(menu="")
             for bid in self._plus_buttons:
                 self._canvas.itemconfigure(bid, state="hidden")
+            for lid in self._page_number_labels:
+                self._canvas.itemconfigure(lid, state="hidden")
+            self._v_scroll.grid_remove()
+            self._h_scroll.grid_remove()
             self._fit_page_to_screen()
         else:
             self.config(menu=self._menubar)
             self._status.pack(fill="x", side="bottom")
             for bid in self._plus_buttons:
                 self._canvas.itemconfigure(bid, state="normal")
+            for lid in self._page_number_labels:
+                self._canvas.itemconfigure(lid, state="normal")
+            self._v_scroll.grid()
+            self._h_scroll.grid()
             self._relayout_pages()
             self._update_scroll()
 
@@ -912,6 +1110,12 @@ class EditorWindow(tk.Toplevel):
         bg_image = self._make_bg_image(w, h, bg_type)
         self._add_page(w, h, bg_image=bg_image)
         self.title("এডিটর — Dual Voicer AI")
+        # Delete session file on New File
+        try:
+            if os.path.exists(SESSION_FILE):
+                os.remove(SESSION_FILE)
+        except Exception:
+            pass
         self.after(100, self._zoom_to_fit)
 
     def _zoom_to_fit(self):
@@ -923,7 +1127,7 @@ class EditorWindow(tk.Toplevel):
         if vw <= 0 or max_w <= 0:
             return
         target = vw / max_w
-        target = max(0.10, min(4.0, target))
+        target = max(0.25, min(4.0, target))
         if abs(target - self._zoom_level) < 0.01:
             return
         self.set_zoom(target)
@@ -1010,15 +1214,61 @@ class EditorWindow(tk.Toplevel):
         except Exception as e:
             messagebox.showerror("ত্রুটি", f"PDF খুলতে পারেনি:\n{e}", parent=self)
             return
+        total = len(doc)
         self._clear_all_pages()
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            mat = fitz.Matrix(150/72, 150/72)
-            pix = page.get_pixmap(matrix=mat)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            self._add_page(img.width, img.height, bg_image=img.convert("RGBA"))
+        self.title(f"এডিটর — {os.path.basename(path)} (লোড হচ্ছে...)")
+        # Progress label on canvas
+        self._pdf_progress = tk.Label(
+            self._canvas, text=f"লোড হচ্ছে... 0/{total}",
+            bg=BG_COLOR, fg="#AAA", font=("Segoe UI", 14))
+        self.update_idletasks()
+        cx = max(self._canvas.winfo_width() // 2, 200)
+        self._pdf_progress_win = self._canvas.create_window(
+            cx, 100, window=self._pdf_progress)
+        self._pdf_loading = True
+        # Background thread
+        threading.Thread(
+            target=self._load_pdf_worker,
+            args=(doc, path, total), daemon=True).start()
+
+    def _load_pdf_worker(self, doc, path, total):
+        """Background thread: rasterize PDF pages and post to main thread."""
+        for i in range(total):
+            try:
+                page = doc[i]
+                mat = fitz.Matrix(150 / 72, 150 / 72)
+                pix = page.get_pixmap(matrix=mat)
+                img = Image.frombytes("RGB", [pix.width, pix.height],
+                                      pix.samples).convert("RGBA")
+                self.after(0, self._add_pdf_page_batch, img, i, total)
+            except Exception as e:
+                print(f"[PDF] Page {i} error: {e}")
         doc.close()
+        self.after(0, self._pdf_load_done, path)
+
+    def _add_pdf_page_batch(self, img, idx, total):
+        """Main thread: add one PDF page and update progress."""
+        if not self._pdf_loading:
+            return
+        self._add_page(img.width, img.height, bg_image=img, batch=True)
+        self._pdf_progress.configure(text=f"লোড হচ্ছে... {idx + 1}/{total}")
+        # Relayout every 5 pages or on last page
+        if (idx + 1) % 5 == 0 or idx == total - 1:
+            self._relayout_pages()
+            self._update_status()
+
+    def _pdf_load_done(self, path):
+        """Main thread: cleanup after PDF load complete."""
+        self._pdf_loading = False
+        try:
+            self._canvas.delete(self._pdf_progress_win)
+            self._pdf_progress.destroy()
+        except Exception:
+            pass
+        self._relayout_pages()
+        self._update_status()
         self.title(f"এডিটর — {os.path.basename(path)}")
+        self.after(100, self._zoom_to_fit)
 
     # ── Import ────────────────────────────────────────
 
@@ -1165,9 +1415,14 @@ class EditorWindow(tk.Toplevel):
                 page_data["strokes"].append(s)
             data["pages"].append(page_data)
 
-        with open(path, "w", encoding="utf-8") as f:
+        # Safe write: temp file + rename (atomic)
+        tmp = path + ".tmp"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
-        self.title(f"এডিটর — {os.path.basename(path)}")
+        os.replace(tmp, path)
+        if path != SESSION_FILE:
+            self.title(f"এডিটর — {os.path.basename(path)}")
 
     def _load_dvai(self, path):
         try:
@@ -1255,86 +1510,111 @@ class EditorWindow(tk.Toplevel):
             messagebox.showerror("ত্রুটি", "PyMuPDF ইন্সটল নেই।", parent=self)
             return
         path = filedialog.asksaveasfilename(
-            defaultextension=".pdf", filetypes=[("PDF", "*.pdf")], parent=self
+            defaultextension=".pdf", filetypes=[("PDF", "*.pdf")],
+            title="PDF সেভ করুন", parent=self
         )
         if not path:
             return
-        try:
-            doc = fitz.open()
-            for page_obj in self._pages:
-                # Render non-text content as image
-                img = page_obj.composite(skip_text=True).convert("RGB")
-                img_bytes = io.BytesIO()
-                img.save(img_bytes, format="PNG")
-                img_bytes.seek(0)
-                pdf_page = doc.new_page(width=page_obj.width,
-                                        height=page_obj.height)
-                rect = fitz.Rect(0, 0, page_obj.width, page_obj.height)
-                pdf_page.insert_image(rect, stream=img_bytes.getvalue())
+        total = len(self._pages)
+        # Progress dialog
+        prog_win = tk.Toplevel(self)
+        prog_win.title("PDF এক্সপোর্ট")
+        prog_win.geometry("300x80")
+        prog_win.resizable(False, False)
+        prog_win.transient(self)
+        prog_label = tk.Label(prog_win, text=f"এক্সপোর্ট হচ্ছে... 0/{total}",
+                              font=("Segoe UI", 11))
+        prog_label.pack(expand=True, padx=20, pady=20)
+        prog_win.update()
 
-                # Insert text via PyMuPDF (proper Bengali/Unicode shaping)
-                page_coords = page_obj._canvas.coords(page_obj._rect_id)
-                if len(page_coords) >= 4:
-                    ppx1, ppy1 = page_coords[0], page_coords[1]
-                    pzw = page_coords[2] - page_coords[0]
-                    pzh = page_coords[3] - page_coords[1]
-                else:
-                    ppx1, ppy1 = 0, float(page_obj.y_offset)
-                    pzw = float(page_obj.width)
-                    pzh = float(page_obj.height)
-                tsx = page_obj.width / pzw if pzw > 0 else 1.0
-                tsy = page_obj.height / pzh if pzh > 0 else 1.0
+        # Composite pages in background
+        page_images = []
+        def _worker():
+            try:
+                for i, page_obj in enumerate(self._pages):
+                    img = page_obj.composite(skip_text=False).convert("RGB")
+                    page_images.append((img, page_obj.width, page_obj.height))
+                    self.after(0, lambda idx=i: prog_label.configure(
+                        text=f"এক্সপোর্ট হচ্ছে... {idx + 1}/{total}"))
+                self.after(0, _finish)
+            except Exception as e:
+                self.after(0, lambda: _error(e))
 
-                for stroke in page_obj.engine.get_strokes():
-                    if not stroke.is_text:
-                        continue
-                    try:
-                        coords = page_obj._canvas.coords(
-                            stroke.canvas_ids[0])
-                        tcx, tcy = coords[0], coords[1]
-                    except (tk.TclError, IndexError):
-                        tcx, tcy = stroke.points[0]
-                    tx = (tcx - ppx1) * tsx
-                    ty = (tcy - ppy1) * tsy
-                    font_path = EditorPage._resolve_font_path(
-                        stroke.font_family)
-                    fs = max(6, int(stroke.font_size * 1.33))
-                    try:
-                        pdf_page.insert_text(
-                            (tx, ty), stroke.text,
-                            fontfile=font_path, fontsize=fs,
-                            color=EditorPage._hex_to_rgb_float(stroke.color),
-                        )
-                    except Exception:
-                        pdf_page.insert_text(
-                            (tx, ty), stroke.text, fontsize=fs,
-                            color=EditorPage._hex_to_rgb_float(stroke.color),
-                        )
+        def _finish():
+            try:
+                doc = fitz.open()
+                for img, w, h in page_images:
+                    img_bytes = io.BytesIO()
+                    img.save(img_bytes, format="PNG", optimize=True)
+                    img_bytes.seek(0)
+                    pdf_page = doc.new_page(width=w, height=h)
+                    rect = fitz.Rect(0, 0, w, h)
+                    pdf_page.insert_image(rect, stream=img_bytes.getvalue())
+                doc.save(path)
+                doc.close()
+                prog_win.destroy()
+                messagebox.showinfo("সফল", f"PDF এক্সপোর্ট হয়েছে:\n{path}",
+                                    parent=self)
+            except Exception as e:
+                _error(e)
 
-            doc.save(path)
-            doc.close()
-            messagebox.showinfo("সফল", f"PDF এক্সপোর্ট হয়েছে:\n{path}", parent=self)
-        except Exception as e:
-            messagebox.showerror("ত্রুটি", f"PDF এক্সপোর্ট ব্যর্থ:\n{e}", parent=self)
+        def _error(e):
+            try:
+                prog_win.destroy()
+            except Exception:
+                pass
+            messagebox.showerror("ত্রুটি", f"PDF এক্সপোর্ট ব্যর্থ:\n{e}",
+                                 parent=self)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _export_images(self, fmt):
-        folder = filedialog.askdirectory(title="এক্সপোর্ট ফোল্ডার নির্বাচন", parent=self)
-        if not folder:
-            return
         ext = "png" if fmt == "png" else "jpg"
         pil_fmt = "PNG" if fmt == "png" else "JPEG"
-        try:
-            for i, page_obj in enumerate(self._pages):
-                img = page_obj.composite()
+        ft = [("PNG", "*.png")] if fmt == "png" else [("JPEG", "*.jpg *.jpeg")]
+
+        if len(self._pages) == 1:
+            # Single page: save as single file with filename
+            path = filedialog.asksaveasfilename(
+                defaultextension=f".{ext}",
+                filetypes=ft,
+                title="ইমেজ সেভ করুন",
+                parent=self
+            )
+            if not path:
+                return
+            try:
+                img = self._pages[0].composite()
                 if pil_fmt == "JPEG":
                     img = img.convert("RGB")
-                out_path = os.path.join(folder, f"page_{i+1}.{ext}")
-                img.save(out_path, format=pil_fmt, quality=95)
-            messagebox.showinfo("সফল",
-                                f"{len(self._pages)} পেজ এক্সপোর্ট হয়েছে:\n{folder}",
-                                parent=self)
-        except Exception as e:
-            messagebox.showerror("ত্রুটি", f"এক্সপোর্ট ব্যর্থ:\n{e}", parent=self)
+                img.save(path, format=pil_fmt, quality=95)
+                messagebox.showinfo("সফল", f"সেভ হয়েছে:\n{path}",
+                                    parent=self)
+            except Exception as e:
+                messagebox.showerror("ত্রুটি", f"সেভ ব্যর্থ:\n{e}", parent=self)
+        else:
+            # Multiple pages: ask for base filename, save as name_1, name_2...
+            path = filedialog.asksaveasfilename(
+                defaultextension=f".{ext}",
+                filetypes=ft,
+                title="ইমেজ সেভ করুন (পেজ নম্বর যোগ হবে)",
+                parent=self
+            )
+            if not path:
+                return
+            base, fext = os.path.splitext(path)
+            try:
+                for i, page_obj in enumerate(self._pages):
+                    img = page_obj.composite()
+                    if pil_fmt == "JPEG":
+                        img = img.convert("RGB")
+                    out_path = f"{base}_{i+1}{fext}"
+                    img.save(out_path, format=pil_fmt, quality=95)
+                messagebox.showinfo("সফল",
+                                    f"{len(self._pages)} পেজ সেভ হয়েছে:\n{base}_*.{ext}",
+                                    parent=self)
+            except Exception as e:
+                messagebox.showerror("ত্রুটি", f"সেভ ব্যর্থ:\n{e}", parent=self)
 
     # ── Helpers ───────────────────────────────────────
 
@@ -1344,15 +1624,40 @@ class EditorWindow(tk.Toplevel):
         self._pages.clear()
         self._canvas.delete("all")
         self._plus_buttons.clear()
+        self._page_number_labels.clear()
+
+    def _schedule_autosave(self):
+        self._autosave_job = self.after(60000, self._do_autosave)
+
+    def _do_autosave(self):
+        try:
+            self._save_session()
+        except Exception:
+            pass
+        self._schedule_autosave()
+
+    def _save_session(self):
+        """Save current state to session file for persistence."""
+        try:
+            os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
+            self._save_dvai(SESSION_FILE)
+        except Exception as e:
+            print(f"[EDITOR] Auto-save failed: {e}")
 
     def _on_close_window(self):
-        """Close editor + its toolbar."""
+        """Auto-save and hide editor (don't destroy — preserve state)."""
+        # Cancel auto-save timer
+        if self._autosave_job:
+            self.after_cancel(self._autosave_job)
+            self._autosave_job = None
+        # Save session
+        self._save_session()
+        # Close toolbar
         if self._pen_toolbar:
             try:
                 self._pen_toolbar.destroy()
             except tk.TclError:
                 pass
             self._pen_toolbar = None
-        for page in self._pages:
-            page.cleanup()
-        self.destroy()
+        # Hide window (don't destroy)
+        self.withdraw()

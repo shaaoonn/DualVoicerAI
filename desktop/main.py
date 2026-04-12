@@ -1022,14 +1022,19 @@ class VoiceTypingApp(ctk.CTk):
 
     def open_editor_window(self):
         """Open the built-in editor window.
-        Closes pen overlay first (its fullscreen input_win blocks editor)."""
+        Closes pen overlay first (its fullscreen input_win blocks editor).
+        Restores previous session if available."""
         if hasattr(self, '_editor_win') and self._editor_win is not None:
             try:
                 if self._editor_win.winfo_exists():
+                    self._editor_win.deiconify()
                     self._editor_win.lift()
                     # Re-open toolbar if it was closed
                     if not self._editor_win._pen_toolbar:
                         self._editor_win._open_toolbar()
+                    # Restart auto-save if stopped
+                    if not self._editor_win._autosave_job:
+                        self._editor_win._schedule_autosave()
                     return
             except tk.TclError:
                 pass
@@ -1038,8 +1043,14 @@ class VoiceTypingApp(ctk.CTk):
         if hasattr(self, '_pen_overlay') and self._pen_overlay is not None:
             self._close_pen_mode()
 
-        from ui.editor_window import EditorWindow
+        from ui.editor_window import EditorWindow, SESSION_FILE
         self._editor_win = EditorWindow(self, self)
+        # Restore previous session if exists
+        if os.path.exists(SESSION_FILE):
+            try:
+                self._editor_win._load_dvai(SESSION_FILE)
+            except Exception as e:
+                print(f"[EDITOR] Session restore failed: {e}")
 
     def toggle_pen_mode(self):
         """Toggle pen mode: off → draw → view (click-through) → draw → ..."""
@@ -2880,6 +2891,18 @@ class VoiceTypingApp(ctk.CTk):
                 if cleaned:
                     inject = (" " + cleaned) if leading_space else cleaned
                     target_engine.inject_text(inject)
+                # Gentle focus restore — match the specific target
+                try:
+                    if hasattr(self, '_pen_overlay') and self._pen_overlay:
+                        eng = getattr(self._pen_overlay, '_engine', None)
+                        if eng is target_engine and hasattr(self._pen_overlay, '_grab_focus'):
+                            self._pen_overlay._grab_focus()
+                    elif hasattr(self, '_editor_win') and self._editor_win:
+                        eng = getattr(self._editor_win, '_engine', None)
+                        if eng is target_engine and self._editor_win.winfo_exists():
+                            self._editor_win._canvas.focus_set()
+                except Exception:
+                    pass
                 return
             # Handle embedded newlines FIRST (before strip removes them)
             if "\n" in text:

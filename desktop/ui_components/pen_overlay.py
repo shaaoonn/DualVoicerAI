@@ -131,6 +131,7 @@ class PenOverlay:
 
             # Drawing engine operates on render canvas
             self._engine = DrawingEngine(self._canvas, self._parent)
+            self._engine._overlay_mode = True
 
             self._bind_events()
             self._parent.after(100, self._setup_win32)
@@ -235,7 +236,11 @@ class PenOverlay:
         self._input_win.bind("<Control-z>", lambda e: self._engine.undo())
         self._input_win.bind("<Control-y>", lambda e: self._engine.redo())
         self._input_win.bind("<Escape>", lambda e: self._on_escape())
-        self._input_win.bind("<Key>", self._engine.on_key)
+        def _on_key(event):
+            self._engine.on_key(event)
+            if self._engine._text_active:
+                return "break"
+        self._input_win.bind("<Key>", _on_key)
 
     def _on_escape(self):
         """Escape: finalize text if active, otherwise close."""
@@ -336,10 +341,6 @@ class PenOverlay:
         tool = self._engine.tool
         if tool == "eraser":
             self._input_canvas.configure(cursor="circle")
-        elif tool == "text":
-            self._input_canvas.configure(cursor="xterm")
-        elif tool == "handwrite":
-            self._input_canvas.configure(cursor="pencil")
         else:
             self._input_canvas.configure(cursor=self._pen_cursor)
 

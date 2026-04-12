@@ -41,6 +41,14 @@ class SelectionManager:
             self._mode = "resizing"
             self._resize_idx = hidx
             self._drag_start = (x, y)
+            self._resize_origin = (x, y)  # original start for total scale
+            # Save original font sizes and stroke widths for smooth resize
+            self._orig_font_sizes = {
+                id(s): s.font_size for s in self._selected if s.is_text
+            }
+            self._orig_stroke_widths = {
+                id(s): s.width for s in self._selected if not s.is_text
+            }
             bbox = self._selection_bbox()
             if bbox:
                 # Anchor is opposite corner
@@ -257,6 +265,20 @@ class SelectionManager:
 
     # ── Resize ───────────────────────────────────────
 
+    def _total_resize_scale(self, x: float, y: float) -> float:
+        """Compute total scale factor from resize origin to current position."""
+        origin = getattr(self, '_resize_origin', self._drag_start)
+        ax, ay = self._anchor
+        orig_w = abs(origin[0] - ax)
+        orig_h = abs(origin[1] - ay)
+        cur_w = abs(x - ax)
+        cur_h = abs(y - ay)
+        if orig_w < 5 and orig_h < 5:
+            return 1.0
+        sx = cur_w / orig_w if orig_w > 5 else 1.0
+        sy = cur_h / orig_h if orig_h > 5 else 1.0
+        return max(0.2, min(5.0, max(sx, sy)))
+
     def _resize_selection(self, x: float, y: float):
         """Scale selected strokes based on drag from handle."""
         bbox = self._selection_bbox()
@@ -295,9 +317,11 @@ class SelectionManager:
                         for px, py in stroke.smoothed_points
                     ]
                 if stroke.is_text:
-                    # Scale font size for text strokes
-                    scale_factor = max(sx, sy)
-                    new_fs = max(8, int(stroke.font_size * scale_factor))
+                    # Use total scale from original size for smooth resize
+                    orig_fs = getattr(self, '_orig_font_sizes', {}).get(
+                        id(stroke), stroke.font_size)
+                    total_scale = self._total_resize_scale(x, y)
+                    new_fs = max(8, int(orig_fs * total_scale))
                     stroke.font_size = new_fs
                     for cid in stroke.canvas_ids:
                         try:
@@ -306,8 +330,11 @@ class SelectionManager:
                         except tk.TclError:
                             pass
                 else:
-                    # Scale width for drawing strokes
-                    new_w_val = max(1, int(stroke.width * max(sx, sy)))
+                    # Use total scale from original width for smooth resize
+                    orig_w = getattr(self, '_orig_stroke_widths', {}).get(
+                        id(stroke), stroke.width)
+                    total_scale = self._total_resize_scale(x, y)
+                    new_w_val = max(1, int(orig_w * total_scale))
                     stroke.width = new_w_val
                     for cid in stroke.canvas_ids:
                         try:
