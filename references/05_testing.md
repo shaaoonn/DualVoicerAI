@@ -81,7 +81,7 @@
 
 ---
 
-## §build — Phase 1 Final Build
+## §build - Phase 1 Final Build
 
 ```bash
 # 1. সব dependencies install করো:
@@ -116,7 +116,7 @@ pyinstaller --noconfirm --windowed --onefile \
 
 ---
 
-## §phase3 — Phase 3 Integration Test
+## §phase3 - Phase 3 Integration Test
 
 ```
 □ config.py: DEV_MODE = False

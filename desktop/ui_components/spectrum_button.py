@@ -1,5 +1,5 @@
 # ui_components/spectrum_button.py
-"""SpectrumButton — Color emoji icons + glossy ring + spectrum animation."""
+"""SpectrumButton - Color emoji icons + glossy ring + spectrum animation."""
 import tkinter as tk
 import math
 import colorsys
@@ -130,7 +130,7 @@ class SpectrumButton(tk.Canvas):
 
         # ── Icon ──
         # SND-pause uses vector pause bars (pixel-perfect centering).
-        # Color emoji centering via font metrics is unreliable — different
+        # Color emoji centering via font metrics is unreliable - different
         # glyphs (🔊 vs ⏸️) have inconsistent bearings/advance widths so
         # anchor="mm" or textbbox math leaves them visibly shifted.
         if self.label == "SND" and self._icon_mode == "pause":
@@ -150,7 +150,7 @@ class SpectrumButton(tk.Canvas):
                 radius=radius, fill=(255, 255, 255, 255))
         else:
             emoji = EMOJI.get(self.label, self.label)
-            emoji_sz = int(sz * 0.52)  # ~52% of button size — bigger, clearer
+            emoji_sz = int(sz * 0.52)  # ~52% of button size - bigger, clearer
             try:
                 efont = ImageFont.truetype("seguiemj.ttf", emoji_sz)
             except OSError:
@@ -167,7 +167,7 @@ class SpectrumButton(tk.Canvas):
                 td.text((pad, pad), emoji,
                         font=efont, fill=(255, 255, 255, 255), embedded_color=True)
             except TypeError:
-                # Older Pillow without embedded_color — fall back without it
+                # Older Pillow without embedded_color - fall back without it
                 pad = emoji_sz
                 tmp = Image.new("RGBA", (pad * 3, pad * 3), (0, 0, 0, 0))
                 td = ImageDraw.Draw(tmp)
@@ -180,7 +180,7 @@ class SpectrumButton(tk.Canvas):
                 paste_y = cy - gh // 2 - int(sz * 0.04)
                 img.alpha_composite(glyph, (paste_x, paste_y))
             else:
-                # Nothing rendered (font missing) — final fallback
+                # Nothing rendered (font missing) - final fallback
                 d.text((cx, cy), emoji, font=efont,
                        fill=(255, 255, 255, 255), anchor="mm")
 
@@ -204,7 +204,7 @@ class SpectrumButton(tk.Canvas):
         self.create_image(0, 0, anchor="nw", image=self._photo)
 
     def _ring_metallic(self, d, cx, cy, r, segments=48):
-        """Metallic silver ring — 3D shading."""
+        """Metallic silver ring - 3D shading."""
         w = 4
         for i in range(segments):
             a = i * (360 / segments)
@@ -262,11 +262,11 @@ class SpectrumButton(tk.Canvas):
             p = 0.6 + 0.4 * math.sin(self._phase * 0.12)
             ring_color = (int(74+20*p), int(106+20*p), int(143+20*p), 255)
 
-        # Ring (PIL arc — smooth)
+        # Ring (PIL arc - smooth)
         d.ellipse([pad, pad, big - pad, big - pad],
                   outline=ring_color, width=6)
 
-        # Bars (rectangles — no AA needed)
+        # Bars (rectangles - no AA needed)
         bw = max(8, int(10 * s)); gap = max(10, int(14 * s))
         total = self.BAR_COUNT * bw + (self.BAR_COUNT - 1) * gap
         sx = cx - total // 2

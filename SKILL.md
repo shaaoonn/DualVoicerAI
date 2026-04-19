@@ -3,7 +3,7 @@ name: ai-voice-product
 description: Build the new AI-powered voice typing desktop app for EJOSB IT in 3 phases. Use this skill for: নতুন AI ভয়েস অ্যাপ, spectrum button, Smart Paste, Ctrl+Shift+V, multi-language voice, Google login, freemium gate, knowledge base, auto TTS, DEV_MODE, pen overlay, handwriting recognition, editor window, auto-update. Always read this master file first, then the relevant phase reference.
 ---
 
-# AI Voice Product — Phased Build Plan
+# AI Voice Product - Phased Build Plan
 **EJOSB IT | Successor to Dual Voicer v4.0.8**
 **github.com/shaaoonn/DualVoicerAI (base code)**
 
@@ -12,12 +12,12 @@ description: Build the new AI-powered voice typing desktop app for EJOSB IT in 3
 ## 🛑 RULES FOR CLAUDE CODE (Read Every Session)
 
 ```
-1. RESEARCH FIRST — Search PyPI/official docs before implementing. No assumptions.
-2. UPDATE PROGRESS — After each task, mark ✅ in the table below.
-3. ONE TASK AT A TIME — Complete + test before moving on.
-4. SKILL.md = GROUND TRUTH — Discover better approach? Update SKILL.md first.
-5. NO HALLUCINATION — Unsure about an API? Run: pip show <pkg> or search web.
-6. DEV_MODE — Phase 1 runs with DEV_MODE=True. Never remove this flag from code.
+1. RESEARCH FIRST - Search PyPI/official docs before implementing. No assumptions.
+2. UPDATE PROGRESS - After each task, mark ✅ in the table below.
+3. ONE TASK AT A TIME - Complete + test before moving on.
+4. SKILL.md = GROUND TRUTH - Discover better approach? Update SKILL.md first.
+5. NO HALLUCINATION - Unsure about an API? Run: pip show <pkg> or search web.
+6. DEV_MODE - Phase 1 runs with DEV_MODE=True. Never remove this flag from code.
 ```
 
 ---
@@ -25,17 +25,17 @@ description: Build the new AI-powered voice typing desktop app for EJOSB IT in 3
 ## 🗺️ 3-PHASE OVERVIEW
 
 ```
-PHASE 1: Desktop App (4–5 days) ✅ COMPLETE
+PHASE 1: Desktop App (4-5 days) ✅ COMPLETE
   → Software সম্পূর্ণ করা, DEV_MODE=True দিয়ে auth bypass
   → সব features কাজ করবে, কোনো backend দরকার নেই
   → শেষে: working .exe তৈরি
 
-PHASE 2: Backend + Website (3–4 days, Phase 1 শেষে)
+PHASE 2: Backend + Website (3-4 days, Phase 1 শেষে)
   → নতুন Flask backend + Firebase project
   → নতুন website (ejobsit.com/ai-voice বা নতুন domain)
   → Payment integration (bKash)
 
-PHASE 3: Auth Connect (1–2 days, Phase 2 শেষে)
+PHASE 3: Auth Connect (1-2 days, Phase 2 শেষে)
   → DEV_MODE=False করা
   → App-এ Google login + Phone OTP চালু করা
   → Production build + deployment
@@ -56,25 +56,25 @@ PHASE 3: Auth Connect (1–2 days, Phase 2 শেষে)
 | P1-6 | Smart Paste Ctrl+Shift+V | ✅ | ref/04_modules.md §6 | smart_paste_flow() + knowledge base + rich/plain output |
 | P1-7 | Freemium Gate (DEV_MODE bypass) | ✅ | ref/04_modules.md §7 | freemium.py + _show_lock_popup (24h trial) |
 | P1-8 | Settings Panel (860×700) | ✅ | ref/02_ui_panel.md | 6-tab sidebar panel with all settings |
-| P1-9 | Smart Punctuation | ✅ | — | Voice-triggered punctuation (BN: দাড়ি, কমা, নতুন লাইন etc. / EN: period, comma, newline etc.) |
-| P1-10 | Voice Commands | ✅ | — | backspace, ব্যাকস্পেস, back sentence, select all, copy, paste |
-| P1-11 | Pen Overlay (Screen Annotation) | ✅ | — | Two-window technique, transparent canvas, custom pen cursor |
-| P1-12 | Drawing Engine | ✅ | — | Freehand pen, highlighter, eraser, text tool, shape detection, Catmull-Rom smoothing, undo/redo |
-| P1-13 | Handwriting Recognition | ✅ | — | Google Input Tools API, batch-based, 15+ language fonts |
-| P1-14 | Font Manager (30+ fonts) | ✅ | — | Per-process Win32 font registration, language-to-font mapping |
-| P1-15 | Pen Toolbar | ✅ | — | Tool buttons, color picker, thickness slider, font dropdown, zoom slider |
-| P1-16 | Built-in Editor Window | ✅ | — | Multi-page, PDF/image open+import, export PDF/PNG/JPG, .dvai format, auto-save session |
-| P1-17 | Selection Manager | ✅ | — | Click-select, rubber-band, drag-move, corner-handle resize, image resize |
-| P1-18 | Screenshot + AI Vision | ✅ | — | Win+Shift+S capture, clipboard poll, 10s AI glow, save to folder |
-| P1-19 | Auto-Update System | ✅ | — | Background checker (30s→6h), download to ~/Downloads, installer launch |
-| P1-20 | Clipboard Guard | ✅ | — | Save/restore clipboard during AI operations |
-| P1-21 | Format Handler (Rich Paste) | ✅ | — | Markdown→HTML clipboard (CF_HTML), professional CSS, strip_markdown fallback |
-| P1-22 | Remote Config | ✅ | — | GitHub-hosted config with disk/memory cache (1h TTL), fallback defaults |
-| P1-23 | Smart Streaming TTS | ✅ | — | Sentence chunking, session-aware producer/consumer, retry logic (3 attempts) |
-| P1-24 | Noise Filter & Engine Refresh | ✅ | — | Manual threshold slider (50-500), auto-refresh every 15 recognitions |
-| P1-25 | Fullscreen Detection | ✅ | — | Auto-hide widget during fullscreen apps, pen mode overrides auto-hide |
-| P1-26 | Web-First Auth UI | ✅ | — | Login panel (email+phone), trial signup with HWID, subscription link |
-| P1-27 | Auth Security System | ✅ | — | API-based login, HWID verification, periodic re-verification (24h), expiry check, auto-login |
+| P1-9 | Smart Punctuation | ✅ | - | Voice-triggered punctuation (BN: দাড়ি, কমা, নতুন লাইন etc. / EN: period, comma, newline etc.) |
+| P1-10 | Voice Commands | ✅ | - | backspace, ব্যাকস্পেস, back sentence, select all, copy, paste |
+| P1-11 | Pen Overlay (Screen Annotation) | ✅ | - | Two-window technique, transparent canvas, custom pen cursor |
+| P1-12 | Drawing Engine | ✅ | - | Freehand pen, highlighter, eraser, text tool, shape detection, Catmull-Rom smoothing, undo/redo |
+| P1-13 | Handwriting Recognition | ✅ | - | Google Input Tools API, batch-based, 15+ language fonts |
+| P1-14 | Font Manager (30+ fonts) | ✅ | - | Per-process Win32 font registration, language-to-font mapping |
+| P1-15 | Pen Toolbar | ✅ | - | Tool buttons, color picker, thickness slider, font dropdown, zoom slider |
+| P1-16 | Built-in Editor Window | ✅ | - | Multi-page, PDF/image open+import, export PDF/PNG/JPG, .dvai format, auto-save session |
+| P1-17 | Selection Manager | ✅ | - | Click-select, rubber-band, drag-move, corner-handle resize, image resize |
+| P1-18 | Screenshot + AI Vision | ✅ | - | Win+Shift+S capture, clipboard poll, 10s AI glow, save to folder |
+| P1-19 | Auto-Update System | ✅ | - | Background checker (30s→6h), download to ~/Downloads, installer launch |
+| P1-20 | Clipboard Guard | ✅ | - | Save/restore clipboard during AI operations |
+| P1-21 | Format Handler (Rich Paste) | ✅ | - | Markdown→HTML clipboard (CF_HTML), professional CSS, strip_markdown fallback |
+| P1-22 | Remote Config | ✅ | - | GitHub-hosted config with disk/memory cache (1h TTL), fallback defaults |
+| P1-23 | Smart Streaming TTS | ✅ | - | Sentence chunking, session-aware producer/consumer, retry logic (3 attempts) |
+| P1-24 | Noise Filter & Engine Refresh | ✅ | - | Manual threshold slider (50-500), auto-refresh every 15 recognitions |
+| P1-25 | Fullscreen Detection | ✅ | - | Auto-hide widget during fullscreen apps, pen mode overrides auto-hide |
+| P1-26 | Web-First Auth UI | ✅ | - | Login panel (email+phone), trial signup with HWID, subscription link |
+| P1-27 | Auth Security System | ✅ | - | API-based login, HWID verification, periodic re-verification (24h), expiry check, auto-login |
 | P1-28 | Full test + .exe build | ✅ | ref/05_testing.md | v4.0.8 working, all imports OK |
 
 ## 📊 PHASE 2 PROGRESS (After Phase 1)
@@ -271,12 +271,12 @@ PHASE 3: Auth Connect (1–2 days, Phase 2 শেষে)
 
 > **⚠️ NOTE:** `config.py` still has placeholder values (`APP_NAME="VoiceAI Pro"`, `APP_VERSION="1.0.0"`)
 > from initial setup. `main.py` overrides with actual values: `APP_VERSION = "4.0.8"`, and uses
-> `"Dual Voicer"` as the display name. The `BACKEND_BASE` in config.py is a placeholder URL — 
+> `"Dual Voicer"` as the display name. The `BACKEND_BASE` in config.py is a placeholder URL - 
 > `main.py` directly hardcodes `https://dualvoicer.ejobsit.com/api/desktop-login` for auth.
 > These should be synced in Phase 2/3.
 
 ```python
-# config.py (ACTUAL FILE — with placeholder values noted)
+# config.py (ACTUAL FILE - with placeholder values noted)
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -287,14 +287,14 @@ load_dotenv()
 # ════════════════════════════════════════════════════════
 DEV_MODE = True   # ← ONLY change this in Phase 3
 
-# Identity (⚠️ Placeholders — main.py uses "4.0.8" and "Dual Voicer")
+# Identity (⚠️ Placeholders - main.py uses "4.0.8" and "Dual Voicer")
 APP_NAME        = "VoiceAI Pro"        # TODO: Change to "Dual Voicer" in Phase 2
 APP_VERSION     = "1.0.0"              # TODO: Sync with main.py APP_VERSION = "4.0.8"
 HWID_PREFIX     = "VAIPRO"
 APPDATA_FOLDER  = "VoiceAIPro"         # TODO: Change to "DualVoicer" (main.py uses DualVoicer)
 LOCK_FILE_NAME  = "voice_ai_pro.lock"  # TODO: Change to "dual_voicer.lock"
 
-# AI (Phase 1 — needs real key in .env)
+# AI (Phase 1 - needs real key in .env)
 OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 AI_MODELS = {
@@ -304,7 +304,7 @@ AI_MODELS = {
 }
 AI_TIMEOUT, AI_MAX_TOKENS = 20, 2048
 
-# Backend (⚠️ Placeholder URL — main.py hardcodes "https://dualvoicer.ejobsit.com")
+# Backend (⚠️ Placeholder URL - main.py hardcodes "https://dualvoicer.ejobsit.com")
 BACKEND_BASE        = os.getenv("BACKEND_URL", "https://placeholder.ejobsit.com")
 API_GOOGLE_AUTH_URL = f"{BACKEND_BASE}/api/v2/google-auth"
 API_SEND_OTP_URL    = f"{BACKEND_BASE}/api/v2/send-otp"
@@ -354,14 +354,14 @@ NEW_SETTINGS_KEYS = {
 
 ---
 
-## 🔑 DEV_MODE — How It Works
+## 🔑 DEV_MODE - How It Works
 
 ```python
-# In main.py __init__ — add these lines:
+# In main.py __init__ - add these lines:
 from config import DEV_MODE
 
 if DEV_MODE:
-    # Simulate logged-in premium user — no backend needed
+    # Simulate logged-in premium user - no backend needed
     self.is_authenticated = True
     self.user_email       = "dev@ejobsit.com"
     self.device_count     = 1
@@ -370,11 +370,11 @@ if DEV_MODE:
         "plan_type": "Pro (Dev Mode)",
         "expiry_date": "2099-12-31",
     }
-    print("[DEV_MODE] Auth bypassed — all features unlocked")
+    print("[DEV_MODE] Auth bypassed - all features unlocked")
 ```
 
 ```python
-# In freemium.py — bypass check:
+# In freemium.py - bypass check:
 def can_use(self, feature, app_instance):
     from config import DEV_MODE
     if DEV_MODE:
@@ -383,7 +383,7 @@ def can_use(self, feature, app_instance):
 ```
 
 ```python
-# In setup_hotkeys() — skip auth check:
+# In setup_hotkeys() - skip auth check:
 def ai_trigger_flow(self):
     from config import DEV_MODE
     if not DEV_MODE and not self.is_authenticated:
@@ -412,7 +412,7 @@ DualVoicerAI/                  ← GitHub repo root
 │   ├── 05_testing.md
 │   └── 06_backend.md
 │
-├── desktop/                   ← ★ Desktop App (Phase 1 — COMPLETE)
+├── desktop/                   ← ★ Desktop App (Phase 1 - COMPLETE)
 │   ├── main.py                ← 3766 lines: core app (VoiceTypingApp class)
 │   ├── config.py              ← DEV_MODE, API keys, UI config
 │   ├── updater.py             ← Auto-update system (check, download, install)
@@ -447,10 +447,10 @@ DualVoicerAI/                  ← GitHub repo root
 │   └── subscription/          ← Freemium gate
 │       └── freemium.py        ← Trial timer + feature gating
 │
-├── website/                   ← (Phase 2 — future)
+├── website/                   ← (Phase 2 - future)
 │   └── ...
 │
-└── backend/                   ← (Phase 2 — future)
+└── backend/                   ← (Phase 2 - future)
     └── ...
 ```
 
@@ -461,7 +461,7 @@ DualVoicerAI/                  ← GitHub repo root
    - desktop/ এর ফাইল website/ এ নিয়ে যাবে না, উল্টোটাও না।
    - প্রতিটা ফোল্ডার আলাদা প্রোজেক্ট, আলাদা dependency.
 
-2. NEVER flatten the structure — desktop app files MUST stay inside desktop/.
+2. NEVER flatten the structure - desktop app files MUST stay inside desktop/.
    - main.py → desktop/main.py (NOT repo root)
    - config.py → desktop/config.py (NOT repo root)
 
@@ -474,7 +474,7 @@ DualVoicerAI/                  ← GitHub repo root
 5. Git push: Always push to `main` branch on `origin`.
    - git push -u origin main
 
-6. NEVER commit .env (secrets) — only .env.example.
+6. NEVER commit .env (secrets) - only .env.example.
    - .gitignore এ .env আছে, সরাবে না।
 
 7. LOCAL dev path: F:\WEB and APPS\Dual Voicer AI\desktop\
@@ -483,7 +483,7 @@ DualVoicerAI/                  ← GitHub repo root
 
 ---
 
-## 🚀 Claude Code — Session Start
+## 🚀 Claude Code - Session Start
 
 ```
 "SKILL.md পড়ো।

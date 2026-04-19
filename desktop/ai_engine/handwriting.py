@@ -17,8 +17,8 @@ class HandwritingRecognizer:
 
     def __init__(self, on_result, on_error=None):
         """
-        on_result(text: str) — called on main thread with recognized text.
-        on_error(error: str) — called on main thread if recognition fails.
+        on_result(text: str) - called on main thread with recognized text.
+        on_error(error: str) - called on main thread if recognition fails.
         """
         self._on_result = on_result
         self._on_error = on_error

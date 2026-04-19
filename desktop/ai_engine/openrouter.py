@@ -1,5 +1,5 @@
 # ai_engine/openrouter.py
-"""OpenRouter API client — text + vision (multimodal) support."""
+"""OpenRouter API client - text + vision (multimodal) support."""
 import aiohttp, asyncio, os
 from config import (OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
                     AI_MODELS, AI_TIMEOUT, AI_MAX_TOKENS, APP_NAME)

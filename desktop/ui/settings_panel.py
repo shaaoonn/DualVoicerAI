@@ -11,7 +11,7 @@ from config import (APP_NAME, APP_VERSION, SETTINGS_WINDOW_SIZE,
 from ui_components.language_data import GOOGLE_STT_LANGUAGES
 from i18n import tr, get_ui_font
 
-# UI font — Segoe UI for English, Nirmala UI for Bengali (much crisper for Indic text)
+# UI font - Segoe UI for English, Nirmala UI for Bengali (much crisper for Indic text)
 F = get_ui_font()
 
 class SettingsPanel(ctk.CTkToplevel):
@@ -312,7 +312,7 @@ class SettingsPanel(ctk.CTkToplevel):
             self.s["mic_index"] = mic_list.index(v) if v in mic_list else 0
             self._persist()
             # Mic loop in main.py polls settings["mic_index"] every iteration
-            # and restarts the stream when it changes — no extra apply needed.
+            # and restarts the stream when it changes - no extra apply needed.
         ctk.CTkComboBox(mic_card, variable=mic_var, values=mic_list,
                         width=500, font=(F, 11),
                         command=_on_mic_change
@@ -350,7 +350,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_actions"))
         act = ctk.CTkFrame(frame, fg_color="transparent")
         act.pack(fill="x", padx=28, pady=(4, 20))
-        # Reset Engine — prefer the user-facing variant that shows a toast
+        # Reset Engine - prefer the user-facing variant that shows a toast
         # (the bare _silent_reset runs but gives no visible feedback, which
         # makes the click feel like nothing happened).
         reset_cmd = (getattr(self.app, 'reset_engine_with_feedback', None)

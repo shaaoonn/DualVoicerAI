@@ -133,7 +133,7 @@ def resource_path(relative_path):
                                user launched from. Previously we used
                                os.path.abspath(".") which broke when the
                                app was launched from outside desktop/ (e.g.
-                               from the project root) — the start/end SFX
+                               from the project root) - the start/end SFX
                                WAVs then silently failed to load.
     """
     try:
@@ -208,7 +208,7 @@ ctk.set_default_color_theme("blue")
 
 # CustomTkinter widget scaling for crisp text on high-DPI displays.
 # After enabling per-monitor DPI awareness above, the OS reports the *real*
-# DPI to tk — but ctk renders widgets at logical (1.0x) size by default,
+# DPI to tk - but ctk renders widgets at logical (1.0x) size by default,
 # so on a 1.5x or 2.0x display text looks tiny and aliased. Match ctk's
 # scaling factor to the OS scale so the panel renders crisply.
 if sys.platform == 'win32':
@@ -804,7 +804,7 @@ class VoiceTypingApp(ctk.CTk):
             try: keyboard.unhook_all()
             except Exception: pass
 
-            # ONLY register hotkeys — no suppress, no trigger_on_release
+            # ONLY register hotkeys - no suppress, no trigger_on_release
             keyboard.add_hotkey('alt+z', lambda: self.after(0, lambda: self.switch_language('bn-BD')))
             keyboard.add_hotkey('alt+x', lambda: self.after(0, lambda: self.switch_language('en-US')))
             keyboard.add_hotkey('alt+c', lambda: self.after(0, self.handle_reader_click))
@@ -835,12 +835,12 @@ class VoiceTypingApp(ctk.CTk):
         except Exception as e:
             print(f"[FOCUS] Failed to set NOACTIVATE: {e}")
 
-    # Toolbar gradient color (approx middle of gradient — used for button corners)
+    # Toolbar gradient color (approx middle of gradient - used for button corners)
     TOOLBAR_BG = "#302D5E"
 
     @staticmethod
     def _calc_dims(btn_s):
-        """Calculate window (w, h) from button size — single source of truth."""
+        """Calculate window (w, h) from button size - single source of truth."""
         sc = btn_s / 72.0
         padx = max(6, int(8 * sc))
         gap = max(3, int(4 * sc))
@@ -860,7 +860,7 @@ class VoiceTypingApp(ctk.CTk):
         from ui_components.spectrum_button import SpectrumButton
         from config import SPECTRUM_BTN_SIZE, SPECTRUM_COLORS
 
-        # Main container — holds canvas (left) + pen panel (right)
+        # Main container - holds canvas (left) + pen panel (right)
         self._main_container = tk.Frame(self, bg="#22214B")
         self._main_container.pack(fill="both", expand=True)
 
@@ -868,7 +868,7 @@ class VoiceTypingApp(ctk.CTk):
         self._panel_container = tk.Frame(
             self._main_container, bg="#302D5E",
             highlightthickness=0)
-        # NOT packed yet — packed only when pen panel opens
+        # NOT packed yet - packed only when pen panel opens
 
         # Canvas for gradient background (RIGHT side, always visible)
         self.frame = tk.Canvas(self._main_container, bg="#22214B",
@@ -934,7 +934,7 @@ class VoiceTypingApp(ctk.CTk):
         self._apply_window_size()
 
     def _render_toolbar_bg(self, w, h):
-        """Render rectangular gradient 3D toolbar background — no rounding."""
+        """Render rectangular gradient 3D toolbar background - no rounding."""
         from PIL import ImageTk
 
         img = Image.new("RGB", (w, h))
@@ -1019,7 +1019,7 @@ class VoiceTypingApp(ctk.CTk):
     BTN_SIZES = {"tiny": 48, "small": 56, "medium": 72, "large": 84, "xlarge": 96}
 
     def _apply_window_size(self):
-        """Apply size from preset — dynamic width, tight layout."""
+        """Apply size from preset - dynamic width, tight layout."""
         preset = self.settings.get("size_preset", "medium")
         btn_s = self.BTN_SIZES.get(preset, 72)
         base_w, h = self._calc_dims(btn_s)
@@ -1065,7 +1065,7 @@ class VoiceTypingApp(ctk.CTk):
         # Render gradient background (only canvas area, not panel)
         self._render_toolbar_bg(base_w, h)
 
-        # Place buttons on canvas — tight layout
+        # Place buttons on canvas - tight layout
         cy = h // 2
         x = padx + btn_s // 2
 
@@ -1074,7 +1074,7 @@ class VoiceTypingApp(ctk.CTk):
             self.frame.create_window(x, cy, window=btn, tags="widgets")
             x += btn_s + gap
 
-        # Tool frame — tight: right after last button's edge
+        # Tool frame - tight: right after last button's edge
         tool_cx = x - btn_s // 2 + tool_w // 2
         self.frame.create_window(tool_cx, cy,
                                  window=self.tool_frame, tags="widgets")
@@ -1130,7 +1130,7 @@ class VoiceTypingApp(ctk.CTk):
                     # Restart auto-save if stopped
                     if not self._editor_win._autosave_job:
                         self._editor_win._schedule_autosave()
-                    # Hide main widget — editor has all controls
+                    # Hide main widget - editor has all controls
                     self.withdraw()
                     return
             except tk.TclError:
@@ -1146,7 +1146,7 @@ class VoiceTypingApp(ctk.CTk):
                 self._editor_win._load_dvai(SESSION_FILE)
             except Exception as e:
                 print(f"[EDITOR] Session restore failed: {e}")
-        # Hide main widget — editor toolbar has all controls
+        # Hide main widget - editor toolbar has all controls
         self.withdraw()
 
     def toggle_pen_mode(self):
@@ -1218,14 +1218,14 @@ class VoiceTypingApp(ctk.CTk):
     # ── Pen tools slide-out animation ───────────────────
 
     def _animate_tools_open(self):
-        """Slide tools panel out from RIGHT edge — left edge stays fixed."""
+        """Slide tools panel out from RIGHT edge - left edge stays fixed."""
         preset = self.settings.get("size_preset", "medium")
         btn_s = self.BTN_SIZES.get(preset, 72)
         base_w, h = self._calc_dims(btn_s)
         panel_w = self._calc_tools_panel_w(btn_s)
         target_w = base_w + panel_w
 
-        # Position stays fixed — panel grows rightward
+        # Position stays fixed - panel grows rightward
         wx, wy = self.winfo_x(), self.winfo_y()
 
         # Off-screen: shift left only if needed
@@ -1258,7 +1258,7 @@ class VoiceTypingApp(ctk.CTk):
         _step(0, 0.0)
 
     def _animate_tools_close(self, on_done=None):
-        """Retract tools panel from RIGHT — left edge stays fixed."""
+        """Retract tools panel from RIGHT - left edge stays fixed."""
         preset = self.settings.get("size_preset", "medium")
         btn_s = self.BTN_SIZES.get(preset, 72)
         base_w, h = self._calc_dims(btn_s)
@@ -1285,7 +1285,7 @@ class VoiceTypingApp(ctk.CTk):
         _step(0, float(panel_w))
 
     def _retract_pen_tools(self):
-        """Called when embedded toolbar Close is clicked — retract + cleanup."""
+        """Called when embedded toolbar Close is clicked - retract + cleanup."""
         def _after_retract():
             if hasattr(self, '_pen_toolbar') and self._pen_toolbar:
                 try:
@@ -1571,7 +1571,7 @@ class VoiceTypingApp(ctk.CTk):
         from config import DEV_MODE
         # Honour the AI on/off toggle from settings
         if not self.settings.get("ai_enabled", True):
-            print("[AI] Disabled in settings — ignoring trigger")
+            print("[AI] Disabled in settings - ignoring trigger")
             return
         if not DEV_MODE and not self.is_authenticated:
             self.after(0, self.open_auth_panel)
@@ -2660,12 +2660,12 @@ class VoiceTypingApp(ctk.CTk):
     def reset_engine_with_feedback(self):
         """User-facing reset (called from Settings → Reset Engine button).
         Runs the silent reset and pops a small toast so the user knows it
-        actually happened — otherwise the click feels like nothing changed."""
+        actually happened - otherwise the click feels like nothing changed."""
         ok = self._silent_reset()
         # Show a tiny toast next to the widget so the user sees feedback
         try:
             self._show_toast(
-                "✓ Engine reset" if ok else "⚠ Reset busy — try again",
+                "✓ Engine reset" if ok else "⚠ Reset busy - try again",
                 color=("#1A5A1A" if ok else "#8B5A20"))
         except Exception as e:
             print(f"[reset toast] {e}")
@@ -2709,7 +2709,7 @@ class VoiceTypingApp(ctk.CTk):
     
     def toggle_sound(self):
         """Apply sound-effect toggle. Settings dict is already updated by the
-        settings panel from the switch's var.get() — we only persist + log."""
+        settings panel from the switch's var.get() - we only persist + log."""
         self.save_settings()
         print(f"[SETTINGS] Sound {'enabled' if self.settings.get('sound_enabled', True) else 'disabled'}")
 
@@ -3147,7 +3147,7 @@ class VoiceTypingApp(ctk.CTk):
         # Clean up spacing around punctuation
         if punctuation_found:
             # Remove space before punctuation marks (Added . to list) - but NOT before \n
-            processed = re.sub(r'[ \t]+([.।,?!;:—-])', r'\1', processed)
+            processed = re.sub(r'[ \t]+([.।,?!;:--])', r'\1', processed)
             # Remove multiple spaces (but preserve newlines)
             processed = re.sub(r'[ \t]+', ' ', processed)
             # Trim spaces (but keep newlines at the end)
@@ -3159,10 +3159,10 @@ class VoiceTypingApp(ctk.CTk):
         """Type text with smart spacing for punctuation"""
         try:
             # Route to drawing engine if text/handwrite tool is active
-            # AND that surface is the foreground window — otherwise voice text
+            # AND that surface is the foreground window - otherwise voice text
             # goes to whatever OS app the user is actually typing into.
             target_engine = None
-            # Check editor window first — only if it's the foreground window
+            # Check editor window first - only if it's the foreground window
             if hasattr(self, '_editor_win') and self._editor_win:
                 try:
                     if (self._editor_win.winfo_exists()
@@ -3183,13 +3183,13 @@ class VoiceTypingApp(ctk.CTk):
                 if cleaned:
                     inject = (" " + cleaned) if leading_space else cleaned
                     # CRITICAL: voice typing fires from a background audio
-                    # thread. Tkinter is NOT thread-safe — calling canvas
+                    # thread. Tkinter is NOT thread-safe - calling canvas
                     # methods from here causes silent failures, lost chars,
                     # and caret/text desync. Marshal to the main UI thread.
                     captured_engine = target_engine
                     captured_inject = inject
                     self.after(0, lambda: captured_engine.inject_text(captured_inject))
-                # Gentle focus restore — also marshal (same thread-safety reason)
+                # Gentle focus restore - also marshal (same thread-safety reason)
                 def _restore_focus():
                     try:
                         if hasattr(self, '_pen_overlay') and self._pen_overlay:
@@ -3231,7 +3231,7 @@ class VoiceTypingApp(ctk.CTk):
             # Clean the text
             cleaned_text = text.strip()
             # Check if text is purely punctuation (single character)
-            is_pure_punctuation = len(cleaned_text) == 1 and cleaned_text in '.।,?!;:—-'
+            is_pure_punctuation = len(cleaned_text) == 1 and cleaned_text in '.।,?!;:--'
             
             # Build the text to type
             if is_pure_punctuation:
@@ -3243,7 +3243,7 @@ class VoiceTypingApp(ctk.CTk):
             else:
                 # Punctuation embedded: No leading space
                 # But check if text starts with punctuation
-                if cleaned_text and cleaned_text[0] in '.।,?!;:—-':
+                if cleaned_text and cleaned_text[0] in '.।,?!;:--':
                     # Starts with punctuation: no leading space
                     to_type = cleaned_text
                 else:
@@ -3268,7 +3268,7 @@ class VoiceTypingApp(ctk.CTk):
             self.open_auth_panel()
             return
 
-        # Simple state machine — no _sound_busy guard
+        # Simple state machine - no _sound_busy guard
         if self.is_reading and not self.is_paused:
             # Playing → Pause (synchronous, instant)
             self._pause_reader()
@@ -3346,7 +3346,7 @@ class VoiceTypingApp(ctk.CTk):
         self.playback_queue = queue.Queue()
         self.is_reading = True; self.is_paused = False
 
-        # 3. Update UI — playing state
+        # 3. Update UI - playing state
         self.after(0, lambda: self.btn_read.set_state("listening"))
         self.after(0, lambda: self.btn_read.set_icon_mode("pause"))
 
@@ -3714,7 +3714,7 @@ class VoiceTypingApp(ctk.CTk):
     
     def _handle_fullscreen_result(self, is_fullscreen):
         """Handle fullscreen detection result on main thread.
-        When pen mode is active, NEVER hide — pen should work over fullscreen apps.
+        When pen mode is active, NEVER hide - pen should work over fullscreen apps.
         When editor is open, don't restore main widget (it's deliberately hidden)."""
         try:
             # Pen mode overrides fullscreen auto-hide
@@ -3853,7 +3853,7 @@ class VoiceTypingApp(ctk.CTk):
                                 keyboard.press_and_release('shift+enter')
                             else:
                                 # Determine leading space
-                                is_only_punc = (punc_found and len(processed_txt.strip()) <= 2 and all(c in '.।,?!;:—-\n ' for c in processed_txt))
+                                is_only_punc = (punc_found and len(processed_txt.strip()) <= 2 and all(c in '.।,?!;:--\n ' for c in processed_txt))
                                 self.type_text(processed_txt, leading_space=not is_only_punc)
                 
                 except Exception as e:

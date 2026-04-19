@@ -1,7 +1,7 @@
 # ui/editor_window.py
-"""EditorWindow — Built-in image/PDF editor with permanent annotations.
+"""EditorWindow - Built-in image/PDF editor with permanent annotations.
 
-Multi-page editor using DrawingEngine. No built-in toolbar — uses
+Multi-page editor using DrawingEngine. No built-in toolbar - uses
 the same PenToolbar as the pen overlay, so tools aren't duplicated.
 Supports opening images/PDFs, importing pages, exporting to PDF/PNG/JPG,
 and saving in internal .dvai format."""
@@ -53,7 +53,7 @@ SESSION_FILE = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')),
 
 
 class EditorPage:
-    """One page in the editor — has its own DrawingEngine."""
+    """One page in the editor - has its own DrawingEngine."""
 
     def __init__(self, canvas: tk.Canvas, parent_widget,
                  width: int, height: int, y_offset: int,
@@ -436,7 +436,7 @@ class EditorPage:
 class EditorWindow(tk.Toplevel):
     """Built-in multi-page editor.
 
-    Uses the same PenToolbar as the pen overlay — implements the same
+    Uses the same PenToolbar as the pen overlay - implements the same
     API (set_tool, set_color, set_width, set_font, undo, redo, etc.)
     so PenToolbar can target this window without any changes.
     """
@@ -509,7 +509,7 @@ class EditorWindow(tk.Toplevel):
         self.bind("<F11>", lambda e: self._toggle_fullscreen())
         self.bind("<Escape>", self._on_escape)
         self.bind("<Control-v>", lambda e: self._paste_from_clipboard())
-        # Track foreground state — used by voice typing in main.py to decide
+        # Track foreground state - used by voice typing in main.py to decide
         # whether to inject into the editor's text item or send to the OS-
         # active window. Default False so voice goes to the OS app the user
         # is actually looking at, not the editor in the background.
@@ -588,7 +588,7 @@ class EditorWindow(tk.Toplevel):
         return sep
 
     def _build_editor_toolbar(self):
-        """Unified single-row professional toolbar — voice, tools, drawing, colors, sliders."""
+        """Unified single-row professional toolbar - voice, tools, drawing, colors, sliders."""
         bg = self.TB_BG
 
         # ── Main container with top accent border ──
@@ -813,7 +813,7 @@ class EditorWindow(tk.Toplevel):
     # ── Toolbar tool methods ──────────────────────────
 
     def _toggle_draw_tool(self, tool):
-        """Toggle drawing tool — set active, update icons."""
+        """Toggle drawing tool - set active, update icons."""
         if self._active_tool == tool:
             self._active_tool = "select"
             self.set_tool("select")
@@ -914,7 +914,7 @@ class EditorWindow(tk.Toplevel):
 
     @property
     def _engine(self):
-        """Active page's DrawingEngine — used by PenToolbar."""
+        """Active page's DrawingEngine - used by PenToolbar."""
         if self._pages:
             return self._pages[self._active_page_idx].engine
         return None
@@ -984,7 +984,7 @@ class EditorWindow(tk.Toplevel):
             self.focus_force()
 
     def set_click_through(self, enabled: bool):
-        """No-op — editor is always in draw mode."""
+        """No-op - editor is always in draw mode."""
         pass
 
     @property
@@ -1024,7 +1024,7 @@ class EditorWindow(tk.Toplevel):
             page.engine.set_display_scale(z)
 
     def close(self):
-        """Called by PenToolbar close button — auto-save and hide editor."""
+        """Called by PenToolbar close button - auto-save and hide editor."""
         self._on_close_window()
 
     # ── Menu ──────────────────────────────────────────
@@ -1243,7 +1243,7 @@ class EditorWindow(tk.Toplevel):
         self._update_status()
 
     def _get_page_at(self, canvas_y: float) -> Optional[int]:
-        """Find page at canvas Y — uses actual canvas coords (works after zoom).
+        """Find page at canvas Y - uses actual canvas coords (works after zoom).
         Falls back to nearest page so pen tool never silently drops clicks."""
         if not self._pages:
             return None
@@ -1615,7 +1615,7 @@ class EditorWindow(tk.Toplevel):
             return
         self._clear_all_pages()
         self._add_page(img.width, img.height, bg_image=img)
-        self.title(f"{tr('editor_title')} — {os.path.basename(path)}")
+        self.title(f"{tr('editor_title')} - {os.path.basename(path)}")
 
     def _open_pdf(self, path):
         if not HAS_PYMUPDF:
@@ -1629,7 +1629,7 @@ class EditorWindow(tk.Toplevel):
             return
         total = len(doc)
         self._clear_all_pages()
-        self.title(f"{tr('editor_title')} — {os.path.basename(path)} ({tr('loading')})")
+        self.title(f"{tr('editor_title')} - {os.path.basename(path)} ({tr('loading')})")
         # Progress label on canvas
         self._pdf_progress = tk.Label(
             self._canvas, text=f"লোড হচ্ছে... 0/{total}",
@@ -1680,7 +1680,7 @@ class EditorWindow(tk.Toplevel):
             pass
         self._relayout_pages()
         self._update_status()
-        self.title(f"{tr('editor_title')} — {os.path.basename(path)}")
+        self.title(f"{tr('editor_title')} - {os.path.basename(path)}")
         self.after(100, self._zoom_to_fit)
 
     # ── Import ────────────────────────────────────────
@@ -1837,7 +1837,7 @@ class EditorWindow(tk.Toplevel):
             json.dump(data, f, ensure_ascii=False)
         os.replace(tmp, path)
         if path != SESSION_FILE:
-            self.title(f"{tr('editor_title')} — {os.path.basename(path)}")
+            self.title(f"{tr('editor_title')} - {os.path.basename(path)}")
 
     def _load_dvai(self, path):
         try:
@@ -1915,7 +1915,7 @@ class EditorWindow(tk.Toplevel):
                         stroke.canvas_ids = [did]
                 page.engine._strokes.append(stroke)
 
-        self.title(f"{tr('editor_title')} — {os.path.basename(path)}")
+        self.title(f"{tr('editor_title')} - {os.path.basename(path)}")
 
     # ── Export ────────────────────────────────────────
 
@@ -2068,7 +2068,7 @@ class EditorWindow(tk.Toplevel):
             print(f"[EDITOR] Auto-save failed: {e}")
 
     def _on_close_window(self):
-        """Auto-save and hide editor (don't destroy — preserve state).
+        """Auto-save and hide editor (don't destroy - preserve state).
         Restores main widget visibility."""
         # Cancel auto-save timer
         if self._autosave_job:

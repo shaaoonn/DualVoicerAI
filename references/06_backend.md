@@ -1,4 +1,4 @@
-# Reference 06: Phase 2 — Backend + Website + Firebase
+# Reference 06: Phase 2 - Backend + Website + Firebase
 **শুধু Phase 1 শেষ হওয়ার পরে এই ফাইল পড়বে**
 
 ---
@@ -7,10 +7,10 @@
 
 ```
 কাজ:
-1. নতুন Firebase project তৈরি (আলাদা — Dual Voicer থেকে আলাদা)
+1. নতুন Firebase project তৈরি (আলাদা - Dual Voicer থেকে আলাদা)
 2. নতুন Flask backend (নতুন domain)
 3. Google OAuth + Phone OTP endpoint
-4. bKash payment (copy from old app.py — already working)
+4. bKash payment (copy from old app.py - already working)
 5. Landing page (simple, conversion-focused)
 6. Coolify VPS deployment
 ```
@@ -45,10 +45,10 @@ Domain: [new-domain].ejobsit.com (create on Coolify)
 Copy from: dualvoicer-web/app.py (base)
 Remove: old email+phone login routes
 Add: /api/v2/google-auth, /api/v2/send-otp, /api/v2/verify-otp
-Keep: /api/pay, /api/callback (bKash — already working)
+Keep: /api/pay, /api/callback (bKash - already working)
 Keep: /api/latest-download, /admin/* routes
 
-New Firestore collection: 'ai_voice_users' (NOT 'users' — avoid conflict)
+New Firestore collection: 'ai_voice_users' (NOT 'users' - avoid conflict)
 ```
 
 ### Firestore Schema
@@ -76,7 +76,7 @@ Fields:
 ## §payment: bKash Integration
 
 ```python
-# Copy from existing app.py — already tested and working
+# Copy from existing app.py - already tested and working
 # Routes to keep exactly:
 # POST /api/pay        → initiate bKash payment
 # GET  /api/callback   → bKash payment callback

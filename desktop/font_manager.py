@@ -1,5 +1,5 @@
 # font_manager.py
-"""Font Manager — Registers bundled fonts with Windows and provides
+"""Font Manager - Registers bundled fonts with Windows and provides
 language-to-font mapping for handwriting recognition output.
 
 Fonts are registered per-process using AddFontResourceExW (no admin
@@ -33,10 +33,10 @@ FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 # ttf_filename = file in desktop/fonts/
 
 LANG_FONTS = {
-    # Bengali — user-provided handwriting font
+    # Bengali - user-provided handwriting font
     "bn": ("Li Alinur Nobin Unicode", "Li Alinur Nobin Unicode.ttf"),
 
-    # Latin-script languages — Playpen Sans (handwriting style)
+    # Latin-script languages - Playpen Sans (handwriting style)
     "en": ("Playpen Sans", "PlaypenSans-Regular.ttf"),
     "es": ("Playpen Sans", "PlaypenSans-Regular.ttf"),
     "fr": ("Playpen Sans", "PlaypenSans-Regular.ttf"),
@@ -46,18 +46,18 @@ LANG_FONTS = {
     "tr": ("Playpen Sans", "PlaypenSans-Regular.ttf"),
     "vi": ("Playpen Sans", "PlaypenSans-Regular.ttf"),
 
-    # Cyrillic & Greek — also covered by Playpen Sans
+    # Cyrillic & Greek - also covered by Playpen Sans
     "ru": ("Playpen Sans", "PlaypenSans-Regular.ttf"),
     "el": ("Playpen Sans", "PlaypenSans-Regular.ttf"),
 
-    # Devanagari — Dekko (handwriting feel)
+    # Devanagari - Dekko (handwriting feel)
     "hi": ("Dekko", "Dekko-Regular.ttf"),
     "ne": ("Dekko", "Dekko-Regular.ttf"),
 
     # Arabic script
     "ar": ("Playpen Sans Arabic", "PlaypenSansArabic-Regular.ttf"),
 
-    # Urdu — Nastaliq style
+    # Urdu - Nastaliq style
     "ur": ("Noto Nastaliq Urdu", "NotoNastaliqUrdu-Regular.ttf"),
 
     # Hebrew

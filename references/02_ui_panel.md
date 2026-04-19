@@ -1,5 +1,5 @@
-# Reference 02: Settings Panel — Full Spec (860×700)
-**Large desktop-app style window — NOT small like old Dual Voicer**
+# Reference 02: Settings Panel - Full Spec (860×700)
+**Large desktop-app style window - NOT small like old Dual Voicer**
 
 ---
 
@@ -9,7 +9,7 @@
 Size:     860×700 (resizable, minsize 720×580)
 Style:    Dark theme (customtkinter dark)
 Layout:   Left sidebar (190px) + Right scrollable content
-Title:    [APP_NAME] — সেটিংস
+Title:    [APP_NAME] - সেটিংস
 Position: Centered on screen
 Modal:    No (can work while open)
 ```
@@ -33,7 +33,7 @@ DEFAULT_TAB = "general"
 ```python
 # ui/settings_panel.py
 """
-Large settings window — 860×700.
+Large settings window - 860×700.
 All settings auto-save to self.settings dict (passed by reference from main.py).
 Call: SettingsPanel(parent=app, app_ref=self)
 """
@@ -49,7 +49,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self.app = app_ref          # reference to VoiceTypingApp instance
         self.s  = app_ref.settings  # settings dict (live reference)
 
-        self.title(f"{APP_NAME} — সেটিংস")
+        self.title(f"{APP_NAME} - সেটিংস")
         self.geometry(SETTINGS_WINDOW_SIZE)
         self.minsize(*SETTINGS_MIN_SIZE)
         self.attributes("-topmost", False)
@@ -348,7 +348,7 @@ class SettingsPanel(ctk.CTkToplevel):
         fmt_c = self._card(frame)
         fmt_var = ctk.StringVar(value=self.s.get("ai_output_format", "plain"))
         for val, lbl, desc in [
-            ("plain", "Plain Text", "কোনো formatting নেই — সরাসরি টেক্সট"),
+            ("plain", "Plain Text", "কোনো formatting নেই - সরাসরি টেক্সট"),
             ("rich",  "Rich (Markdown)", "**bold**, _italic_, • bullet সহ"),
         ]:
             r = ctk.CTkFrame(fmt_c, fg_color="transparent")
@@ -479,7 +479,7 @@ class SettingsPanel(ctk.CTkToplevel):
 ```python
 # Replace open_settings_panel() entirely:
 def open_settings_panel(self):
-    # Freemium gate — settings locked if trial expired
+    # Freemium gate - settings locked if trial expired
     if not self.freemium.can_use("settings", self):
         # Still open but with lock overlay
         # (Handled inside SettingsPanel if needed)

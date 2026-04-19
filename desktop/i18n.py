@@ -70,8 +70,8 @@ _TRANSLATIONS = {
     "tool_handwrite":   {"en": "Handwriting", "bn": "হাতে লেখা"},
 
     # ─────────────────────── Window titles ───────────────────────
-    "editor_title":     {"en": "Editor — VoiceAI Pro",
-                         "bn": "এডিটর — Dual Voicer AI"},
+    "editor_title":     {"en": "Editor - VoiceAI Pro",
+                         "bn": "এডিটর - Dual Voicer AI"},
     "settings_title":   {"en": "Settings",  "bn": "সেটিংস"},
     "app_title":        {"en": "VoiceAI Pro", "bn": "Dual Voicer AI"},
 
@@ -126,7 +126,7 @@ _TRANSLATIONS = {
 
     # ─────────────────────── Pen toolbar ───────────────────────
     "pt_zoom":         {"en": "Zoom",     "bn": "জুম"},
-    "pt_separator":    {"en": "—",        "bn": "—"},
+    "pt_separator":    {"en": "-",        "bn": "-"},
     "pt_close_pen":    {"en": "Close Pen Mode", "bn": "পেন মোড বন্ধ"},
 
     # ─────────────────────── Main widget ───────────────────────
@@ -150,7 +150,7 @@ _TRANSLATIONS = {
         "bn": "আপনি একজন সহায়ক সহকারী। স্ক্রিনশটটি বিশ্লেষণ করে বাংলায় স্পষ্ট ও সংক্ষিপ্ত উত্তর দিন।"
     },
 
-    # ─────────────────────── Settings panel — sidebar nav ───────────────────────
+    # ─────────────────────── Settings panel - sidebar nav ───────────────────────
     "set_nav_general":      {"en": "⚙️  General",       "bn": "⚙️  সাধারণ"},
     "set_nav_language":     {"en": "🌐  Language",      "bn": "🌐  ভাষা"},
     "set_nav_ai":           {"en": "🤖  AI Settings",   "bn": "🤖  AI সেটিংস"},
@@ -160,9 +160,9 @@ _TRANSLATIONS = {
 
     "set_btn_save":         {"en": "Save",              "bn": "সংরক্ষণ"},
     "set_btn_close":        {"en": "Close",             "bn": "বন্ধ করুন"},
-    "set_window_title":     {"en": "{app} — Settings",  "bn": "{app} — সেটিংস"},
+    "set_window_title":     {"en": "{app} - Settings",  "bn": "{app} - সেটিংস"},
 
-    # ─────────────────────── Settings panel — General tab ───────────────────────
+    # ─────────────────────── Settings panel - General tab ───────────────────────
     "set_sec_account":      {"en": "👤 Account",        "bn": "👤 অ্যাকাউন্ট"},
     "set_btn_logout":       {"en": "Logout",            "bn": "লগআউট"},
     "set_acct_expiry":      {"en": "Expires: {expiry}  •  Devices: {dev}/{max}",
@@ -201,13 +201,13 @@ _TRANSLATIONS = {
                              "bn": "📷 স্ক্রীনশট সেভ ফোল্ডার"},
     "set_lbl_screenshot_help": {"en": "Choose where AI screenshots are saved on your computer.",
                                 "bn": "AI স্ক্রীনশট কোথায় সেভ হবে সেই ফোল্ডার নির্বাচন করুন।"},
-    "set_lbl_not_set":      {"en": "Not set — using default Pictures folder",
-                             "bn": "সেট করা নেই — ডিফল্ট Pictures ফোল্ডার ব্যবহৃত হবে"},
+    "set_lbl_not_set":      {"en": "Not set - using default Pictures folder",
+                             "bn": "সেট করা নেই - ডিফল্ট Pictures ফোল্ডার ব্যবহৃত হবে"},
     "set_btn_browse":       {"en": "Browse",            "bn": "ব্রাউজ"},
     "set_dlg_pick_ss_dir":  {"en": "Screenshot Save Folder",
                              "bn": "স্ক্রিনশট সংরক্ষণ ফোল্ডার"},
 
-    # ─────────────────────── Settings panel — Language tab ───────────────────────
+    # ─────────────────────── Settings panel - Language tab ───────────────────────
     "set_sec_voice_lang":   {"en": "🌐 Voice Typing Language",
                              "bn": "🌐 ভয়েস টাইপিং ভাষা"},
     "set_voice_lang_help":  {"en": "Pick a language for each button. Powered by Google Speech API.",
@@ -217,7 +217,7 @@ _TRANSLATIONS = {
     "set_lang_change_note": {"en": "💡 Language changes apply instantly.",
                              "bn": "💡 ভাষা পরিবর্তন তাৎক্ষণিকভাবে কার্যকর হয়।"},
 
-    # ─────────────────────── Settings panel — AI tab ───────────────────────
+    # ─────────────────────── Settings panel - AI tab ───────────────────────
     "set_sec_ai":           {"en": "🤖 AI Assistant",   "bn": "🤖 AI সহকারী"},
     "set_ai_hotkeys":       {"en": "Ctrl+Shift+A: AI on selected text  |  Ctrl+Shift+V: Smart Paste",
                              "bn": "Ctrl+Shift+A: সিলেক্টেড টেক্সটে AI  |  Ctrl+Shift+V: স্মার্ট পেস্ট"},
@@ -225,8 +225,8 @@ _TRANSLATIONS = {
 
     "set_sec_output_fmt":   {"en": "Output Format",     "bn": "আউটপুট ফরম্যাট"},
     "set_fmt_plain":        {"en": "Plain Text",        "bn": "প্লেইন টেক্সট"},
-    "set_fmt_plain_desc":   {"en": "No formatting — straight text",
-                             "bn": "কোনো formatting নেই — সরাসরি টেক্সট"},
+    "set_fmt_plain_desc":   {"en": "No formatting - straight text",
+                             "bn": "কোনো formatting নেই - সরাসরি টেক্সট"},
     "set_fmt_rich":         {"en": "Rich (Markdown)",   "bn": "রিচ (Markdown)"},
     "set_fmt_rich_desc":    {"en": "**bold**, _italic_, • bullet etc.",
                              "bn": "**bold**, _italic_, • bullet সহ"},
@@ -255,7 +255,7 @@ _TRANSLATIONS = {
     "set_kb_footer":        {"en": "⌨️  Ctrl+Shift+V  →  Copied message + Knowledge Base → AI reply pasted",
                              "bn": "⌨️  Ctrl+Shift+V  →  কপি করা মেসেজ + নলেজ বেজ → AI reply paste হবে"},
 
-    # ─────────────────────── Settings panel — TTS tab ───────────────────────
+    # ─────────────────────── Settings panel - TTS tab ───────────────────────
     "set_sec_tts":          {"en": "🔊 Text-to-Speech Settings",
                              "bn": "🔊 Text-to-Speech সেটিংস"},
     "set_lbl_tts_auto":     {"en": "Auto-detect language",
@@ -266,7 +266,7 @@ _TRANSLATIONS = {
                                    "বন্ধ: নিচ থেকে manually voice চুন (সব ভাষায় কাজ নাও করতে পারে)"},
     "set_lbl_reading_speed":{"en": "Reading Speed",     "bn": "পড়ার গতি"},
 
-    # ─────────────────────── Settings panel — Subscription tab ───────────────────────
+    # ─────────────────────── Settings panel - Subscription tab ───────────────────────
     "set_sec_subscription": {"en": "🔑 Plan & Subscription",
                              "bn": "🔑 প্ল্যান ও সাবস্ক্রিপশন"},
     "set_current_plan":     {"en": "Current Plan: {plan}",
@@ -289,7 +289,7 @@ _TRANSLATIONS = {
                              "bn": "AI আনলিমিটেড, 10 PC"},
     "set_btn_subscribe":    {"en": "Subscribe →",       "bn": "সাবস্ক্রাইব করুন →"},
 
-    # ─────────────────────── Settings panel — About tab ───────────────────────
+    # ─────────────────────── Settings panel - About tab ───────────────────────
     "set_about_powered":    {"en": "Powered by EJOSB IT\nejobsit.com",
                              "bn": "Powered by EJOSB IT\nejobsit.com"},
     "set_btn_visit_website":{"en": "Visit Website",     "bn": "ওয়েবসাইট ভিজিট করুন"},
@@ -345,7 +345,7 @@ def get_available_languages():
     return list(AVAILABLE_LANGUAGES)
 
 
-# Per-script font choice — Segoe UI has no Bengali glyphs, so on Windows it
+# Per-script font choice - Segoe UI has no Bengali glyphs, so on Windows it
 # falls back to a low-quality bitmap renderer that produces visibly aliased
 # Bengali text. Nirmala UI is Microsoft's Indic font with proper anti-aliasing
 # and ligatures and looks dramatically crisper than the fallback.

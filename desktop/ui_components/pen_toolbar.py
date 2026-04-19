@@ -1,5 +1,5 @@
 # ui_components/pen_toolbar.py
-"""PenToolbar — Dual-mode toolbar for pen/annotation tool controls.
+"""PenToolbar - Dual-mode toolbar for pen/annotation tool controls.
   - mode="standalone": Floating Toplevel window (used by EditorWindow)
   - mode="embedded":   tk.Frame embedded in main widget canvas (slide-out panel)
 Pen/highlighter buttons toggle between draw mode (shows cursor) and view mode.
@@ -16,7 +16,7 @@ WS_EX_TOOLWINDOW = 0x00000080
 
 
 class PenToolbar:
-    """Compact toolbar for pen tool controls — standalone or embedded."""
+    """Compact toolbar for pen tool controls - standalone or embedded."""
 
     PEN_COLORS = [
         ("#FF0000", "Red"),
@@ -69,7 +69,7 @@ class PenToolbar:
             self._build_ui_standalone()
             self._root.after(100, self._setup_win32)
         else:
-            # Embedded frame — placed in panel container by caller
+            # Embedded frame - placed in panel container by caller
             self._root = tk.Frame(parent, bg=self.BG_EMB)
             self._font_list = self._build_font_list(self._root)
             self._build_ui_embedded()
@@ -117,7 +117,7 @@ class PenToolbar:
         except (OSError, ctypes.ArgumentError):
             pass
 
-    # ── Standalone UI (single row — original layout) ──
+    # ── Standalone UI (single row - original layout) ──
 
     def _build_ui_standalone(self):
         main = tk.Frame(self._root, bg=self.BG, padx=4, pady=3)
@@ -311,9 +311,9 @@ class PenToolbar:
             command=self._close_pen
         ).pack(side="left")
 
-    # ── Embedded UI (3 rows — compact panel) ─────────
+    # ── Embedded UI (3 rows - compact panel) ─────────
 
-    # Background colors for embedded panel — match main widget gradient
+    # Background colors for embedded panel - match main widget gradient
     BG_EMB = "#302D5E"        # Matches toolbar gradient middle
     BG_EMB_ACTIVE = "#4A4680"
     BG_EMB_HOVER = "#3D3970"
@@ -340,7 +340,7 @@ class PenToolbar:
         row1.pack(fill="x", pady=(0, 3))
         self._bind_drag(row1)
 
-        # — Drawing tools group —
+        # - Drawing tools group -
         self._btn_pen = tk.Button(
             row1, text=self.ICON_MOUSE, bg=self.BG_EMB_ACTIVE,
             font=("Segoe UI Emoji", 12), activebackground=self.BG_EMB_HOVER,
@@ -363,7 +363,7 @@ class PenToolbar:
         tk.Frame(row1, bg=sep_clr, width=1).pack(
             side="left", fill="y", padx=5, pady=3)
 
-        # — Text tools group —
+        # - Text tools group -
         self._btn_text = tk.Button(
             row1, text=self.ICON_TEXT, bg=bg,
             font=("Segoe UI", 12, "bold"), activebackground=self.BG_EMB_HOVER,
@@ -382,7 +382,7 @@ class PenToolbar:
         tk.Frame(row1, bg=sep_clr, width=1).pack(
             side="left", fill="y", padx=5, pady=3)
 
-        # — Font dropdown —
+        # - Font dropdown -
         self._font_var = tk.StringVar(
             value=self._font_list[0] if self._font_list else "Segoe UI")
         self._font_menu = tk.OptionMenu(
@@ -398,7 +398,7 @@ class PenToolbar:
             activebackground=self.BG_EMB_ACTIVE, activeforeground="#FFF")
         self._font_menu.pack(side="left", padx=4)
 
-        # — Close button (right-aligned, accent) —
+        # - Close button (right-aligned, accent) -
         tk.Button(
             row1, text="\u2716", bg="#5A2030", fg="#FFF",
             font=("Segoe UI", 11, "bold"), relief="flat", bd=0,
@@ -406,7 +406,7 @@ class PenToolbar:
             command=self._on_retract
         ).pack(side="right", padx=(2, 0))
 
-        # — Editor button (right-aligned, before close) —
+        # - Editor button (right-aligned, before close) -
         if getattr(self._overlay, '_supports_view_mode', True):
             tk.Button(
                 row1, text="\U0001f4c4", bg=bg, fg="#E0E0E0",
@@ -422,7 +422,7 @@ class PenToolbar:
         row2.pack(fill="x")
         self._bind_drag(row2)
 
-        # — Color swatches —
+        # - Color swatches -
         self._color_btns = {}
         for hex_color, name in self.PEN_COLORS:
             btn = tk.Button(
@@ -439,7 +439,7 @@ class PenToolbar:
         tk.Frame(row2, bg=sep_clr, width=1).pack(
             side="left", fill="y", padx=5, pady=3)
 
-        # — Pen thickness slider —
+        # - Pen thickness slider -
         tk.Label(row2, text="\u270f", bg=bg, fg="#AAA",
                  font=("Segoe UI Emoji", 9)).pack(side="left")
         self._thickness_var = tk.IntVar(value=4)
@@ -460,7 +460,7 @@ class PenToolbar:
         tk.Frame(row2, bg=sep_clr, width=1).pack(
             side="left", fill="y", padx=5, pady=3)
 
-        # — Font size slider —
+        # - Font size slider -
         tk.Label(row2, text="T", bg=bg, fg="#AAA",
                  font=("Segoe UI", 9, "bold")).pack(side="left")
         self._font_size_var = tk.IntVar(value=16)
@@ -477,7 +477,7 @@ class PenToolbar:
             font=("Segoe UI", 8), width=3, anchor="w")
         self._font_val_lbl.pack(side="left")
 
-        # — Actions (right-aligned) —
+        # - Actions (right-aligned) -
         act_f = tk.Frame(row2, bg=bg)
         act_f.pack(side="right", padx=(4, 0))
         for icon, cmd in [("\u21a9", self._undo), ("\u21aa", self._redo),
@@ -516,7 +516,7 @@ class PenToolbar:
         ).pack(side="left", padx=1)
 
     def get_root_widget(self):
-        """Return actual widget — Toplevel (standalone) or Frame (embedded)."""
+        """Return actual widget - Toplevel (standalone) or Frame (embedded)."""
         return self._root
 
     @staticmethod
@@ -578,7 +578,7 @@ class PenToolbar:
                 self._overlay.auto_place_text()
 
         # Swap slider between pen thickness ↔ font size (standalone only)
-        # Embedded mode has both sliders always visible — no swapping needed
+        # Embedded mode has both sliders always visible - no swapping needed
         if self._mode != "embedded":
             font_tools = ("handwrite", "text")
             entering_font = prev_tool not in font_tools and tool in font_tools
@@ -720,7 +720,7 @@ class PenToolbar:
             self._overlay.set_width(val)
 
     def _on_font_size_change(self, value):
-        """Handle font size slider change (embedded mode — always visible)."""
+        """Handle font size slider change (embedded mode - always visible)."""
         val = int(value)
         if hasattr(self, '_font_val_lbl'):
             self._font_val_lbl.configure(text=str(val))

@@ -1,10 +1,10 @@
-# Reference 04: Phase 1 Modules — Implementation Code
+# Reference 04: Phase 1 Modules - Implementation Code
 **P1-1 থেকে P1-8 পর্যন্ত সব কোড এখানে**
 **পড়ার আগে SKILL.md-এর progress table চেক করুন**
 
 ---
 
-# §1 — Spectrum Button (Task P1-1)
+# §1 - Spectrum Button (Task P1-1)
 **File:** `ui_components/spectrum_button.py`
 **কাজ:** PNG button সরিয়ে circular animated Canvas button
 
@@ -17,7 +17,7 @@ class SpectrumButton(tk.Canvas):
     """
     Circular audio spectrum button.
     States: idle | listening | ai_thinking
-    No images needed — pure Canvas drawing.
+    No images needed - pure Canvas drawing.
     """
     BAR_COUNT = 5
     ANIM_MS   = 50
@@ -204,8 +204,8 @@ def update_ui_state(self):
 
 ---
 
-# §2 — AI Engine (Task P1-2)
-**Files:** `ai_engine/` folder — ৪টি ফাইল
+# §2 - AI Engine (Task P1-2)
+**Files:** `ai_engine/` folder - ৪টি ফাইল
 
 ## ai_engine/openrouter.py
 
@@ -355,7 +355,7 @@ class TextProcessor:
 
 ---
 
-# §3 — AI Hotkey (Task P1-3)
+# §3 - AI Hotkey (Task P1-3)
 **main.py-তে যোগ করবে**
 
 ```python
@@ -411,7 +411,7 @@ def ai_trigger_flow(self):
             msgs = {
                 "RATE_LIMIT":      "⏳ AI লিমিট পৌঁছে গেছে, পরে চেষ্টা করুন",
                 "TIMEOUT":         "⌛ AI সাড়া দিচ্ছে না",
-                "INVALID_API_KEY": "🔑 API কী সমস্যা — Settings চেক করুন",
+                "INVALID_API_KEY": "🔑 API কী সমস্যা - Settings চেক করুন",
             }
             msg = msgs.get(str(e), f"❌ {e}")
             self.after(0, lambda m=msg: self._show_ai_error(m))
@@ -428,7 +428,7 @@ def _show_ai_error(self, message: str):
 
 ---
 
-# §4 — Multi-Language STT (Task P1-4)
+# §4 - Multi-Language STT (Task P1-4)
 **File:** `ui_components/language_data.py`
 
 ```python
@@ -500,12 +500,12 @@ DEFAULT_BTN2_LANG = "en-US"
 ```python
 # খুঁজুন: recognize_google(audio, language="bn-BD") বা "en-US"
 # বদলান:  recognize_google(audio, language=self.active_lang)
-# self.active_lang switch_language()-এ set হয় — কোনো অন্য পরিবর্তন লাগবে না
+# self.active_lang switch_language()-এ set হয় - কোনো অন্য পরিবর্তন লাগবে না
 ```
 
 ---
 
-# §5 — Auto-Detect TTS (Task P1-5)
+# §5 - Auto-Detect TTS (Task P1-5)
 **File:** `ai_engine/tts_detector.py`
 **Install:** `pip install fast-langdetect`
 
@@ -600,12 +600,12 @@ communicate = edge_tts.Communicate(text, tts_voice, rate=reading_speed)
 
 ---
 
-# §6 — Smart Paste (Task P1-6)
+# §6 - Smart Paste (Task P1-6)
 **main.py-তে নতুন method**
 
 ```python
 def smart_paste_flow(self):
-    """Ctrl+Shift+V — clipboard content → KB + AI → paste reply."""
+    """Ctrl+Shift+V - clipboard content → KB + AI → paste reply."""
     from config import DEV_MODE
     if not DEV_MODE and not self.is_authenticated:
         self.after(0, self.open_auth_panel)
@@ -667,7 +667,7 @@ def smart_paste_flow(self):
 
 ---
 
-# §7 — Freemium Gate (Task P1-7)
+# §7 - Freemium Gate (Task P1-7)
 **File:** `subscription/freemium.py`
 
 ```python
@@ -760,7 +760,7 @@ def _show_lock_popup(self, message: str):
 
 ---
 
-# §8 — Settings Panel (Task P1-8)
+# §8 - Settings Panel (Task P1-8)
 **→ বিস্তারিত কোড:** `references/02_ui_panel.md` পড়ুন
 **File:** `ui/settings_panel.py`
 **Integration:**
@@ -776,7 +776,7 @@ def open_settings_panel(self):
 
 ---
 
-# §9 — DEV_MODE Setup (Task P1-0)
+# §9 - DEV_MODE Setup (Task P1-0)
 
 ```python
 # main.py VoiceTypingApp.__init__() শুরুতে যোগ করো:

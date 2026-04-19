@@ -1,5 +1,5 @@
 # ui_components/selection_manager.py
-"""SelectionManager — Canvas item selection, move, and resize for the editor.
+"""SelectionManager - Canvas item selection, move, and resize for the editor.
 
 Handles click-to-select, rubber-band (marquee) selection, drag-to-move,
 and corner-handle resize. Works with DrawingEngine Stroke objects."""
@@ -83,7 +83,7 @@ class SelectionManager:
             self._drag_start = (x, y)
             return
 
-        # 4) Empty area — start rubber-band
+        # 4) Empty area - start rubber-band
         self.deselect_all()
         self._mode = "rubber_band"
         self._drag_start = (x, y)

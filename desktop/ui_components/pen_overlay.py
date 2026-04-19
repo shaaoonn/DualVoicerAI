@@ -1,9 +1,9 @@
 # ui_components/pen_overlay.py
-"""PenOverlay — Fullscreen transparent canvas for screen annotation.
+"""PenOverlay - Fullscreen transparent canvas for screen annotation.
 
 Two-window technique for proper transparent drawing on Windows:
-  render_win — Shows strokes at full opacity, transparent bg (WS_EX_TRANSPARENT)
-  input_win  — Nearly invisible (alpha=1/255), captures all mouse events
+  render_win - Shows strokes at full opacity, transparent bg (WS_EX_TRANSPARENT)
+  input_win  - Nearly invisible (alpha=1/255), captures all mouse events
 
 Drawing logic delegated to DrawingEngine (drawing_engine.py)."""
 
@@ -131,8 +131,8 @@ class PenOverlay:
     """Fullscreen transparent overlay for drawing annotations on screen.
 
     Two-window technique:
-      render_win — Shows strokes, transparent bg, click-through
-      input_win  — Nearly invisible, captures mouse events
+      render_win - Shows strokes, transparent bg, click-through
+      input_win  - Nearly invisible, captures mouse events
 
     Z-order: input_win < MAIN WIDGET < render_win < PenToolbar
     """

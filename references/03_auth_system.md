@@ -1,4 +1,4 @@
-# Reference 03: Auth System — Google OAuth + Phone OTP
+# Reference 03: Auth System - Google OAuth + Phone OTP
 **Replaces old email+phone system | Research: April 2026**
 
 ---
@@ -39,7 +39,7 @@ Security maintained:
 
 ```
 Window: 440×520, centered, modal (CTkToplevel)
-Title: [APP_NAME] — লগইন
+Title: [APP_NAME] - লগইন
 
 ┌────────────────────────────────────────┐
 │         [APP LOGO]                     │
@@ -74,7 +74,7 @@ Title: [APP_NAME] — লগইন
 
 ## Method 1: Google OAuth Flow (Desktop Python)
 
-### How it works (Verified — google-auth-oauthlib)
+### How it works (Verified - google-auth-oauthlib)
 
 ```
 1. App opens Google consent URL in system browser
@@ -91,7 +91,7 @@ Title: [APP_NAME] — লগইন
 # subscription/auth_new.py
 """
 Google OAuth for desktop Python app.
-Uses InstalledAppFlow (google-auth-oauthlib) — opens browser,
+Uses InstalledAppFlow (google-auth-oauthlib) - opens browser,
 catches callback on local server.
 
 Research: https://googleapis.github.io/google-api-python-client/docs/oauth-installed.html
@@ -104,7 +104,7 @@ from urllib.parse import urlparse, parse_qs
 import google_auth_oauthlib.flow as oauth_flow
 from config import GOOGLE_CLIENT_ID, API_GOOGLE_AUTH_URL
 
-# Google OAuth scopes — only email + profile (minimal permissions)
+# Google OAuth scopes - only email + profile (minimal permissions)
 GOOGLE_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -127,7 +127,7 @@ def google_login(on_success, on_error):
     """
     Opens browser for Google login.
     Calls on_success(user_data) or on_error(message) when done.
-    Non-blocking — runs in thread.
+    Non-blocking - runs in thread.
     """
     def _run():
         try:
@@ -162,7 +162,7 @@ def google_login(on_success, on_error):
     threading.Thread(target=_run, daemon=True).start()
 ```
 
-### Backend endpoint (app.py — new route)
+### Backend endpoint (app.py - new route)
 
 ```python
 # Add to app.py:
@@ -324,7 +324,7 @@ def send_otp():
     if not phone.startswith('+'):
         return jsonify({'success': False, 'message': 'Phone must start with country code (+880...)'}), 400
 
-    # Firebase Phone Auth — send OTP
+    # Firebase Phone Auth - send OTP
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key={FIREBASE_API_KEY}"
     resp = requests.post(url, json={"phoneNumber": phone, "recaptchaToken": "BYPASS"})
     # Note: For server-to-server, use Firebase Admin SDK instead of recaptcha

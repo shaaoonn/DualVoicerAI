@@ -1,5 +1,5 @@
 # ui_components/drawing_engine.py
-"""DrawingEngine — Canvas-agnostic drawing engine.
+"""DrawingEngine - Canvas-agnostic drawing engine.
 
 Extracted from pen_overlay.py to be reused by both the transparent
 screen overlay and the built-in editor. Operates on any tk.Canvas.
@@ -95,11 +95,11 @@ class DrawingEngine:
         self._ema_y = 0.0
         self._ema_alpha = 0.35
 
-        # Display scale (zoom) — original font sizes are stored in Stroke,
+        # Display scale (zoom) - original font sizes are stored in Stroke,
         # canvas items use font_size * _display_scale
         self._display_scale = 1.0
 
-        # Handwriting recognition — batch-based (one recognition per batch)
+        # Handwriting recognition - batch-based (one recognition per batch)
         self._hw_points = []            # current batch stroke points
         self._hw_batch_strokes = []     # current batch Stroke objects on canvas
         self._hw_inflight_strokes = []  # strokes sent for recognition (in-flight)
@@ -226,7 +226,7 @@ class DrawingEngine:
         if self._text_active:
             self._finalize_text()
 
-        # Cancel handwriting debounce — user is still drawing
+        # Cancel handwriting debounce - user is still drawing
         if self._tool == "handwrite" and self._hw_debounce_job:
             self._parent.after_cancel(self._hw_debounce_job)
             self._hw_debounce_job = None
@@ -311,7 +311,7 @@ class DrawingEngine:
             )
             self._current_stroke.canvas_ids.append(line_id)
 
-        # Shape hold detection — 3s timer resets on movement
+        # Shape hold detection - 3s timer resets on movement
         self._last_move_pos = (x, y)
         self._cancel_shape_hold()
         if len(pts) > 5:
@@ -487,7 +487,7 @@ class DrawingEngine:
             return
         if event.keysym == "Escape":
             if self._editing_stroke:
-                # Cancel edit — restore original text
+                # Cancel edit - restore original text
                 dfont = self._display_font(self._editing_stroke.font_family,
                                            self._editing_stroke.font_size)
                 try:
@@ -773,7 +773,7 @@ class DrawingEngine:
         """Draw highlight rectangles over selected text.
 
         Wrap-aware: emits one rectangle per visual line spanned by the
-        selection — first line from sel-start to end-of-line, full middle
+        selection - first line from sel-start to end-of-line, full middle
         lines from line-start to line-end-of-text, last line from line-start
         to sel-end. Identical to how OneNote / browser textareas highlight.
         """
@@ -851,7 +851,7 @@ class DrawingEngine:
         Returns a list of (visual_line_text, consumed_chars, start_offset)
         where start_offset is the buffer index where this visual line begins.
         consumed_chars INCLUDES the trailing space that wraps to the next
-        visual line, OR the trailing '\\n' that ends a paragraph — so summing
+        visual line, OR the trailing '\\n' that ends a paragraph - so summing
         them tells you the buffer position of the next visual line, and
         sum(consumed_chars) == len(text) exactly.
 
@@ -923,7 +923,7 @@ class DrawingEngine:
         return last_i, f.measure(last_v), last_v
 
     def _calc_cursor_pos(self, font):
-        """Calculate caret (x, y) — y is the TOP of the caret line.
+        """Calculate caret (x, y) - y is the TOP of the caret line.
 
         Honours BOTH explicit '\\n' breaks AND tk.Canvas auto word-wrap when
         the text item has a `width=` constraint (drag-created text boxes).
@@ -990,7 +990,7 @@ class DrawingEngine:
             cursor_h = self._cursor_height(dfont)
             self._canvas.coords(self._text_cursor_id, cx, cy, cx, cy + cursor_h)
             self._canvas.itemconfigure(self._text_cursor_id, fill=color)
-            # ALWAYS raise caret above the text item — otherwise tag-raise
+            # ALWAYS raise caret above the text item - otherwise tag-raise
             # operations elsewhere (selection rect lower, layer reordering on
             # itemconfigure, etc.) can leave the caret hidden behind text.
             try:
@@ -1255,7 +1255,7 @@ class DrawingEngine:
         )
 
     def _on_hw_result(self, text):
-        """API result — delete drawn strokes, place/append text, show cursor."""
+        """API result - delete drawn strokes, place/append text, show cursor."""
         if not text:
             return
 

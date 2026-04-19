@@ -1,5 +1,5 @@
 # ai_engine/screenshot_analyzer.py
-"""Screenshot AI Analyzer — Captures clipboard image and sends to vision model.
+"""Screenshot AI Analyzer - Captures clipboard image and sends to vision model.
 
 Features:
   - Grabs image from Windows clipboard (after snip/screenshot)
