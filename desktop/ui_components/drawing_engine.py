@@ -29,6 +29,7 @@ class Stroke:
     font_family: str = "Segoe UI"
     font_size: int = 16
     anchor: str = "nw"  # canvas text anchor: "nw" for top-left growth
+    wrap_width: int = 0  # 0 = auto-wrap to canvas edge; >0 = drag-defined box width
 
 
 class DrawingEngine:
@@ -72,7 +73,8 @@ class DrawingEngine:
         self._text_font_size = 0        # 0 = use _pen_width*4 fallback
         self._text_sel_start = -1       # selection start index (-1 = no selection)
         self._text_sel_end = -1         # selection end index
-        self._text_sel_id = None        # canvas rectangle for selection highlight
+        self._text_sel_id = None        # legacy: first canvas rect of selection highlight
+        self._text_sel_ids = []         # all canvas rects (one per visual line)
         self._text_dragging = False     # True during text drag-select
         self._font_family = "Segoe UI"
         self._dragging_stroke = None
@@ -109,6 +111,11 @@ class DrawingEngine:
         self._hw_active_text = None     # most recent recognized text Stroke (for appending)
         self._hw_pre_context = ""       # previously recognized text for API context
         self._hw_last_pen_width = 4     # pen thickness preserved from pen tool
+
+        # Text drag-to-create-box (Photoshop-style)
+        self._text_drag_start = None
+        self._text_drag_rect_id = None
+        self._text_wrap_w = 0  # last-used text wrap width (0 = auto)
 
     # ── Public API (called by toolbar) ────────────────
 
@@ -206,7 +213,10 @@ class DrawingEngine:
             if hit:
                 self._edit_existing_text(hit, click_x=x)
                 return
-            self._start_text_at(x, y)
+            # Empty space: start drag tracking (click vs drag decided on mouse up)
+            if self._text_active:
+                self._finalize_text()
+            self._text_drag_start = (x, y)
             return
 
         if self._tool == "eraser":
@@ -242,6 +252,17 @@ class DrawingEngine:
         self._current_stroke.canvas_ids.append(dot_id)
 
     def on_mouse_move(self, event):
+        # Text drag-to-create-box preview (Photoshop style)
+        if self._tool == "text" and self._text_drag_start is not None:
+            sx, sy = self._text_drag_start
+            if self._text_drag_rect_id:
+                self._canvas.delete(self._text_drag_rect_id)
+            self._text_drag_rect_id = self._canvas.create_rectangle(
+                sx, sy, event.x, event.y,
+                outline=self._pen_color, dash=(4, 3), width=1,
+                tags="text_drag_preview")
+            return
+
         # Text drag-select
         if self._text_dragging and self._text_active and self._text_canvas_id:
             idx = self._char_index_at(event.x, event.y)
@@ -298,6 +319,30 @@ class DrawingEngine:
 
     def on_mouse_up(self, event):
         self._cancel_shape_hold()
+
+        # Text drag-to-create-box (Photoshop/OneNote style):
+        #   click without drag → start text at click position (auto-wrap to canvas edge)
+        #   drag a rectangle  → start text inside that rectangle, wrap to its width
+        if self._tool == "text" and self._text_drag_start is not None:
+            sx, sy = self._text_drag_start
+            ex, ey = event.x, event.y
+            # Clean up the dashed preview rectangle
+            if self._text_drag_rect_id:
+                try: self._canvas.delete(self._text_drag_rect_id)
+                except Exception: pass
+                self._text_drag_rect_id = None
+            self._text_drag_start = None
+
+            dx, dy = abs(ex - sx), abs(ey - sy)
+            if dx < 5 and dy < 5:
+                # Treat as a simple click → IME-style insertion point
+                self._start_text_at(sx, sy)
+            else:
+                # User dragged a box → constrain text to that width, left-aligned wrap
+                x1, y1 = min(sx, ex), min(sy, ey)
+                wrap_w = max(50, abs(ex - sx))
+                self._start_text_at(x1, y1, wrap_w=wrap_w)
+            return
 
         if self._text_dragging:
             self._text_dragging = False
@@ -580,7 +625,13 @@ class DrawingEngine:
         size = self._text_font_size if self._text_font_size else max(24, self._pen_width * 4)
         return (self._font_family, size)
 
-    def _start_text_at(self, x, y):
+    def _start_text_at(self, x, y, wrap_w=None):
+        """Start text input at (x, y).
+
+        wrap_w:
+          - None  → simple click: auto-wrap from x to canvas right edge
+          - int   → drag-created box: wrap to this exact width (left-aligned)
+        """
         if self._text_active:
             self._finalize_text()
 
@@ -592,15 +643,20 @@ class DrawingEngine:
 
         font = self._get_text_font()
         dfont = self._display_font(font[0], font[1])
-        # Auto-wrap: remaining width to canvas edge
-        wrap_w = max(200, int(self._canvas.winfo_width() - x - 20))
+        # Wrap width: drag → user-defined; click → remaining canvas width
+        if wrap_w is None:
+            wrap_w = max(200, int(self._canvas.winfo_width() - x - 20))
+        else:
+            wrap_w = max(50, int(wrap_w))
+        # Remember the box width so the text stroke retains it on commit + edit
+        self._text_wrap_w = wrap_w
         self._text_canvas_id = self._canvas.create_text(
             x, y, text="", anchor="nw",
             fill=self._pen_color, font=dfont, tags="stroke",
-            width=wrap_w,
+            width=wrap_w, justify="left",
         )
         self._text_cursor_visible = True
-        cursor_h = dfont[1] if isinstance(dfont[1], int) else 20
+        cursor_h = self._cursor_height(dfont)
         self._text_cursor_id = self._canvas.create_line(
             x, y, x, y + cursor_h,
             fill=self._pen_color, width=2, tags="text_cursor"
@@ -617,6 +673,8 @@ class DrawingEngine:
         self._editing_stroke = stroke
         self._text_buffer = stroke.text
         self._text_pos = stroke.points[0]
+        # Restore the box width so further typing keeps the original wrap geometry
+        self._text_wrap_w = getattr(stroke, "wrap_width", 0) or 0
 
         dfont = self._display_font(stroke.font_family, stroke.font_size)
         self._text_canvas_id = stroke.canvas_ids[0]
@@ -645,7 +703,7 @@ class DrawingEngine:
         self._text_cursor_visible = True
         cursor_x, cursor_y = self._calc_cursor_pos(dfont)
 
-        cursor_h = dfont[1] if isinstance(dfont[1], int) else 20
+        cursor_h = self._cursor_height(dfont)
         self._text_cursor_id = self._canvas.create_line(
             cursor_x, cursor_y, cursor_x, cursor_y + cursor_h,
             fill=stroke.color, width=2, tags="text_cursor"
@@ -653,7 +711,12 @@ class DrawingEngine:
         self._blink_cursor()
 
     def _char_index_at(self, x, y):
-        """Find character index in text buffer at canvas position (x, y)."""
+        """Find character index in text buffer at canvas position (x, y).
+
+        Wrap-aware: maps visual lines (after word-wrap) to buffer offsets so
+        clicking on the second visual line of a wrapped paragraph lands on the
+        right buffer index.
+        """
         if not self._text_canvas_id or not self._text_buffer:
             return 0
         bbox = self._canvas.bbox(self._text_canvas_id)
@@ -661,23 +724,19 @@ class DrawingEngine:
             return 0
         try:
             import tkinter.font as tkFont
-            stroke = self._editing_stroke
-            if stroke:
-                dfont = self._display_font(stroke.font_family, stroke.font_size)
-            else:
-                font = self._get_text_font()
-                dfont = self._display_font(font[0], font[1])
+            dfont = self._get_text_dfont()
             f = tkFont.Font(family=dfont[0], size=dfont[1])
             line_h = f.metrics('linespace')
-            # Which line?
+            visual_lines = self._wrap_lines(
+                self._text_buffer, f, self._get_wrap_width())
+            # Which visual line?
             rel_y = y - bbox[1]
             line_num = max(0, int(rel_y / line_h)) if line_h > 0 else 0
-            lines = self._text_buffer.split('\n')
-            if line_num >= len(lines):
-                return len(self._text_buffer)
-            # Character offset within line
-            rel_x = x - bbox[0]
-            line = lines[line_num]
+            line_num = min(line_num, len(visual_lines) - 1)
+            vline_text, n_chars, start_offset = visual_lines[line_num]
+            # Character offset within the visual line
+            rel_x = max(0, x - bbox[0])
+            line = vline_text
             best_idx = len(line)
             for i in range(1, len(line) + 1):
                 w = f.measure(line[:i])
@@ -685,8 +744,7 @@ class DrawingEngine:
                     w_prev = f.measure(line[:i - 1])
                     best_idx = i - 1 if (rel_x - w_prev) < (w - rel_x) else i
                     break
-            # Convert to buffer index
-            buf_idx = sum(len(lines[j]) + 1 for j in range(line_num)) + best_idx
+            buf_idx = start_offset + best_idx
             return min(buf_idx, len(self._text_buffer))
         except Exception:
             return len(self._text_buffer)
@@ -712,8 +770,14 @@ class DrawingEngine:
         return True
 
     def _draw_text_selection(self):
-        """Draw highlight rectangle over selected text."""
-        self._clear_sel_rect()  # only remove old rect, keep indices
+        """Draw highlight rectangles over selected text.
+
+        Wrap-aware: emits one rectangle per visual line spanned by the
+        selection — first line from sel-start to end-of-line, full middle
+        lines from line-start to line-end-of-text, last line from line-start
+        to sel-end. Identical to how OneNote / browser textareas highlight.
+        """
+        self._clear_sel_rect()  # remove old rects, keep indices
         if not self._has_text_selection() or not self._text_canvas_id:
             return
         bbox = self._canvas.bbox(self._text_canvas_id)
@@ -721,47 +785,53 @@ class DrawingEngine:
             return
         try:
             import tkinter.font as tkFont
-            stroke = self._editing_stroke
-            if stroke:
-                dfont = self._display_font(stroke.font_family, stroke.font_size)
-            else:
-                font = self._get_text_font()
-                dfont = self._display_font(font[0], font[1])
+            dfont = self._get_text_dfont()
             f = tkFont.Font(family=dfont[0], size=dfont[1])
             line_h = f.metrics('linespace')
+
+            visual_lines = self._wrap_lines(self._text_buffer, f, self._get_wrap_width())
             s, e = self._get_selection_range()
-            text_before_s = self._text_buffer[:s]
-            text_before_e = self._text_buffer[:e]
-            lines_s = text_before_s.split('\n')
-            lines_e = text_before_e.split('\n')
-            line_s = len(lines_s) - 1
-            line_e = len(lines_e) - 1
-            x_s = bbox[0] + f.measure(lines_s[-1])
-            x_e = bbox[0] + f.measure(lines_e[-1])
-            if line_s == line_e:
-                # Single line selection
-                self._text_sel_id = self._canvas.create_rectangle(
-                    x_s, bbox[1] + line_s * line_h,
-                    x_e, bbox[1] + (line_s + 1) * line_h,
+            line_s, x_s_off, _   = self._buffer_idx_to_visual(s, f, visual_lines)
+            line_e, x_e_off, _   = self._buffer_idx_to_visual(e, f, visual_lines)
+
+            self._text_sel_ids = []
+            for li in range(line_s, line_e + 1):
+                vline_text = visual_lines[li][0]
+                line_full_w = f.measure(vline_text)
+                # Determine left/right x for this visual line
+                if li == line_s:
+                    x1 = bbox[0] + x_s_off
+                else:
+                    x1 = bbox[0]
+                if li == line_e:
+                    x2 = bbox[0] + x_e_off
+                else:
+                    x2 = bbox[0] + line_full_w
+                # Skip degenerate rects
+                if x2 <= x1:
+                    continue
+                y1 = bbox[1] + li * line_h
+                y2 = y1 + line_h
+                rid = self._canvas.create_rectangle(
+                    x1, y1, x2, y2,
                     fill="#3399FF", outline="", stipple="gray50",
                     tags="text_sel"
                 )
-            else:
-                # Multi-line: just highlight the full bounding area
-                self._text_sel_id = self._canvas.create_rectangle(
-                    bbox[0], bbox[1] + line_s * line_h,
-                    bbox[2], bbox[1] + (line_e + 1) * line_h,
-                    fill="#3399FF", outline="", stipple="gray50",
-                    tags="text_sel"
-                )
-            # Ensure selection is behind text
-            if self._text_sel_id and self._text_canvas_id:
-                self._canvas.tag_lower(self._text_sel_id, self._text_canvas_id)
+                self._text_sel_ids.append(rid)
+                self._canvas.tag_lower(rid, self._text_canvas_id)
+            # Keep _text_sel_id in sync with the legacy single-rect API
+            self._text_sel_id = self._text_sel_ids[0] if self._text_sel_ids else None
         except Exception:
             pass
 
     def _clear_sel_rect(self):
-        """Remove only the visual selection rectangle (keep indices)."""
+        """Remove all visual selection rectangles (keep indices)."""
+        for rid in getattr(self, "_text_sel_ids", []) or []:
+            try:
+                self._canvas.delete(rid)
+            except tk.TclError:
+                pass
+        self._text_sel_ids = []
         if self._text_sel_id:
             try:
                 self._canvas.delete(self._text_sel_id)
@@ -775,27 +845,112 @@ class DrawingEngine:
         self._text_sel_start = -1
         self._text_sel_end = -1
 
+    def _wrap_lines(self, text, f, max_width):
+        """Simulate tk.Canvas word-wrap.
+
+        Returns a list of (visual_line_text, consumed_chars, start_offset)
+        where start_offset is the buffer index where this visual line begins.
+        consumed_chars INCLUDES the trailing space that wraps to the next
+        visual line, OR the trailing '\\n' that ends a paragraph — so summing
+        them tells you the buffer position of the next visual line, and
+        sum(consumed_chars) == len(text) exactly.
+
+        max_width <= 0 → no wrapping (one visual line per paragraph).
+        """
+        out = []
+        if not text:
+            return [("", 0, 0)]
+        paragraphs = text.split('\n')
+        cursor = 0  # buffer offset for the next visual line to start
+        for p_idx, para in enumerate(paragraphs):
+            trailing_nl = 1 if p_idx < len(paragraphs) - 1 else 0
+            if max_width <= 0 or not para:
+                n = len(para) + trailing_nl
+                out.append((para, n, cursor))
+                cursor += n
+                continue
+            words = para.split(' ')
+            current = ''         # accumulated visible text for the current line
+            line_start = cursor  # buffer offset where current line begins
+            for w in words:
+                sep = '' if not current else ' '
+                candidate = current + sep + w
+                if f.measure(candidate) <= max_width or not current:
+                    current = candidate
+                else:
+                    # Wrap: the space that would have been `sep` is consumed
+                    # by THIS line (so buffer offsets stay aligned).
+                    n = len(current) + 1
+                    out.append((current, n, line_start))
+                    line_start += n
+                    current = w
+            # Last visual line of this paragraph
+            n = len(current) + trailing_nl
+            out.append((current, n, line_start))
+            cursor = line_start + n
+        return out
+
+    def _get_text_dfont(self):
+        """Return display font tuple for the currently active text item."""
+        stroke = self._editing_stroke
+        if stroke:
+            return self._display_font(stroke.font_family, stroke.font_size)
+        font = self._get_text_font()
+        return self._display_font(font[0], font[1])
+
+    def _get_wrap_width(self):
+        """Read wrap width from the active text item itself."""
+        if not self._text_canvas_id:
+            return 0
+        try:
+            return int(self._canvas.itemcget(self._text_canvas_id, "width"))
+        except (tk.TclError, ValueError):
+            return 0
+
+    def _buffer_idx_to_visual(self, idx, f, visual_lines):
+        """Map buffer index → (visual_line_num, x_offset_within_line, line_text_before_cursor)."""
+        consumed = 0
+        for i, (vline, n_chars, start) in enumerate(visual_lines):
+            # Cursor sits on this line when target ≤ start + len(visible_text)
+            in_line_end = start + len(vline)
+            if idx <= in_line_end:
+                in_line_idx = max(0, idx - start)
+                return i, f.measure(vline[:in_line_idx]), vline[:in_line_idx]
+            consumed = start + n_chars
+        # Past end → end of last line
+        last_i = len(visual_lines) - 1
+        last_v, _, _ = visual_lines[last_i]
+        return last_i, f.measure(last_v), last_v
+
     def _calc_cursor_pos(self, font):
-        """Calculate cursor x,y from _text_cursor_idx. Handles multiline."""
+        """Calculate caret (x, y) — y is the TOP of the caret line.
+
+        Honours BOTH explicit '\\n' breaks AND tk.Canvas auto word-wrap when
+        the text item has a `width=` constraint (drag-created text boxes).
+        """
         bbox = self._canvas.bbox(self._text_canvas_id) if self._text_canvas_id else None
         if not bbox:
             return self._text_pos
-
-        text_before = self._text_buffer[:self._text_cursor_idx]
-
         try:
             import tkinter.font as tkFont
             f = tkFont.Font(family=font[0], size=font[1])
             line_h = f.metrics('linespace')
-            # Handle multiline: cursor is on the last line of text_before
-            lines_before = text_before.split('\n')
-            last_line = lines_before[-1]
-            line_num = len(lines_before) - 1
-            cx = bbox[0] + f.measure(last_line)
-            cy = bbox[1] + line_h * line_num + line_h // 2
+            visual_lines = self._wrap_lines(self._text_buffer, f, self._get_wrap_width())
+            line_num, x_off, _ = self._buffer_idx_to_visual(
+                self._text_cursor_idx, f, visual_lines)
+            return bbox[0] + x_off, bbox[1] + line_h * line_num
         except Exception:
-            cx = bbox[2]
-        return cx, cy
+            return bbox[2], bbox[1]
+
+    def _cursor_height(self, dfont):
+        """Pixel-accurate cursor line height using font metrics (NOT pt size)."""
+        try:
+            import tkinter.font as tkFont
+            f = tkFont.Font(family=dfont[0], size=dfont[1])
+            return f.metrics('linespace')
+        except Exception:
+            sz = dfont[1] if isinstance(dfont[1], int) else 16
+            return int(sz * 1.3)
 
     def _blink_cursor(self):
         if not self._text_active:
@@ -829,7 +984,7 @@ class DrawingEngine:
                                            len(self._text_buffer)))
         if self._text_cursor_id:
             cx, cy = self._calc_cursor_pos(dfont)
-            cursor_h = dfont[1] if isinstance(dfont[1], int) else 20
+            cursor_h = self._cursor_height(dfont)
             self._canvas.coords(self._text_cursor_id, cx, cy, cx, cy + cursor_h)
             self._canvas.itemconfigure(self._text_cursor_id, fill=color)
 
@@ -877,6 +1032,7 @@ class DrawingEngine:
                 font_family=self._font_family,
                 font_size=font[1],  # original (un-zoomed) size
                 anchor="nw",  # text tool uses nw for multiline
+                wrap_width=getattr(self, "_text_wrap_w", 0) or 0,
             )
             self._strokes.append(stroke)
             self._undo_stack.clear()
@@ -1019,10 +1175,14 @@ class DrawingEngine:
         if stroke.is_text:
             stroke.canvas_ids.clear()
             dfont = self._display_font(stroke.font_family, stroke.font_size)
+            wrap_w = getattr(stroke, "wrap_width", 0) or 0
+            kwargs = dict(text=stroke.text, anchor=stroke.anchor,
+                          fill=stroke.color, font=dfont, tags="stroke",
+                          justify="left")
+            if wrap_w > 0:
+                kwargs["width"] = wrap_w
             tid = self._canvas.create_text(
-                stroke.points[0][0], stroke.points[0][1],
-                text=stroke.text, anchor=stroke.anchor,
-                fill=stroke.color, font=dfont, tags="stroke"
+                stroke.points[0][0], stroke.points[0][1], **kwargs
             )
             stroke.canvas_ids = [tid]
             self._strokes.append(stroke)

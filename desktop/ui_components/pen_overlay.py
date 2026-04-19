@@ -52,40 +52,70 @@ def _get_pen_cursor():
     try:
         from PIL import Image, ImageDraw
 
-        sz = 32
+        # DPI-aware sizing: scale the cursor for high-DPI displays
+        dpi_scale = 1.0
+        try:
+            import ctypes as _ct
+            dpi_scale = _ct.windll.shcore.GetScaleFactorForDevice(0) / 100.0
+        except Exception:
+            try:
+                import ctypes as _ct
+                hdc = _ct.windll.user32.GetDC(0)
+                dpi_x = _ct.windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSX
+                _ct.windll.user32.ReleaseDC(0, hdc)
+                dpi_scale = max(1.0, dpi_x / 96.0)
+            except Exception:
+                dpi_scale = 1.0
+        # ICO/CUR standard sizes that PIL accepts without warning
+        base_sz = 32
+        target = int(base_sz * dpi_scale)
+        # Pick the closest valid size (16, 24, 32, 48, 64) >= target/scaled
+        for std in (32, 48, 64):
+            if std >= target:
+                sz = std
+                break
+        else:
+            sz = 64
+        s = sz / 32.0  # scale factor relative to original 32x32 design
+
+        def sp(x, y):
+            return (int(x * s), int(y * s))
+
         img = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
 
         # Thick pen: tip at bottom-left, body upper-right
         # White outer body (visible on dark backgrounds)
         d.polygon([
-            (0, 31), (2, 27), (25, 4), (29, 0),
-            (31, 2), (8, 25), (4, 29), (2, 31)
+            sp(0, 31), sp(2, 27), sp(25, 4), sp(29, 0),
+            sp(31, 2), sp(8, 25), sp(4, 29), sp(2, 31)
         ], fill=(255, 255, 255, 255))
         # Black inner body (visible on light backgrounds)
         d.polygon([
-            (1, 29), (3, 27), (26, 4), (28, 2),
-            (29, 3), (7, 25), (5, 27), (3, 29)
+            sp(1, 29), sp(3, 27), sp(26, 4), sp(28, 2),
+            sp(29, 3), sp(7, 25), sp(5, 27), sp(3, 29)
         ], fill=(20, 20, 20, 255))
         # Colored pen tip
         d.polygon([
-            (0, 31), (1, 29), (3, 27), (2, 27), (0, 29)
+            sp(0, 31), sp(1, 29), sp(3, 27), sp(2, 27), sp(0, 29)
         ], fill=(200, 50, 50, 255))
         # White tip dot for precision
-        d.rectangle([(0, 30), (1, 31)], fill=(255, 255, 255, 255))
+        d.rectangle([sp(0, 30), sp(1, 31)], fill=(255, 255, 255, 255))
 
         # Save as ICO, then patch to CUR
         buf = io.BytesIO()
-        img.save(buf, format='ICO', sizes=[(32, 32)])
+        img.save(buf, format='ICO', sizes=[(sz, sz)])
         data = bytearray(buf.getvalue())
 
         # Patch header: type 1 (ICO) → 2 (CUR)
         struct.pack_into("<H", data, 2, 2)
-        # Patch directory: planes/bpp → hotspot (x=1, y=30 = pen tip)
-        struct.pack_into("<H", data, 10, 1)   # Hotspot X
-        struct.pack_into("<H", data, 12, 30)  # Hotspot Y
+        # Patch directory: planes/bpp → hotspot (scaled tip position)
+        hotspot_x = int(1 * s)
+        hotspot_y = int(30 * s)
+        struct.pack_into("<H", data, 10, hotspot_x)
+        struct.pack_into("<H", data, 12, hotspot_y)
 
-        cur_path = os.path.join(tempfile.gettempdir(), "voiceai_pen.cur")
+        cur_path = os.path.join(tempfile.gettempdir(), f"voiceai_pen_{sz}.cur")
         with open(cur_path, "wb") as f:
             f.write(data)
 

@@ -16,6 +16,18 @@ if sys.platform == 'win32':
         try: sys.stderr.reconfigure(encoding='utf-8', errors='replace')
         except Exception: pass
 
+# DPI AWARENESS: Must be set BEFORE any tkinter import for crisp rendering on high-DPI displays
+if sys.platform == 'win32':
+    try:
+        import ctypes
+        # Per-monitor DPI awareness V2 (Windows 10+)
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except (AttributeError, OSError):
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()  # Fallback Win 7/8
+        except (AttributeError, OSError):
+            pass
+
 # 1. ডামি ক্লাস যা সব আউটপুট 'গিলে' ফেলবে
 class NullWriter:
     def write(self, data):
@@ -368,6 +380,13 @@ class VoiceTypingApp(ctk.CTk):
             if k not in self.settings:
                 self.settings[k] = v
 
+        # Initialize UI language from settings (default English)
+        try:
+            from i18n import set_ui_language
+            set_ui_language(self.settings.get("ui_language", "en"))
+        except Exception:
+            pass
+
         # DEV_MODE bypass - simulate authenticated premium user
         if DEV_MODE:
             self.is_authenticated = True
@@ -487,8 +506,12 @@ class VoiceTypingApp(ctk.CTk):
         threading.Thread(target=self._cache_microphones, daemon=True).start()
 
         self.init_ui()
-        self.apply_size_scaling() 
-        self.setup_hotkeys() 
+        self.apply_size_scaling()
+        self.setup_hotkeys()
+
+        # Pen tools slide-out panel state
+        self._pen_tools_expanded = False
+        self._pen_anim_job = None 
 
         self.bind("<Enter>", self.on_hover_enter)
         self.bind("<Leave>", self.on_hover_leave)
@@ -790,14 +813,31 @@ class VoiceTypingApp(ctk.CTk):
         h = btn_s + max(12, int(14 * sc))
         return w, h
 
+    @staticmethod
+    def _calc_tools_panel_w(btn_s):
+        """Calculate pen tools panel width for given button size."""
+        scale = btn_s / 72.0
+        return max(360, int(450 * scale))
+
     def init_ui(self):
         import tkinter as tk
         from ui_components.spectrum_button import SpectrumButton
         from config import SPECTRUM_BTN_SIZE, SPECTRUM_COLORS
 
-        # Canvas for gradient background
-        self.frame = tk.Canvas(self, bg="#22214B", highlightthickness=0)
-        self.frame.pack(fill="both", expand=True)
+        # Main container — holds canvas (left) + pen panel (right)
+        self._main_container = tk.Frame(self, bg="#22214B")
+        self._main_container.pack(fill="both", expand=True)
+
+        # Panel container for embedded pen tools (LEFT side, initially hidden)
+        self._panel_container = tk.Frame(
+            self._main_container, bg="#302D5E",
+            highlightthickness=0)
+        # NOT packed yet — packed only when pen panel opens
+
+        # Canvas for gradient background (RIGHT side, always visible)
+        self.frame = tk.Canvas(self._main_container, bg="#22214B",
+                               highlightthickness=0)
+        self.frame.pack(side="left", fill="y")
 
         self.frame.bind("<ButtonPress-1>", self.on_press)
         self.frame.bind("<B1-Motion>", self.on_drag)
@@ -946,8 +986,24 @@ class VoiceTypingApp(ctk.CTk):
         """Apply size from preset — dynamic width, tight layout."""
         preset = self.settings.get("size_preset", "medium")
         btn_s = self.BTN_SIZES.get(preset, 72)
-        w, h = self._calc_dims(btn_s)
-        self.geometry(f"{w}x{h}")
+        base_w, h = self._calc_dims(btn_s)
+
+        # Canvas always fixed to base width
+        self.frame.configure(width=base_w, height=h)
+
+        # Total window width = base + panel (if expanded)
+        total_w = base_w
+        if getattr(self, '_pen_tools_expanded', False):
+            panel_w = self._calc_tools_panel_w(btn_s)
+            total_w += panel_w
+            self._panel_container.configure(width=panel_w, height=h)
+
+        # Preserve position
+        try:
+            wx, wy = self.winfo_x(), self.winfo_y()
+        except Exception:
+            wx, wy = 0, 0
+        self.geometry(f"{total_w}x{h}+{wx}+{wy}")
 
         scale = btn_s / 72.0
         padx = max(6, int(8 * scale))
@@ -970,8 +1026,8 @@ class VoiceTypingApp(ctk.CTk):
         # Remove old widget placements
         self.frame.delete("widgets")
 
-        # Render gradient background
-        self._render_toolbar_bg(w, h)
+        # Render gradient background (only canvas area, not panel)
+        self._render_toolbar_bg(base_w, h)
 
         # Place buttons on canvas — tight layout
         cy = h // 2
@@ -1024,36 +1080,53 @@ class VoiceTypingApp(ctk.CTk):
         """Open the built-in editor window.
         Closes pen overlay first (its fullscreen input_win blocks editor).
         Restores previous session if available."""
+        # Always close embedded pen panel first (even if editor already exists)
+        self._close_pen_mode_immediate()
+
         if hasattr(self, '_editor_win') and self._editor_win is not None:
             try:
                 if self._editor_win.winfo_exists():
                     self._editor_win.deiconify()
                     self._editor_win.lift()
-                    # Re-open toolbar if it was closed
-                    if not self._editor_win._pen_toolbar:
-                        self._editor_win._open_toolbar()
+                    # Show toolbar if hidden
+                    if hasattr(self._editor_win, '_show_toolbar'):
+                        self._editor_win._show_toolbar()
                     # Restart auto-save if stopped
                     if not self._editor_win._autosave_job:
                         self._editor_win._schedule_autosave()
+                    # Hide main widget — editor has all controls
+                    self.withdraw()
                     return
             except tk.TclError:
                 pass
 
-        # Close pen overlay — its fullscreen input window blocks editor
-        if hasattr(self, '_pen_overlay') and self._pen_overlay is not None:
-            self._close_pen_mode()
-
         from ui.editor_window import EditorWindow, SESSION_FILE
-        self._editor_win = EditorWindow(self, self)
+        # Pass None as parent so editor is independent Toplevel
+        # (otherwise withdraw() on main widget hides editor too)
+        self._editor_win = EditorWindow(None, self)
         # Restore previous session if exists
         if os.path.exists(SESSION_FILE):
             try:
                 self._editor_win._load_dvai(SESSION_FILE)
             except Exception as e:
                 print(f"[EDITOR] Session restore failed: {e}")
+        # Hide main widget — editor toolbar has all controls
+        self.withdraw()
 
     def toggle_pen_mode(self):
         """Toggle pen mode: off → draw → view (click-through) → draw → ..."""
+        # If editor is open AND visible, bring it to focus instead of pen overlay
+        if hasattr(self, '_editor_win') and self._editor_win is not None:
+            try:
+                if (self._editor_win.winfo_exists()
+                        and self._editor_win.winfo_viewable()):
+                    self._editor_win.lift()
+                    if hasattr(self._editor_win, '_show_toolbar'):
+                        self._editor_win._show_toolbar()
+                    return
+            except tk.TclError:
+                pass
+
         if not hasattr(self, '_pen_overlay') or self._pen_overlay is None:
             # No overlay → create and enter draw mode
             self._open_pen_mode()
@@ -1065,20 +1138,28 @@ class VoiceTypingApp(ctk.CTk):
             self._pen_set_view_mode()
 
     def _open_pen_mode(self):
-        """Open pen overlay + toolbar, enter draw mode."""
+        """Open pen overlay + embedded toolbar (slide-out), enter draw mode."""
         try:
             from ui_components.pen_overlay import PenOverlay
             from ui_components.pen_toolbar import PenToolbar
 
             self._pen_overlay = PenOverlay(self, on_close_callback=self._close_pen_mode)
-            self._pen_toolbar = PenToolbar(self, self._pen_overlay, self)
+            self._pen_toolbar = PenToolbar(
+                self._panel_container,  # parent = panel container frame
+                self._pen_overlay,
+                self,
+                mode="embedded",
+                on_retract=self._retract_pen_tools
+            )
 
             # Main toolbar: pen icon → mouse icon
             self.btn_pen.configure(text="\U0001f5b1\ufe0f")
+            self._animate_tools_open()
             self.after(200, self._pen_ensure_topmost)
             print("[PEN] Pen mode opened (draw)")
         except Exception as e:
             print(f"[PEN] Failed to open: {e}")
+            import traceback; traceback.print_exc()
             self._pen_overlay = None
             self._pen_toolbar = None
 
@@ -1098,39 +1179,171 @@ class VoiceTypingApp(ctk.CTk):
             if self._pen_toolbar:
                 self._pen_toolbar.sync_view_mode()
 
-    def _close_pen_mode(self):
-        """Close pen overlay + toolbar (clears strokes)."""
-        try:
+    # ── Pen tools slide-out animation ───────────────────
+
+    def _animate_tools_open(self):
+        """Slide tools panel out from RIGHT edge — left edge stays fixed."""
+        preset = self.settings.get("size_preset", "medium")
+        btn_s = self.BTN_SIZES.get(preset, 72)
+        base_w, h = self._calc_dims(btn_s)
+        panel_w = self._calc_tools_panel_w(btn_s)
+        target_w = base_w + panel_w
+
+        # Position stays fixed — panel grows rightward
+        wx, wy = self.winfo_x(), self.winfo_y()
+
+        # Off-screen: shift left only if needed
+        screen_w = self.winfo_screenwidth()
+        if wx + target_w > screen_w:
+            wx = max(0, screen_w - target_w)
+
+        # Place pen toolbar frame (already child of _panel_container)
+        tools_frame = self._pen_toolbar.get_root_widget()
+        tools_frame.pack(fill="both", expand=True)
+        self._panel_container.configure(width=1, height=h)
+        self._panel_container.pack_propagate(False)
+        self._panel_container.pack(side="right", fill="y")
+
+        self._pen_tools_expanded = True
+        steps = 8
+        step_pw = panel_w / steps
+
+        def _step(i, pw_so_far):
+            if i >= steps:
+                self._panel_container.configure(width=panel_w)
+                self.geometry(f"{target_w}x{h}+{wx}+{wy}")
+                return
+            pw_so_far += step_pw
+            pw_int = int(pw_so_far)
+            self._panel_container.configure(width=pw_int)
+            self.geometry(f"{base_w + pw_int}x{h}+{wx}+{wy}")
+            self._pen_anim_job = self.after(16, lambda: _step(i + 1, pw_so_far))
+
+        _step(0, 0.0)
+
+    def _animate_tools_close(self, on_done=None):
+        """Retract tools panel from RIGHT — left edge stays fixed."""
+        preset = self.settings.get("size_preset", "medium")
+        btn_s = self.BTN_SIZES.get(preset, 72)
+        base_w, h = self._calc_dims(btn_s)
+        panel_w = self._calc_tools_panel_w(btn_s)
+
+        wx, wy = self.winfo_x(), self.winfo_y()  # Position stays fixed
+        steps = 8
+        step_pw = panel_w / steps
+
+        def _step(i, pw_remaining):
+            if i >= steps:
+                self._panel_container.pack_forget()
+                self._pen_tools_expanded = False
+                self.geometry(f"{base_w}x{h}+{wx}+{wy}")
+                if on_done:
+                    on_done()
+                return
+            pw_remaining -= step_pw
+            pw_int = max(1, int(pw_remaining))
+            self._panel_container.configure(width=pw_int)
+            self.geometry(f"{base_w + pw_int}x{h}+{wx}+{wy}")
+            self._pen_anim_job = self.after(16, lambda: _step(i + 1, pw_remaining))
+
+        _step(0, float(panel_w))
+
+    def _retract_pen_tools(self):
+        """Called when embedded toolbar Close is clicked — retract + cleanup."""
+        def _after_retract():
             if hasattr(self, '_pen_toolbar') and self._pen_toolbar:
                 try:
                     self._pen_toolbar.destroy()
-                except tk.TclError:
+                except Exception:
                     pass
                 self._pen_toolbar = None
-
             if hasattr(self, '_pen_overlay') and self._pen_overlay:
                 try:
                     self._pen_overlay.destroy()
-                except tk.TclError:
+                except Exception:
                     pass
                 self._pen_overlay = None
-
-            # Restore pen icon on main toolbar
             self.btn_pen.configure(text="\U0001f58a\ufe0f")
-            print("[PEN] Pen mode closed")
+            print("[PEN] Pen mode closed (retracted)")
+
+        self._animate_tools_close(on_done=_after_retract)
+
+    def _close_pen_mode(self):
+        """Close pen overlay + toolbar with retract animation."""
+        try:
+            if getattr(self, '_pen_tools_expanded', False):
+                self._retract_pen_tools()
+            else:
+                # Fallback (standalone mode or already retracted)
+                if hasattr(self, '_pen_toolbar') and self._pen_toolbar:
+                    try:
+                        self._pen_toolbar.destroy()
+                    except Exception:
+                        pass
+                    self._pen_toolbar = None
+                if hasattr(self, '_pen_overlay') and self._pen_overlay:
+                    try:
+                        self._pen_overlay.destroy()
+                    except Exception:
+                        pass
+                    self._pen_overlay = None
+                self.btn_pen.configure(text="\U0001f58a\ufe0f")
+                print("[PEN] Pen mode closed")
         except Exception as e:
             print(f"[PEN] Error closing: {e}")
 
+    def _close_pen_mode_immediate(self):
+        """Close pen overlay + toolbar immediately (no animation).
+        Used when editor needs to open right away."""
+        try:
+            # Cancel any running animation
+            if self._pen_anim_job:
+                try:
+                    self.after_cancel(self._pen_anim_job)
+                except Exception:
+                    pass
+                self._pen_anim_job = None
+
+            # Destroy toolbar
+            if hasattr(self, '_pen_toolbar') and self._pen_toolbar:
+                try:
+                    self._pen_toolbar.destroy()
+                except Exception:
+                    pass
+                self._pen_toolbar = None
+
+            # Destroy overlay
+            if hasattr(self, '_pen_overlay') and self._pen_overlay:
+                try:
+                    self._pen_overlay.destroy()
+                except Exception:
+                    pass
+                self._pen_overlay = None
+
+            # Restore panel + window size immediately
+            if getattr(self, '_pen_tools_expanded', False):
+                self._panel_container.pack_forget()
+                self._pen_tools_expanded = False
+                preset = self.settings.get("size_preset", "medium")
+                btn_s = self.BTN_SIZES.get(preset, 72)
+                base_w, h = self._calc_dims(btn_s)
+                wx, wy = self.winfo_x(), self.winfo_y()  # Position stays fixed
+                self.geometry(f"{base_w}x{h}+{wx}+{wy}")
+
+            self.btn_pen.configure(text="\U0001f58a\ufe0f")
+            self.update_idletasks()  # Force tkinter to process all pending destroys
+            print("[PEN] Pen mode closed (immediate)")
+        except Exception as e:
+            print(f"[PEN] Error closing immediate: {e}")
+
     def _pen_ensure_topmost(self):
-        """Ensure correct z-order: input < main widget < render < toolbar."""
+        """Ensure correct z-order: input < main widget < render.
+        Toolbar is always embedded (no separate Toplevel)."""
         try:
             if hasattr(self, '_pen_overlay') and self._pen_overlay and self._pen_overlay.winfo_exists():
                 self._pen_overlay.lift_input()
                 self.lift()
                 self._pen_overlay.lift_render()
-            if hasattr(self, '_pen_toolbar') and self._pen_toolbar and self._pen_toolbar.winfo_exists():
-                self._pen_toolbar.attributes('-topmost', True)
-                self._pen_toolbar.lift()
         except tk.TclError:
             pass
 
@@ -3294,8 +3507,9 @@ class VoiceTypingApp(ctk.CTk):
                     for ph in self._pen_overlay.get_all_hwnds():
                         if foreground_hwnd == ph:
                             return False
-                # Exclude pen toolbar HWND
-                if hasattr(self, '_pen_toolbar') and self._pen_toolbar:
+                # Exclude pen toolbar HWND (standalone mode only)
+                if (hasattr(self, '_pen_toolbar') and self._pen_toolbar
+                        and getattr(self._pen_toolbar, '_mode', '') == 'standalone'):
                     tb_hwnd = self._pen_toolbar.get_hwnd()
                     if tb_hwnd and foreground_hwnd == tb_hwnd:
                         return False
@@ -3362,6 +3576,15 @@ class VoiceTypingApp(ctk.CTk):
             if not hasattr(self, '_hidden_for_fullscreen'):
                 self._hidden_for_fullscreen = False
 
+            # If editor is open and visible, skip topmost enforcement
+            # (main widget is hidden; editor manages its own window)
+            editor_open = (hasattr(self, '_editor_win') and self._editor_win
+                           and self._editor_win.winfo_exists()
+                           and self._editor_win.winfo_viewable())
+            if editor_open:
+                self.after(1500, self.monitor_topmost)
+                return
+
             # Always check fullscreen (widget should hide during games/videos)
             try:
                 is_fs = self.is_fullscreen_app_running()
@@ -3375,17 +3598,13 @@ class VoiceTypingApp(ctk.CTk):
                               and self._pen_overlay.winfo_exists())
 
                 if pen_active:
-                    # Z-order: input < MAIN WIDGET < render < toolbar
-                    # So main widget is always clickable above the input catcher
+                    # Z-order: input < MAIN WIDGET < render
+                    # Toolbar is embedded in main widget (no separate Toplevel)
                     try:
                         self._pen_overlay.lift_input()      # Input at bottom
                         self.attributes('-topmost', True)
                         self.lift()                          # Main widget above input
                         self._pen_overlay.lift_render()      # Render above main
-                        if (hasattr(self, '_pen_toolbar') and self._pen_toolbar
-                                and self._pen_toolbar.winfo_exists()):
-                            self._pen_toolbar.attributes('-topmost', True)
-                            self._pen_toolbar.lift()          # Toolbar on top
                     except tk.TclError:
                         pass
                 else:
@@ -3401,22 +3620,30 @@ class VoiceTypingApp(ctk.CTk):
     
     def _handle_fullscreen_result(self, is_fullscreen):
         """Handle fullscreen detection result on main thread.
-        When pen mode is active, NEVER hide — pen should work over fullscreen apps."""
+        When pen mode is active, NEVER hide — pen should work over fullscreen apps.
+        When editor is open, don't restore main widget (it's deliberately hidden)."""
         try:
             # Pen mode overrides fullscreen auto-hide
             pen_active = hasattr(self, '_pen_overlay') and self._pen_overlay is not None
 
+            # If editor is open, don't deiconify main widget
+            editor_open = (hasattr(self, '_editor_win') and self._editor_win
+                           and self._editor_win.winfo_exists()
+                           and self._editor_win.winfo_viewable())
+
             if is_fullscreen and not pen_active:
                 if not self._hidden_for_fullscreen:
                     self._hidden_for_fullscreen = True
-                    self.withdraw()
+                    if not editor_open:
+                        self.withdraw()
                     print("[FULLSCREEN] Widget hidden")
             else:
                 if self._hidden_for_fullscreen:
                     self._hidden_for_fullscreen = False
-                    self.deiconify()
-                    self.attributes('-topmost', True)
-                    self.lift()
+                    if not editor_open:
+                        self.deiconify()
+                        self.attributes('-topmost', True)
+                        self.lift()
                     print("[FULLSCREEN] Widget shown")
         except tk.TclError:
             pass

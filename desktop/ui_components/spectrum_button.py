@@ -140,11 +140,19 @@ class SpectrumButton(tk.Canvas):
             try: efont = ImageFont.truetype("segoeui.ttf", emoji_sz)
             except OSError: efont = ImageFont.load_default()
 
-        bb = d.textbbox((0, 0), emoji, font=efont)
-        ew, eh = bb[2]-bb[0], bb[3]-bb[1]
-        ex = cx - ew // 2
-        ey = cy - eh // 2 - int(sz * 0.06)  # slightly above center
-        d.text((ex, ey), emoji, font=efont, fill=(255, 255, 255, 255))
+        # Use Pillow's middle-middle anchor — most reliable for color emojis.
+        # Different glyphs (🔊 vs ⏸️) have inconsistent textbbox metrics, so
+        # any manual centering math leaves them shifted on icon swap.
+        # anchor="mm" places the *visual* glyph center at (x, y) directly.
+        try:
+            d.text((cx, cy - int(sz * 0.06)), emoji,
+                   font=efont, fill=(255, 255, 255, 255), anchor="mm")
+        except (TypeError, ValueError):
+            # Fallback for very old Pillow without the anchor parameter
+            bb = d.textbbox((0, 0), emoji, font=efont)
+            ex = cx - (bb[0] + bb[2]) // 2
+            ey = cy - (bb[1] + bb[3]) // 2 - int(sz * 0.06)
+            d.text((ex, ey), emoji, font=efont, fill=(255, 255, 255, 255))
 
         # ── Label (bigger, bold, gold) ──
         if self._show_label:

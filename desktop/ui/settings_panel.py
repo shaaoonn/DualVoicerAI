@@ -238,6 +238,41 @@ class SettingsPanel(ctk.CTkToplevel):
                        command=lambda: self.app.open_editor_window()
                        ).pack(padx=16, pady=10)
 
+        # UI Language switcher
+        try:
+            from i18n import get_available_languages
+            ui_langs = get_available_languages()  # [("en","English"),("bn","Bengali (বাংলা)")]
+        except Exception:
+            ui_langs = [("en", "English"), ("bn", "Bengali (বাংলা)")]
+
+        self._section(frame, "\U0001f5e3\ufe0f Interface Language")
+        ui_card = self._card(frame)
+        ui_lang_codes   = [c for c, _ in ui_langs]
+        ui_lang_display = [n for _, n in ui_langs]
+        cur_ui_lang = self.s.get("ui_language", "en")
+        cur_ui_disp = ui_lang_display[ui_lang_codes.index(cur_ui_lang)] \
+            if cur_ui_lang in ui_lang_codes else ui_lang_display[0]
+        ui_var = ctk.StringVar(value=cur_ui_disp)
+
+        def _on_ui_lang_change(v):
+            if v in ui_lang_display:
+                code = ui_lang_codes[ui_lang_display.index(v)]
+                self.s["ui_language"] = code
+                try:
+                    from i18n import set_ui_language
+                    set_ui_language(code)
+                except Exception:
+                    pass
+
+        ctk.CTkComboBox(ui_card, variable=ui_var, values=ui_lang_display,
+                        width=300, font=("Segoe UI", 11),
+                        command=_on_ui_lang_change
+                        ).pack(padx=16, pady=(12, 4))
+        ctk.CTkLabel(ui_card,
+                     text="Restart the app to fully apply the language change.",
+                     font=("Segoe UI", 10), text_color="#888888"
+                     ).pack(anchor="w", padx=16, pady=(0, 12))
+
         # Microphone
         self._section(frame, "\U0001f399\ufe0f \u09ae\u09be\u0987\u0995\u09cd\u09b0\u09cb\u09ab\u09cb\u09a8")
         mic_card = self._card(frame)

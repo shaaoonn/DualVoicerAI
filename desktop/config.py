@@ -69,4 +69,5 @@ NEW_SETTINGS_KEYS = {
     "show_trial_banner": True,
     "size_preset": "medium",
     "screenshot_save_dir": "",
+    "ui_language": "en",   # 'en' (default) or 'bn'
 }

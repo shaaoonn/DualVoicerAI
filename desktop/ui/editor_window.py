@@ -21,6 +21,11 @@ from PIL import Image, ImageTk, ImageDraw, ImageFont, ImageChops
 from ui_components.drawing_engine import Stroke, DrawingEngine
 from ui_components.pen_overlay import _get_pen_cursor
 from ui_components.selection_manager import SelectionManager
+try:
+    from i18n import tr
+except Exception:
+    def tr(key, **kwargs):
+        return kwargs and key.format(**kwargs) or key
 
 try:
     import fitz  # PyMuPDF
@@ -436,7 +441,37 @@ class EditorWindow(tk.Toplevel):
     so PenToolbar can target this window without any changes.
     """
 
-    _supports_view_mode = False  # PenToolbar checks this — no click-through toggle
+    _supports_view_mode = False  # No click-through toggle in editor
+
+    # ── Unified toolbar theme (professional) ──
+    TB_BG = "#1A1A2E"
+    TB_BG_ACTIVE = "#3D5AFE"
+    TB_BG_HOVER = "#2A2A45"
+    TB_ACCENT = "#3D5AFE"
+    TB_TEXT = "#C8C8DC"
+    TB_TEXT_DIM = "#787890"
+    TB_BORDER = "#2E2E4A"
+    ICON_PEN = "\u270f\ufe0f"
+    ICON_HIGHLIGHTER = "\U0001f58d\ufe0f"
+    ICON_ERASER = "\U0001f9f9"
+    ICON_MOUSE = "\U0001f5b1\ufe0f"
+    ICON_TEXT = "T"
+    ICON_HANDWRITE = "\u270d\ufe0f"
+    ICON_SELECT = "\u2922"               # ⤢ select / move arrow
+    ICON_MIC = "\U0001f399\ufe0f"       # 🎙️ Studio mic
+    ICON_SOUND = "\U0001f50a"            # 🔊 Speaker
+    ICON_AI = "\U0001f916"               # 🤖 Robot
+    ICON_CAMERA = "\U0001f4f7"           # 📷 Camera
+    ICON_SETTINGS = "\u2699\ufe0f"       # ⚙️ Gear
+    ICON_UNDO = "\u21a9"                 # ↩
+    ICON_REDO = "\u21aa"                 # ↪
+    ICON_TRASH = "\U0001f5d1"            # 🗑
+    ICON_FULLSCREEN = "\u26f6"           # ⛶
+    ICON_CLOSE = "\u2716"                # ✖
+    TB_COLORS = [
+        ("#FF0000", "Red"), ("#0066FF", "Blue"), ("#00CC44", "Green"),
+        ("#000000", "Black"), ("#FFFFFF", "White"), ("#FFaa00", "Orange"),
+    ]
 
     def __init__(self, parent, app_ref):
         super().__init__(parent)
@@ -449,6 +484,7 @@ class EditorWindow(tk.Toplevel):
         self._plus_buttons = []
         self._page_number_labels = []
         self._pen_toolbar = None
+        self._toolbar_frame = None
 
         self._zoom_level = 1.0
         self._base_scrollregion = (0, 0, 1920, 1120)
@@ -456,17 +492,19 @@ class EditorWindow(tk.Toplevel):
 
         self._setup_window()
         self._build_menu()
-        self._build_canvas_area()
-        self._build_status_bar()
+        self._build_status_bar()           # pack bottom → very bottom
+        self._build_editor_toolbar()       # pack bottom → above status
+        self._build_canvas_area()          # fill="both" → fills rest
 
         self._selection_mgr = SelectionManager(self._canvas)
 
-        # Start with one blank HD page
+        # Add initial page and update scroll
         self._add_page(1920, 1080)
         self._update_scroll()
 
-        # Open PenToolbar targeting this editor
-        self._open_toolbar()
+        # Apply correct pen cursor + update toolbar icon for initial active tool
+        self.set_tool("pen")
+        self._tb_update_tool_icons()
 
         self.bind("<F11>", lambda e: self._toggle_fullscreen())
         self.bind("<Escape>", self._on_escape)
@@ -480,7 +518,7 @@ class EditorWindow(tk.Toplevel):
         self._schedule_autosave()
 
     def _setup_window(self):
-        self.title("এডিটর — Dual Voicer AI")
+        self.title(tr("editor_title"))
         self.geometry("1200x800")
         self.configure(bg=BG_COLOR)
         self.minsize(600, 400)
@@ -490,12 +528,375 @@ class EditorWindow(tk.Toplevel):
         except (tk.TclError, FileNotFoundError):
             pass
 
-    def _open_toolbar(self):
-        """Open a PenToolbar targeting this editor window."""
-        from ui_components.pen_toolbar import PenToolbar
-        self._pen_toolbar = PenToolbar(self._app, self, self._app)
-        # Start in draw mode
-        self._pen_toolbar.sync_draw_mode()
+    def _tb_make_btn(self, parent, text, command, bg=None, fg=None,
+                     font=None, width=None, is_emoji=False, tooltip=None):
+        """Create a professional toolbar button with hover effects."""
+        _bg = bg or self.TB_BG
+        _fg = fg or self.TB_TEXT
+        _font = font or (("Segoe UI Emoji", 12) if is_emoji else ("Segoe UI", 9, "bold"))
+        kw = {}
+        if width is not None:
+            kw["width"] = width
+        btn = tk.Button(parent, text=text, bg=_bg, fg=_fg, font=_font,
+                        relief="flat", bd=0, padx=6, pady=3, cursor="hand2",
+                        activebackground=self.TB_BG_HOVER, activeforeground="#FFF",
+                        command=command, **kw)
+        # Hover effect
+        normal_bg = _bg
+        btn.bind("<Enter>", lambda e, b=btn, nb=normal_bg: b.configure(
+            bg=self.TB_BG_HOVER if nb == self.TB_BG else nb))
+        btn.bind("<Leave>", lambda e, b=btn, nb=normal_bg: b.configure(bg=nb))
+        if tooltip:
+            self._tb_add_tooltip(btn, tooltip)
+        return btn
+
+    def _tb_add_tooltip(self, widget, text):
+        """Add a hover tooltip to a widget."""
+        tip = None
+        def show(e):
+            nonlocal tip
+            tip = tk.Toplevel(widget)
+            tip.wm_overrideredirect(True)
+            tip.wm_geometry(f"+{e.x_root+10}+{e.y_root-28}")
+            lbl = tk.Label(tip, text=text, bg="#1E1E32", fg="#E0E0E0",
+                           font=("Segoe UI", 8), relief="solid", bd=1, padx=4, pady=2)
+            lbl.pack()
+        def hide(e):
+            nonlocal tip
+            if tip:
+                tip.destroy()
+                tip = None
+        widget.bind("<Enter>", lambda e: (show(e)), add="+")
+        widget.bind("<Leave>", lambda e: hide(e), add="+")
+
+    def _tb_separator(self, parent):
+        """Create a subtle vertical separator."""
+        sep = tk.Frame(parent, bg=self.TB_BORDER, width=1)
+        sep.pack(side="left", fill="y", padx=6, pady=4)
+        return sep
+
+    def _build_editor_toolbar(self):
+        """Unified single-row professional toolbar — voice, tools, drawing, colors, sliders."""
+        bg = self.TB_BG
+
+        # ── Main container with top accent border ──
+        self._toolbar_frame = tk.Frame(self, bg=bg)
+        self._toolbar_frame.pack(fill="x", side="bottom")
+        tk.Frame(self._toolbar_frame, bg=self.TB_ACCENT, height=2).pack(fill="x")
+
+        bar = tk.Frame(self._toolbar_frame, bg=bg, padx=6, pady=4)
+        bar.pack(fill="x")
+
+        # ═══════════════════════════════════════════════════
+        # ── GROUP 1: Voice Buttons (🎙 + lang label) ──
+        # ═══════════════════════════════════════════════════
+        voice_grp = tk.Frame(bar, bg=bg)
+        voice_grp.pack(side="left")
+
+        lang1 = self._app.settings.get("btn1_lang", "bn-BD")
+        lang2 = self._app.settings.get("btn2_lang", "en-US")
+        l1_code = lang1.split("-")[0].upper()
+        l2_code = lang2.split("-")[0].upper()
+
+        # Mic button 1 (BN)
+        self._tb_btn_bn = self._tb_make_btn(
+            voice_grp, f"{self.ICON_MIC}{l1_code}",
+            lambda: self._app.switch_language(
+                self._app.settings.get("btn1_lang", "bn-BD")),
+            is_emoji=True, font=("Segoe UI Emoji", 10),
+            tooltip=tr("tip_voice", code=l1_code))
+        self._tb_btn_bn.pack(side="left", padx=1)
+
+        # Mic button 2 (EN)
+        self._tb_btn_en = self._tb_make_btn(
+            voice_grp, f"{self.ICON_MIC}{l2_code}",
+            lambda: self._app.switch_language(
+                self._app.settings.get("btn2_lang", "en-US")),
+            is_emoji=True, font=("Segoe UI Emoji", 10),
+            tooltip=tr("tip_voice", code=l2_code))
+        self._tb_btn_en.pack(side="left", padx=1)
+
+        # Sound button
+        self._tb_btn_snd = self._tb_make_btn(
+            voice_grp, self.ICON_SOUND,
+            self._app.handle_reader_click,
+            is_emoji=True, tooltip=tr("tip_sound"))
+        self._tb_btn_snd.pack(side="left", padx=1)
+
+        # AI button
+        self._tb_btn_ai = self._tb_make_btn(
+            voice_grp, self.ICON_AI,
+            self._app.ai_trigger_flow if hasattr(self._app, 'ai_trigger_flow') else None,
+            is_emoji=True, tooltip=tr("tip_ai"))
+        self._tb_btn_ai.pack(side="left", padx=1)
+
+        self._tb_separator(bar)
+
+        # ═══════════════════════════════════════════════════
+        # ── GROUP 2: Utility Tools (📷 ⚙) ──
+        # ═══════════════════════════════════════════════════
+        self._tb_make_btn(
+            bar, self.ICON_CAMERA, self._app.take_screenshot,
+            is_emoji=True, tooltip=tr("tip_screenshot")
+        ).pack(side="left", padx=1)
+
+        self._tb_make_btn(
+            bar, self.ICON_SETTINGS, self._app.open_settings_panel,
+            is_emoji=True, tooltip=tr("tip_settings")
+        ).pack(side="left", padx=1)
+
+        self._tb_separator(bar)
+
+        # ═══════════════════════════════════════════════════
+        # ── GROUP 3: Drawing Tools ──
+        # ═══════════════════════════════════════════════════
+        draw_grp = tk.Frame(bar, bg=bg)
+        draw_grp.pack(side="left")
+
+        draw_tools = [
+            (self.ICON_SELECT,      "select",      tr("tip_select"),      False),
+            (self.ICON_PEN,         "pen",         tr("tip_pen"),         True),
+            (self.ICON_HIGHLIGHTER, "highlighter", tr("tip_highlighter"), False),
+            (self.ICON_ERASER,      "eraser",      tr("tip_eraser"),      False),
+            (self.ICON_TEXT,        "text",        tr("tip_text"),        False),
+            (self.ICON_HANDWRITE,   "handwrite",   tr("tip_handwrite"),   False),
+        ]
+        self._tb_draw_btns = {}
+        for icon, tool, tip, active in draw_tools:
+            is_text = (tool == "text")
+            cmd = (lambda: self._tb_activate_eraser()) if tool == "eraser" \
+                else (lambda t=tool: self._toggle_draw_tool(t))
+            btn_bg = self.TB_BG_ACTIVE if active else bg
+            btn = self._tb_make_btn(
+                draw_grp, icon, cmd, bg=btn_bg,
+                font=("Segoe UI", 11, "bold") if is_text else ("Segoe UI Emoji", 12),
+                tooltip=tip)
+            btn.pack(side="left", padx=1)
+            self._tb_draw_btns[tool] = btn
+
+        self._tb_separator(bar)
+
+        # ═══════════════════════════════════════════════════
+        # ── GROUP 4: Font Dropdown ──
+        # ═══════════════════════════════════════════════════
+        try:
+            import tkinter.font as tkfont
+            all_fonts = sorted(set(tkfont.families(self)), key=lambda f: f.lower())
+            all_fonts = [f for f in all_fonts if not f.startswith("@")]
+        except Exception:
+            all_fonts = ["Segoe UI", "Arial"]
+        popular = ["Segoe UI", "Arial", "Nirmala UI", "Times New Roman",
+                   "Courier New", "Impact", "Comic Sans MS", "Consolas"]
+        font_list = [f for f in popular if f in all_fonts]
+        remaining = [f for f in all_fonts if f not in font_list]
+        if remaining:
+            font_list = font_list + ["───────"] + remaining
+
+        self._tb_font_var = tk.StringVar(value=font_list[0] if font_list else "Segoe UI")
+        self._tb_font_menu = tk.OptionMenu(bar, self._tb_font_var,
+            *font_list, command=self._tb_on_font_change)
+        self._tb_font_menu.configure(
+            bg="#16162A", fg=self.TB_TEXT, font=("Segoe UI", 8),
+            highlightthickness=0, bd=1, relief="solid", width=9, anchor="w",
+            activebackground=self.TB_BG_HOVER, activeforeground="#FFF",
+            cursor="hand2")
+        self._tb_font_menu["menu"].configure(
+            bg="#16162A", fg=self.TB_TEXT, font=("Segoe UI", 9),
+            activebackground=self.TB_BG_ACTIVE, activeforeground="#FFF")
+        self._tb_font_menu.pack(side="left", padx=3)
+
+        self._tb_separator(bar)
+
+        # ═══════════════════════════════════════════════════
+        # ── GROUP 5: Color Swatches ──
+        # ═══════════════════════════════════════════════════
+        color_grp = tk.Frame(bar, bg=bg)
+        color_grp.pack(side="left")
+
+        self._tb_color_btns = {}
+        self._tb_active_color_btn = None
+        for hex_color, name in self.TB_COLORS:
+            btn = tk.Canvas(color_grp, width=16, height=16,
+                            bg=hex_color, highlightthickness=1,
+                            highlightbackground="#555", cursor="hand2")
+            btn.pack(side="left", padx=2, pady=2)
+            btn.bind("<Button-1>", lambda e, c=hex_color: self._tb_set_color(c))
+            self._tb_color_btns[hex_color] = btn
+            if hex_color == "#FF0000":
+                btn.configure(highlightbackground=self.TB_ACCENT,
+                              highlightthickness=2)
+                self._tb_active_color_btn = btn
+
+        self._tb_separator(bar)
+
+        # ═══════════════════════════════════════════════════
+        # ── GROUP 6: Sliders (Pen + Font size) ──
+        # ═══════════════════════════════════════════════════
+        slider_grp = tk.Frame(bar, bg=bg)
+        slider_grp.pack(side="left")
+
+        # Pen thickness
+        tk.Label(slider_grp, text=self.ICON_PEN, bg=bg, fg=self.TB_TEXT_DIM,
+                 font=("Segoe UI Emoji", 9)).pack(side="left")
+        self._tb_thickness_var = tk.IntVar(value=4)
+        self._tb_pen_slider = tk.Scale(
+            slider_grp, from_=1, to=100, orient="horizontal",
+            variable=self._tb_thickness_var, length=60, sliderlength=14,
+            showvalue=False, bg=bg, fg=self.TB_TEXT, troughcolor="#16162A",
+            highlightthickness=0, bd=0, activebackground=self.TB_ACCENT,
+            command=self._tb_on_thickness_change)
+        self._tb_pen_slider.pack(side="left", padx=(2, 0))
+        self._tb_pen_val = tk.Label(slider_grp, text="4", bg=bg,
+            fg=self.TB_ACCENT, font=("Segoe UI", 8, "bold"), width=3, anchor="w")
+        self._tb_pen_val.pack(side="left")
+
+        # Font size
+        tk.Label(slider_grp, text="T", bg=bg, fg=self.TB_TEXT_DIM,
+                 font=("Segoe UI", 9, "bold")).pack(side="left", padx=(4, 0))
+        self._tb_fontsize_var = tk.IntVar(value=16)
+        self._tb_font_slider = tk.Scale(
+            slider_grp, from_=8, to=72, orient="horizontal",
+            variable=self._tb_fontsize_var, length=60, sliderlength=14,
+            showvalue=False, bg=bg, fg=self.TB_TEXT, troughcolor="#16162A",
+            highlightthickness=0, bd=0, activebackground=self.TB_ACCENT,
+            command=self._tb_on_font_size_change)
+        self._tb_font_slider.pack(side="left", padx=(2, 0))
+        self._tb_font_val = tk.Label(slider_grp, text="16", bg=bg,
+            fg=self.TB_ACCENT, font=("Segoe UI", 8, "bold"), width=3, anchor="w")
+        self._tb_font_val.pack(side="left")
+
+        self._tb_separator(bar)
+
+        # ═══════════════════════════════════════════════════
+        # ── GROUP 7: Actions (undo / redo / clear) ──
+        # ═══════════════════════════════════════════════════
+        for icon, cmd, tip in [
+            (self.ICON_UNDO, self.undo, tr("tip_undo")),
+            (self.ICON_REDO, self.redo, tr("tip_redo")),
+            (self.ICON_TRASH, self.clear_all, tr("tip_clear")),
+        ]:
+            self._tb_make_btn(bar, icon, cmd, is_emoji=True,
+                              tooltip=tip).pack(side="left", padx=1)
+
+        # ═══════════════════════════════════════════════════
+        # ── RIGHT SIDE: Close + Fullscreen ──
+        # ═══════════════════════════════════════════════════
+        # Close button (distinct red)
+        close_btn = tk.Button(bar, text=self.ICON_CLOSE, bg="#6B1D30",
+                              fg="#FFD0D0", font=("Segoe UI", 10, "bold"),
+                              relief="flat", bd=0, padx=8, pady=3, cursor="hand2",
+                              activebackground="#9B2D45", activeforeground="#FFF",
+                              command=self._on_close_window)
+        close_btn.pack(side="right", padx=(4, 0))
+        close_btn.bind("<Enter>", lambda e: close_btn.configure(bg="#9B2D45"))
+        close_btn.bind("<Leave>", lambda e: close_btn.configure(bg="#6B1D30"))
+        self._tb_add_tooltip(close_btn, tr("tip_close"))
+
+        # Fullscreen
+        self._tb_make_btn(
+            bar, self.ICON_FULLSCREEN, self._toggle_fullscreen,
+            is_emoji=True, tooltip=tr("tip_fullscreen")
+        ).pack(side="right", padx=2)
+
+    # ── Toolbar tool methods ──────────────────────────
+
+    def _toggle_draw_tool(self, tool):
+        """Toggle drawing tool — set active, update icons."""
+        if self._active_tool == tool:
+            self._active_tool = "select"
+            self.set_tool("select")
+        else:
+            self._active_tool = tool
+            self.set_tool(tool)
+            if tool == "text":
+                engine = self._engine
+                if engine and hasattr(engine, 'auto_place_text'):
+                    engine.auto_place_text()
+        self._tb_update_tool_icons()
+        self._update_status()
+
+    def _tb_activate_eraser(self):
+        self._active_tool = "eraser"
+        self.set_tool("eraser")
+        self._tb_update_tool_icons()
+        self._update_status()
+
+    def _tb_update_tool_icons(self):
+        """Highlight active tool button with accent color."""
+        active = self._active_tool
+        for tool, btn in self._tb_draw_btns.items():
+            if tool == active:
+                btn.configure(bg=self.TB_BG_ACTIVE)
+                # Update hover to keep active bg
+                btn.bind("<Enter>", lambda e, b=btn: b.configure(bg=self.TB_BG_ACTIVE))
+                btn.bind("<Leave>", lambda e, b=btn: b.configure(bg=self.TB_BG_ACTIVE))
+                if tool == "pen":
+                    btn.configure(text=self.ICON_MOUSE)
+            else:
+                btn.configure(bg=self.TB_BG)
+                # Restore normal hover
+                btn.bind("<Enter>", lambda e, b=btn: b.configure(bg=self.TB_BG_HOVER))
+                btn.bind("<Leave>", lambda e, b=btn: b.configure(bg=self.TB_BG))
+                if tool == "pen":
+                    btn.configure(text=self.ICON_PEN)
+
+    def _tb_set_color(self, color):
+        """Set pen color and highlight active swatch with accent ring."""
+        self.set_color(color)
+        # Reset previous
+        if self._tb_active_color_btn:
+            self._tb_active_color_btn.configure(
+                highlightbackground="#555", highlightthickness=1)
+        btn = self._tb_color_btns.get(color)
+        if btn:
+            btn.configure(highlightbackground=self.TB_ACCENT, highlightthickness=2)
+            self._tb_active_color_btn = btn
+
+    def _tb_on_font_change(self, font_name):
+        """Handle font family change from dropdown."""
+        if font_name.startswith("─"):
+            return
+        engine = self._engine
+        if engine:
+            if self._active_tool == "handwrite" and hasattr(engine, 'set_hw_font'):
+                engine.set_hw_font(font_name, self._tb_fontsize_var.get())
+            elif hasattr(engine, '_text_font'):
+                engine._text_font = font_name
+                if engine._text_active:
+                    engine._update_text_display()
+
+    def _tb_on_thickness_change(self, val):
+        """Route pen thickness change."""
+        v = int(val)
+        self._tb_pen_val.configure(text=str(v))
+        self.set_width(v)
+
+    def _tb_on_font_size_change(self, val):
+        """Route font size change."""
+        v = int(val)
+        self._tb_font_val.configure(text=str(v))
+        engine = self._engine
+        if engine:
+            if self._active_tool == "handwrite" and hasattr(engine, 'set_hw_font'):
+                font = getattr(engine, '_hw_font', "Segoe UI")
+                engine.set_hw_font(font, v)
+            elif self._active_tool == "text":
+                if hasattr(self, 'set_text_font_size'):
+                    self.set_text_font_size(v)
+                elif engine:
+                    engine._text_font_size = v
+                    if engine._text_active:
+                        engine._update_text_display()
+
+    def _on_toolbar_retract(self):
+        """Hide toolbar (user wants more canvas space)."""
+        if self._toolbar_frame:
+            self._toolbar_frame.pack_forget()
+
+    def _show_toolbar(self):
+        """Re-show toolbar if hidden."""
+        if self._toolbar_frame and not self._toolbar_frame.winfo_ismapped():
+            self._toolbar_frame.pack(fill="x", side="bottom")
 
     # ── PenOverlay-Compatible API (used by PenToolbar) ──
 
@@ -518,7 +919,7 @@ class EditorWindow(tk.Toplevel):
         # Update cursor
         pen_cursor = _get_pen_cursor()
         cursors = {"pen": pen_cursor, "highlighter": pen_cursor,
-                   "eraser": "circle", "text": pen_cursor, "pan": "fleur",
+                   "eraser": "circle", "text": "xterm", "pan": "fleur",
                    "select": "arrow", "handwrite": pen_cursor}
         cursor = cursors.get(tool, pen_cursor)
         try:
@@ -622,15 +1023,15 @@ class EditorWindow(tk.Toplevel):
                                 activeforeground="#FFF")
         file_menu = tk.Menu(self._menubar, tearoff=0, bg="#1E1E28", fg="#AAA",
                             activebackground="#3A3A50", activeforeground="#FFF")
-        file_menu.add_command(label="নতুন", command=self._new_file_dialog,
+        file_menu.add_command(label=tr("menu_new"), command=self._new_file_dialog,
                               accelerator="Ctrl+N")
-        file_menu.add_command(label="খুলুন...", command=self._open_file,
+        file_menu.add_command(label=tr("menu_open"), command=self._open_file,
                               accelerator="Ctrl+O")
-        file_menu.add_command(label="ইম্পোর্ট...", command=self._import_file)
+        file_menu.add_command(label=tr("menu_import"), command=self._import_file)
         file_menu.add_separator()
-        file_menu.add_command(label="সেভ", command=self._save,
+        file_menu.add_command(label=tr("menu_save"), command=self._save,
                               accelerator="Ctrl+S")
-        file_menu.add_command(label="সেভ অ্যাজ...", command=self._save_as)
+        file_menu.add_command(label=tr("menu_save_as"), command=self._save_as)
         file_menu.add_separator()
 
         export_menu = tk.Menu(file_menu, tearoff=0, bg="#1E1E28", fg="#AAA",
@@ -638,33 +1039,33 @@ class EditorWindow(tk.Toplevel):
         export_menu.add_command(label="PDF", command=lambda: self._export("pdf"))
         export_menu.add_command(label="PNG", command=lambda: self._export("png"))
         export_menu.add_command(label="JPG", command=lambda: self._export("jpg"))
-        file_menu.add_cascade(label="এক্সপোর্ট ▸", menu=export_menu)
+        file_menu.add_cascade(label=tr("menu_export") + " ▸", menu=export_menu)
 
         file_menu.add_separator()
-        file_menu.add_command(label="টুলবার দেখান", command=self._open_toolbar,
+        file_menu.add_command(label=tr("menu_show_toolbar"), command=self._on_toolbar_retract,
                               accelerator="Ctrl+T")
         file_menu.add_separator()
-        file_menu.add_command(label="বন্ধ", command=self._on_close_window)
+        file_menu.add_command(label=tr("menu_close"), command=self._on_close_window)
 
-        self._menubar.add_cascade(label="ফাইল", menu=file_menu)
+        self._menubar.add_cascade(label=tr("menu_file"), menu=file_menu)
 
         # ── Page menu ──
         page_menu = tk.Menu(self._menubar, tearoff=0, bg="#1E1E28", fg="#AAA",
                             activebackground="#3A3A50", activeforeground="#FFF")
-        page_menu.add_command(label="নতুন পেজ যোগ", command=self._add_page_dialog)
-        page_menu.add_command(label="বর্তমান পেজ ডিলিট",
+        page_menu.add_command(label=tr("menu_add_page"), command=self._add_page_dialog)
+        page_menu.add_command(label=tr("menu_delete_page"),
                               command=self._delete_current_page)
         page_menu.add_separator()
-        page_menu.add_command(label="ফিট করুন",
+        page_menu.add_command(label=tr("menu_fit"),
                               command=self._zoom_to_fit)
-        self._menubar.add_cascade(label="পেজ", menu=page_menu)
+        self._menubar.add_cascade(label=tr("menu_page"), menu=page_menu)
 
         self.config(menu=self._menubar)
 
         self.bind("<Control-n>", lambda e: self._new_file_dialog())
         self.bind("<Control-o>", lambda e: self._open_file())
         self.bind("<Control-s>", lambda e: self._save())
-        self.bind("<Control-t>", lambda e: self._open_toolbar())
+        self.bind("<Control-t>", lambda e: self._on_toolbar_retract())
 
     # ── Canvas Area ───────────────────────────────────
 
@@ -708,14 +1109,14 @@ class EditorWindow(tk.Toplevel):
         self._status_label.pack(side="left", padx=8)
 
     def _update_status(self):
-        tool_names = {"pen": "পেন", "highlighter": "হাইলাইটার",
-                      "eraser": "ইরেজার", "text": "টেক্সট", "pan": "প্যান",
-                      "select": "সিলেক্ট", "handwrite": "হাতে লেখা"}
-        t = tool_names.get(self._active_tool, self._active_tool)
+        tool_keys = {"pen": "tool_pen", "highlighter": "tool_highlighter",
+                     "eraser": "tool_eraser", "text": "tool_text", "pan": "tool_pan",
+                     "select": "tool_select", "handwrite": "tool_handwrite"}
+        t = tr(tool_keys.get(self._active_tool, "tool_pen")) if self._active_tool in tool_keys else self._active_tool
         n = len(self._pages)
         p = self._active_page_idx + 1 if self._pages else 0
         z = int(self._zoom_level * 100)
-        self._status_label.configure(text=f"পেজ: {p}/{n} | টুল: {t} | {z}%")
+        self._status_label.configure(text=tr("status_format", p=p, n=n, t=t, z=z))
 
     # ── Page Management ───────────────────────────────
 
@@ -957,12 +1358,12 @@ class EditorWindow(tk.Toplevel):
         menu = tk.Menu(self._canvas, tearoff=0, bg="#2A2A40", fg="#CCC",
                        activebackground="#4A4A6A", activeforeground="#FFF")
         menu.add_command(
-            label=f"পেজ {(page_idx or 0) + 1} ডিলিট",
+            label=f"{tr('menu_delete_page')} ({(page_idx or 0) + 1})",
             command=lambda: self._delete_page(page_idx)
         )
-        menu.add_command(label="নতুন পেজ যোগ", command=self._add_page_dialog)
+        menu.add_command(label=tr("menu_add_page"), command=self._add_page_dialog)
         menu.add_separator()
-        menu.add_command(label="ফিট করুন", command=self._zoom_to_fit)
+        menu.add_command(label=tr("menu_fit"), command=self._zoom_to_fit)
         menu.tk_popup(event.x_root, event.y_root)
 
     def _delete_page(self, idx):
@@ -1109,7 +1510,7 @@ class EditorWindow(tk.Toplevel):
         self._save_path = None
         bg_image = self._make_bg_image(w, h, bg_type)
         self._add_page(w, h, bg_image=bg_image)
-        self.title("এডিটর — Dual Voicer AI")
+        self.title(tr("editor_title"))
         # Delete session file on New File
         try:
             if os.path.exists(SESSION_FILE):
@@ -1202,7 +1603,7 @@ class EditorWindow(tk.Toplevel):
             return
         self._clear_all_pages()
         self._add_page(img.width, img.height, bg_image=img)
-        self.title(f"এডিটর — {os.path.basename(path)}")
+        self.title(f"{tr('editor_title')} — {os.path.basename(path)}")
 
     def _open_pdf(self, path):
         if not HAS_PYMUPDF:
@@ -1216,7 +1617,7 @@ class EditorWindow(tk.Toplevel):
             return
         total = len(doc)
         self._clear_all_pages()
-        self.title(f"এডিটর — {os.path.basename(path)} (লোড হচ্ছে...)")
+        self.title(f"{tr('editor_title')} — {os.path.basename(path)} ({tr('loading')})")
         # Progress label on canvas
         self._pdf_progress = tk.Label(
             self._canvas, text=f"লোড হচ্ছে... 0/{total}",
@@ -1267,7 +1668,7 @@ class EditorWindow(tk.Toplevel):
             pass
         self._relayout_pages()
         self._update_status()
-        self.title(f"এডিটর — {os.path.basename(path)}")
+        self.title(f"{tr('editor_title')} — {os.path.basename(path)}")
         self.after(100, self._zoom_to_fit)
 
     # ── Import ────────────────────────────────────────
@@ -1409,6 +1810,8 @@ class EditorWindow(tk.Toplevel):
                     "is_text": stroke.is_text, "text": stroke.text,
                     "font_family": stroke.font_family,
                     "font_size": stroke.font_size,
+                    "wrap_width": getattr(stroke, "wrap_width", 0) or 0,
+                    "anchor": getattr(stroke, "anchor", "nw"),
                 }
                 if stroke.smoothed_points:
                     s["smoothed_points"] = stroke.smoothed_points
@@ -1422,7 +1825,7 @@ class EditorWindow(tk.Toplevel):
             json.dump(data, f, ensure_ascii=False)
         os.replace(tmp, path)
         if path != SESSION_FILE:
-            self.title(f"এডিটর — {os.path.basename(path)}")
+            self.title(f"{tr('editor_title')} — {os.path.basename(path)}")
 
     def _load_dvai(self, path):
         try:
@@ -1456,15 +1859,23 @@ class EditorWindow(tk.Toplevel):
                     text=s.get("text", ""),
                     font_family=s.get("font_family", "Segoe UI"),
                     font_size=s.get("font_size", 16),
+                    anchor=s.get("anchor", "nw"),
+                    wrap_width=int(s.get("wrap_width", 0) or 0),
                 )
                 if s.get("smoothed_points"):
                     stroke.smoothed_points = [tuple(p) for p in s["smoothed_points"]]
 
                 if stroke.is_text:
                     font = (stroke.font_family, stroke.font_size)
+                    text_kwargs = dict(
+                        text=stroke.text, anchor=stroke.anchor,
+                        fill=stroke.color, font=font, tags="stroke",
+                        justify="left",
+                    )
+                    if stroke.wrap_width > 0:
+                        text_kwargs["width"] = stroke.wrap_width
                     tid = self._canvas.create_text(
-                        pts[0][0], pts[0][1], text=stroke.text,
-                        anchor="w", fill=stroke.color, font=font, tags="stroke"
+                        pts[0][0], pts[0][1], **text_kwargs
                     )
                     stroke.canvas_ids = [tid]
                 else:
@@ -1492,7 +1903,7 @@ class EditorWindow(tk.Toplevel):
                         stroke.canvas_ids = [did]
                 page.engine._strokes.append(stroke)
 
-        self.title(f"এডিটর — {os.path.basename(path)}")
+        self.title(f"{tr('editor_title')} — {os.path.basename(path)}")
 
     # ── Export ────────────────────────────────────────
 
@@ -1645,19 +2056,20 @@ class EditorWindow(tk.Toplevel):
             print(f"[EDITOR] Auto-save failed: {e}")
 
     def _on_close_window(self):
-        """Auto-save and hide editor (don't destroy — preserve state)."""
+        """Auto-save and hide editor (don't destroy — preserve state).
+        Restores main widget visibility."""
         # Cancel auto-save timer
         if self._autosave_job:
             self.after_cancel(self._autosave_job)
             self._autosave_job = None
         # Save session
         self._save_session()
-        # Close toolbar
-        if self._pen_toolbar:
-            try:
-                self._pen_toolbar.destroy()
-            except tk.TclError:
-                pass
-            self._pen_toolbar = None
         # Hide window (don't destroy)
         self.withdraw()
+        # Restore main widget
+        try:
+            self._app.deiconify()
+            self._app.attributes('-topmost', True)
+            self._app.lift()
+        except tk.TclError:
+            pass
