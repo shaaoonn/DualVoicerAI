@@ -9,6 +9,7 @@ import webbrowser
 from config import (APP_NAME, APP_VERSION, SETTINGS_WINDOW_SIZE,
                     SETTINGS_MIN_SIZE, AI_MODELS, BACKEND_BASE)
 from ui_components.language_data import GOOGLE_STT_LANGUAGES
+from i18n import tr
 
 class SettingsPanel(ctk.CTkToplevel):
     def __init__(self, parent, app_ref):
@@ -16,7 +17,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self.app = app_ref          # reference to VoiceTypingApp instance
         self.s  = app_ref.settings  # settings dict (live reference)
 
-        self.title(f"{APP_NAME} \u2014 \u09b8\u09c7\u099f\u09bf\u0982\u09b8")
+        self.title(tr("set_window_title", app=APP_NAME))
         self.geometry(SETTINGS_WINDOW_SIZE)
         self.minsize(*SETTINGS_MIN_SIZE)
         self.attributes("-topmost", False)
@@ -27,6 +28,10 @@ class SettingsPanel(ctk.CTkToplevel):
 
         self._build_layout()
         self._show_tab("general")
+
+        # When user closes via X (or Alt+F4), still flush textbox content
+        # so they don't lose unsaved typing.
+        self.protocol("WM_DELETE_WINDOW", self._save_and_close)
 
     # -- Layout ---------------------------------------------------
     def _build_layout(self):
@@ -47,12 +52,12 @@ class SettingsPanel(ctk.CTkToplevel):
 
         # Nav buttons
         TABS = [
-            ("\u2699\ufe0f  \u09b8\u09be\u09a7\u09be\u09b0\u09a3",       "general"),
-            ("\U0001f310  \u09ad\u09be\u09b7\u09be",          "language"),
-            ("\U0001f916  AI \u09b8\u09c7\u099f\u09bf\u0982\u09b8",     "ai"),
-            ("\U0001f50a  \u099f\u09bf\u099f\u09bf\u098f\u09b8",        "tts"),
-            ("\U0001f511  \u09b8\u09be\u09ac\u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09aa\u09b6\u09a8",  "subscription"),
-            ("\u2139\ufe0f  \u09b8\u09ae\u09cd\u09aa\u09b0\u09cd\u0995\u09c7",      "about"),
+            (tr("set_nav_general"),      "general"),
+            (tr("set_nav_language"),     "language"),
+            (tr("set_nav_ai"),           "ai"),
+            (tr("set_nav_tts"),          "tts"),
+            (tr("set_nav_subscription"), "subscription"),
+            (tr("set_nav_about"),        "about"),
         ]
         for label, key in TABS:
             btn = ctk.CTkButton(
@@ -67,9 +72,9 @@ class SettingsPanel(ctk.CTkToplevel):
         # Footer buttons
         footer = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         footer.pack(side="bottom", fill="x", padx=8, pady=12)
-        ctk.CTkButton(footer, text="\u09b8\u0982\u09b0\u0995\u09cd\u09b7\u09a3", height=32,
+        ctk.CTkButton(footer, text=tr("set_btn_save"), height=32,
                       command=self._save_and_close).pack(fill="x", pady=(0, 4))
-        ctk.CTkButton(footer, text="\u09ac\u09a8\u09cd\u09a7 \u0995\u09b0\u09c1\u09a8", height=32,
+        ctk.CTkButton(footer, text=tr("set_btn_close"), height=32,
                       fg_color="#2A2A2A", hover_color="#3A3A3A",
                       command=self.destroy).pack(fill="x")
 
@@ -129,6 +134,14 @@ class SettingsPanel(ctk.CTkToplevel):
         c.pack(fill="x", padx=28, pady=4)
         return c
 
+    def _persist(self):
+        """Persist settings to disk. Every input row calls this so the user
+        never loses changes by closing without clicking the Save button."""
+        try:
+            self.app.save_settings()
+        except Exception as e:
+            print(f"[settings] save failed: {e}")
+
     def _toggle_row(self, parent, label: str, key: str, on_change=None):
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=7)
@@ -137,6 +150,7 @@ class SettingsPanel(ctk.CTkToplevel):
         var = ctk.BooleanVar(value=self.s.get(key, True))
         def _cb():
             self.s[key] = var.get()
+            self._persist()
             if on_change: on_change()
         ctk.CTkSwitch(row, variable=var, text="", command=_cb).pack(side="right")
         return var
@@ -153,6 +167,7 @@ class SettingsPanel(ctk.CTkToplevel):
         def _cb(v):
             self.s[key] = v
             val_lbl.configure(text=f"{v:.2f}")
+            self._persist()
             if on_change: on_change(v)
         sl = ctk.CTkSlider(parent, from_=min_v, to=max_v, number_of_steps=steps,
                             command=_cb, height=16)
@@ -176,6 +191,7 @@ class SettingsPanel(ctk.CTkToplevel):
             for v, b in btns.items():
                 b.configure(fg_color="#1E3A5F" if v == val else "#2A2A2A",
                              hover_color="#2A5080" if v == val else "#383838")
+            self._persist()
             if on_change: on_change(val)
 
         for val, lbl in zip(options, labels):
@@ -193,7 +209,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self._tab_frames["general"] = frame
 
         # Account card
-        self._section(frame, "\U0001f464 \u0985\u09cd\u09af\u09be\u0995\u09be\u0989\u09a8\u09cd\u099f")
+        self._section(frame, tr("set_sec_account"))
         acct = self._card(frame)
         plan = getattr(self.app, 'user_cache', {}).get('plan_type', 'Trial')
         is_premium = plan.lower() not in ('trial', 'expired')
@@ -204,7 +220,7 @@ class SettingsPanel(ctk.CTkToplevel):
                      text_color="#AAFFAA" if is_premium else "#FFCC44"
                      ).pack(side="left", padx=16, pady=14)
         if hasattr(self.app, 'handle_logout'):
-            ctk.CTkButton(acct, text="Logout", width=90, height=30,
+            ctk.CTkButton(acct, text=tr("set_btn_logout"), width=90, height=30,
                           fg_color="#3A3A3A", hover_color="#4A4A4A",
                           command=self.app.handle_logout).pack(side="right", padx=16)
 
@@ -213,25 +229,35 @@ class SettingsPanel(ctk.CTkToplevel):
         dev_ct  = getattr(self.app, 'device_count', 1)
         max_dev = getattr(self.app, 'max_devices', 1)
         if expiry:
-            ctk.CTkLabel(frame, text=f"\u09ae\u09c7\u09df\u09be\u09a6: {expiry}  \u2022  \u09a1\u09bf\u09ad\u09be\u0987\u09b8: {dev_ct}/{max_dev}",
+            ctk.CTkLabel(frame,
+                         text=tr("set_acct_expiry", expiry=expiry, dev=dev_ct, max=max_dev),
                          font=("Segoe UI", 10), text_color="#4CAF50"
                          ).pack(anchor="w", padx=28, pady=(2, 8))
 
         # Toggles
-        self._section(frame, "\U0001f527 \u09b8\u09be\u09a7\u09be\u09b0\u09a3")
+        self._section(frame, tr("set_sec_settings"))
         toggle_card = self._card(frame)
-        self._toggle_row(toggle_card, "Desktop \u0986\u0987\u0995\u09a8", "show_desktop_icon")
+        # Show/hide widget live based on the toggle
+        def _apply_desktop_icon():
+            if self.s.get("show_desktop_icon", True):
+                try: self.app.deiconify()
+                except Exception: pass
+            else:
+                try: self.app.withdraw()
+                except Exception: pass
+        self._toggle_row(toggle_card, tr("set_lbl_desktop_icon"),
+                         "show_desktop_icon", on_change=_apply_desktop_icon)
         self._divider(toggle_card)
-        self._toggle_row(toggle_card, "Sound Effects", "sound_enabled",
+        self._toggle_row(toggle_card, tr("set_lbl_sound_fx"), "sound_enabled",
                          on_change=getattr(self.app, 'toggle_sound', None))
         self._divider(toggle_card)
-        self._toggle_row(toggle_card, "Button Labels", "show_labels",
+        self._toggle_row(toggle_card, tr("set_lbl_btn_labels"), "show_labels",
                          on_change=getattr(self.app, 'toggle_labels', None))
 
         # Editor
-        self._section(frame, "\U0001f4dd এডিটর")
+        self._section(frame, tr("set_sec_editor"))
         editor_card = self._card(frame)
-        ctk.CTkButton(editor_card, text="\U0001f4dd এডিটর খুলুন",
+        ctk.CTkButton(editor_card, text=tr("set_btn_open_editor"),
                        width=180, height=34,
                        fg_color="#2A4A6A", hover_color="#3A5A7A",
                        font=("Segoe UI", 12),
@@ -245,7 +271,7 @@ class SettingsPanel(ctk.CTkToplevel):
         except Exception:
             ui_langs = [("en", "English"), ("bn", "Bengali (বাংলা)")]
 
-        self._section(frame, "\U0001f5e3\ufe0f Interface Language")
+        self._section(frame, tr("set_sec_ui_lang"))
         ui_card = self._card(frame)
         ui_lang_codes   = [c for c, _ in ui_langs]
         ui_lang_display = [n for _, n in ui_langs]
@@ -263,87 +289,92 @@ class SettingsPanel(ctk.CTkToplevel):
                     set_ui_language(code)
                 except Exception:
                     pass
+                self._persist()
 
         ctk.CTkComboBox(ui_card, variable=ui_var, values=ui_lang_display,
                         width=300, font=("Segoe UI", 11),
                         command=_on_ui_lang_change
                         ).pack(padx=16, pady=(12, 4))
         ctk.CTkLabel(ui_card,
-                     text="Restart the app to fully apply the language change.",
+                     text=tr("set_lbl_restart_lang"),
                      font=("Segoe UI", 10), text_color="#888888"
                      ).pack(anchor="w", padx=16, pady=(0, 12))
 
         # Microphone
-        self._section(frame, "\U0001f399\ufe0f \u09ae\u09be\u0987\u0995\u09cd\u09b0\u09cb\u09ab\u09cb\u09a8")
+        self._section(frame, tr("set_sec_microphone"))
         mic_card = self._card(frame)
         mic_list = getattr(self.app, '_cached_mic_list', []) or ["Default Microphone"]
         mic_var = ctk.StringVar(value=mic_list[self.s.get("mic_index") or 0] if (self.s.get("mic_index") or 0) < len(mic_list) else mic_list[0])
+        def _on_mic_change(v):
+            self.s["mic_index"] = mic_list.index(v) if v in mic_list else 0
+            self._persist()
+            # Mic loop in main.py polls settings["mic_index"] every iteration
+            # and restarts the stream when it changes — no extra apply needed.
         ctk.CTkComboBox(mic_card, variable=mic_var, values=mic_list,
                         width=500, font=("Segoe UI", 11),
-                        command=lambda v: self.s.update(
-                            {"mic_index": mic_list.index(v) if v in mic_list else 0})
+                        command=_on_mic_change
                         ).pack(padx=16, pady=(14, 4))
 
         # Noise filter
-        self._slider_row(mic_card, "Noise Filter", "noise_threshold",
+        self._slider_row(mic_card, tr("set_lbl_noise_filter"), "noise_threshold",
                          50, 500, 90,
                          on_change=getattr(self.app, 'update_noise_threshold', None))
         # Pause labels
         pl = ctk.CTkFrame(mic_card, fg_color="transparent")
         pl.pack(fill="x", padx=16, pady=(0, 12))
-        ctk.CTkLabel(pl, text="\u2190 \u09ae\u09be\u099d\u09c7 \u09ac\u09bf\u09b0\u09a4\u09bf", font=("Segoe UI", 9),
+        ctk.CTkLabel(pl, text=tr("set_lbl_pause_left"), font=("Segoe UI", 9),
                      text_color="#555555").pack(side="left")
-        ctk.CTkLabel(pl, text="\u0986\u09ac\u09be\u09b0 \u09b2\u09bf\u0996\u09bf \u2192", font=("Segoe UI", 9),
+        ctk.CTkLabel(pl, text=tr("set_lbl_pause_right"), font=("Segoe UI", 9),
                      text_color="#555555").pack(side="right")
 
         # Appearance
-        self._section(frame, "\U0001f3a8 Appearance & Behavior")
+        self._section(frame, tr("set_sec_appearance"))
         appear = self._card(frame)
-        self._slider_row(appear, "Idle Opacity",   "idle_opacity",  0.05, 1.0, 19,
+        self._slider_row(appear, tr("set_lbl_idle_opacity"),   "idle_opacity",  0.05, 1.0, 19,
                          on_change=getattr(self.app, 'update_idle_opacity', None))
-        self._slider_row(appear, "Active Opacity", "max_opacity",   0.3,  1.0, 14,
+        self._slider_row(appear, tr("set_lbl_active_opacity"), "max_opacity",   0.3,  1.0, 14,
                          on_change=getattr(self.app, 'update_max_opacity', None))
-        self._segmented_row(appear, "Widget Size", "size_preset",
+        self._segmented_row(appear, tr("set_lbl_widget_size"), "size_preset",
                              ["tiny", "small", "medium", "large", "xlarge"],
                              ["XS", "S", "M", "L", "XL"],
                              on_change=getattr(self.app, 'apply_size_preset', None))
         self._divider(appear)
-        self._segmented_row(appear, "Auto Stop Timeout", "auto_timeout",
+        self._segmented_row(appear, tr("set_lbl_auto_timeout"), "auto_timeout",
                              ["5", "10", "15", "30", "0"], ["5s", "10s", "15s", "30s", "\u221e"])
-        self._segmented_row(appear, "Reading Speed", "reading_speed",
-                             ["1.0", "1.5", "2.0", "2.5"], ["1x", "1.5x", "2x", "2.5x"])
+        # Note: Reading Speed lives in the TTS tab, not here.
 
         # Action buttons
-        self._section(frame, "\U0001f6e0\ufe0f Actions")
+        self._section(frame, tr("set_sec_actions"))
         act = ctk.CTkFrame(frame, fg_color="transparent")
         act.pack(fill="x", padx=28, pady=(4, 20))
         if hasattr(self.app, '_silent_reset'):
-            ctk.CTkButton(act, text="\u27f3  Reset Engine", width=160, height=36,
+            ctk.CTkButton(act, text=tr("set_btn_reset_engine"), width=160, height=36,
                           fg_color="#8B2020", hover_color="#AA2828",
                           command=self.app._silent_reset).pack(side="left", padx=(0, 8))
         if hasattr(self.app, 'check_for_update'):
-            ctk.CTkButton(act, text=f"\u2191  \u0986\u09aa\u09a1\u09c7\u099f (v{APP_VERSION})", width=180, height=36,
+            ctk.CTkButton(act, text=tr("set_btn_update", ver=APP_VERSION), width=180, height=36,
                           fg_color="#4A1A7A", hover_color="#6A2A9A",
                           command=self.app.check_for_update).pack(side="left")
 
         # Screenshot save folder
-        self._section(frame, "\U0001f4f7 Screenshot")
+        self._section(frame, tr("set_sec_screenshot"))
         ss_card = self._card(frame)
         ss_row = ctk.CTkFrame(ss_card, fg_color="transparent")
         ss_row.pack(fill="x", padx=16, pady=10)
         cur_dir = self.s.get("screenshot_save_dir", "")
-        self._ss_label = ctk.CTkLabel(ss_row, text=cur_dir or "Not set",
+        self._ss_label = ctk.CTkLabel(ss_row, text=cur_dir or tr("set_lbl_not_set"),
                                        font=("Segoe UI", 10), text_color="#888888",
                                        width=350, anchor="w")
         self._ss_label.pack(side="left")
 
         def _pick_ss_dir():
             from tkinter import filedialog
-            d = filedialog.askdirectory(title="Screenshot Save Folder")
+            d = filedialog.askdirectory(title=tr("set_dlg_pick_ss_dir"))
             if d:
                 self.s["screenshot_save_dir"] = d
                 self._ss_label.configure(text=d)
-        ctk.CTkButton(ss_row, text="Browse", width=80, height=28,
+                self._persist()
+        ctk.CTkButton(ss_row, text=tr("set_btn_browse"), width=80, height=28,
                       command=_pick_ss_dir).pack(side="right")
 
     # -- TAB: Language ---------------------------------------------
@@ -351,17 +382,17 @@ class SettingsPanel(ctk.CTkToplevel):
         frame = self._scroll_frame(self.content_area)
         self._tab_frames["language"] = frame
 
-        self._section(frame, "\U0001f310 \u09ad\u09df\u09c7\u09b8 \u099f\u09be\u0987\u09aa\u09bf\u0982 \u09ad\u09be\u09b7\u09be")
+        self._section(frame, tr("set_sec_voice_lang"))
         ctk.CTkLabel(frame,
-                     text="\u09aa\u09cd\u09b0\u09a4\u09bf\u099f\u09bf \u09ac\u09be\u099f\u09a8\u09c7\u09b0 \u099c\u09a8\u09cd\u09af \u0986\u09b2\u09be\u09a6\u09be \u09ad\u09be\u09b7\u09be \u09b8\u09bf\u09b2\u09c7\u0995\u09cd\u099f \u0995\u09b0\u09c1\u09a8\u0964 Google Speech API \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u09b9\u09df\u0964",
+                     text=tr("set_voice_lang_help"),
                      font=("Segoe UI", 10), text_color="#666666").pack(anchor="w", padx=28)
 
         lang_display = [f"{name}  ({code})" for name, code in GOOGLE_STT_LANGUAGES]
         lang_codes   = [code for _, code in GOOGLE_STT_LANGUAGES]
 
         for btn_key, btn_label, default in [
-            ("btn1_lang", "\U0001f399\ufe0f \u09ac\u09be\u099f\u09a8 \u09e7 (\u09ac\u09be\u09ae)", "bn-BD"),
-            ("btn2_lang", "\U0001f399\ufe0f \u09ac\u09be\u099f\u09a8 \u09e8 (\u09ae\u09be\u099d)", "en-US"),
+            ("btn1_lang", tr("set_lbl_btn1"), "bn-BD"),
+            ("btn2_lang", tr("set_lbl_btn2"), "en-US"),
         ]:
             c = self._card(frame)
             ctk.CTkLabel(c, text=btn_label,
@@ -369,14 +400,17 @@ class SettingsPanel(ctk.CTkToplevel):
             cur = self.s.get(btn_key, default)
             cur_disp = lang_display[lang_codes.index(cur)] if cur in lang_codes else lang_display[0]
             var = ctk.StringVar(value=cur_disp)
+            def _on_lang_change(v, k=btn_key):
+                self.s[k] = (lang_codes[lang_display.index(v)]
+                             if v in lang_display else lang_codes[0])
+                self._persist()
             ctk.CTkComboBox(c, variable=var, values=lang_display, width=540,
                             font=("Segoe UI", 11),
-                            command=lambda v, k=btn_key: self.s.update(
-                                {k: lang_codes[lang_display.index(v)] if v in lang_display else lang_codes[0]}
-                            )).pack(padx=16, pady=(0, 14))
+                            command=_on_lang_change
+                            ).pack(padx=16, pady=(0, 14))
 
         ctk.CTkLabel(frame,
-                     text="\U0001f4a1 \u09ad\u09be\u09b7\u09be \u09aa\u09b0\u09bf\u09ac\u09b0\u09cd\u09a4\u09a8 \u09a4\u09be\u09ce\u0995\u09cd\u09b7\u09a3\u09bf\u0995\u09ad\u09be\u09ac\u09c7 \u0995\u09be\u09b0\u09cd\u09af\u0995\u09b0 \u09b9\u09df\u0964",
+                     text=tr("set_lang_change_note"),
                      font=("Segoe UI", 10), text_color="#555555").pack(
             anchor="w", padx=28, pady=(8, 20))
 
@@ -385,62 +419,70 @@ class SettingsPanel(ctk.CTkToplevel):
         frame = self._scroll_frame(self.content_area)
         self._tab_frames["ai"] = frame
 
-        self._section(frame, "\U0001f916 AI \u09b8\u09b9\u0995\u09be\u09b0\u09c0")
+        self._section(frame, tr("set_sec_ai"))
         ctk.CTkLabel(frame,
-                     text="Ctrl+Shift+A: \u09b8\u09bf\u09b2\u09c7\u0995\u09cd\u099f\u09c7\u09a1 \u099f\u09c7\u0995\u09cd\u09b8\u099f\u09c7 AI  |  Ctrl+Shift+V: Smart Paste",
+                     text=tr("set_ai_hotkeys"),
                      font=("Segoe UI", 10), text_color="#666666").pack(anchor="w", padx=28)
         self._divider(frame)
 
         # Enable toggle
         c = self._card(frame)
-        self._toggle_row(c, "AI \u09b8\u0995\u09cd\u09b0\u09bf\u09df \u0995\u09b0\u09c1\u09a8", "ai_enabled")
+        self._toggle_row(c, tr("set_lbl_enable_ai"), "ai_enabled")
 
         # Output format
-        self._section(frame, "\u0986\u0989\u099f\u09aa\u09c1\u099f \u09ab\u09b0\u09ae\u09cd\u09af\u09be\u099f")
+        self._section(frame, tr("set_sec_output_fmt"))
         fmt_c = self._card(frame)
         fmt_var = ctk.StringVar(value=self.s.get("ai_output_format", "plain"))
         for val, lbl, desc in [
-            ("plain", "Plain Text", "\u0995\u09cb\u09a8\u09cb formatting \u09a8\u09c7\u0987 \u2014 \u09b8\u09b0\u09be\u09b8\u09b0\u09bf \u099f\u09c7\u0995\u09cd\u09b8\u099f"),
-            ("rich",  "Rich (Markdown)", "**bold**, _italic_, \u2022 bullet \u09b8\u09b9"),
+            ("plain", tr("set_fmt_plain"), tr("set_fmt_plain_desc")),
+            ("rich",  tr("set_fmt_rich"),  tr("set_fmt_rich_desc")),
         ]:
             r = ctk.CTkFrame(fmt_c, fg_color="transparent")
             r.pack(fill="x", padx=16, pady=(10 if val == "plain" else 2, 10 if val == "rich" else 2))
+            def _on_fmt_change(v=val):
+                self.s["ai_output_format"] = v
+                self._persist()
             ctk.CTkRadioButton(r, text=lbl, variable=fmt_var, value=val,
                                font=("Segoe UI", 12),
-                               command=lambda v=val: self.s.update({"ai_output_format": v})
+                               command=_on_fmt_change
                                ).pack(side="left")
             ctk.CTkLabel(r, text=desc, font=("Segoe UI", 10),
                          text_color="#555555").pack(side="left", padx=14)
 
         # Model
-        self._section(frame, "AI \u09ae\u09a1\u09c7\u09b2")
+        self._section(frame, tr("set_sec_ai_model"))
         c2 = self._card(frame)
         model_vals = list(AI_MODELS.values())
         model_var  = ctk.StringVar(value=self.s.get("ai_model", model_vals[0]))
+        def _on_model_change(v):
+            self.s["ai_model"] = v
+            self._persist()
         ctk.CTkOptionMenu(c2, variable=model_var, values=model_vals, width=500,
-                          command=lambda v: self.s.update({"ai_model": v})
+                          command=_on_model_change
                           ).pack(padx=16, pady=(14, 4))
-        ctk.CTkLabel(c2, text="Gemini Flash = \u09a6\u09cd\u09b0\u09c1\u09a4 | GPT-4o Mini = \u09b8\u09cd\u09ae\u09be\u09b0\u09cd\u099f | Claude Haiku = \u09b8\u09c1\u09a8\u09bf\u09b0\u09cd\u09a6\u09bf\u09b7\u09cd\u099f",
+        ctk.CTkLabel(c2, text=tr("set_ai_model_note"),
                      font=("Segoe UI", 9), text_color="#555555").pack(anchor="w", padx=16, pady=(0, 12))
 
         # System instruction
-        self._section(frame, "\u09b8\u09bf\u09b8\u09cd\u099f\u09c7\u09ae \u0987\u09a8\u09b8\u09cd\u099f\u09cd\u09b0\u09be\u0995\u09b6\u09a8")
+        self._section(frame, tr("set_sec_sys_prompt"))
         ctk.CTkLabel(frame,
-                     text="AI-\u0995\u09c7 \u0995\u09c0\u09ad\u09be\u09ac\u09c7 \u0986\u099a\u09b0\u09a3 \u0995\u09b0\u09a4\u09c7 \u09b9\u09ac\u09c7 \u09ac\u09b2\u09c1\u09a8\u0964  '\u09b8\u09ac\u09b8\u09ae\u09df \u09ab\u09b0\u09cd\u09ae\u09be\u09b2 \u09ac\u09be\u0982\u09b2\u09be\u09df \u09b2\u09bf\u0996\u09ac\u09c7'",
+                     text=tr("set_sys_prompt_help"),
                      font=("Segoe UI", 10), text_color="#555555").pack(anchor="w", padx=28, pady=(0, 6))
         self._sys_box = ctk.CTkTextbox(frame, height=130, font=("Segoe UI", 11),
                                   fg_color="#1A1A1A", border_color="#2A2A2A",
                                   border_width=1, wrap="word")
         self._sys_box.pack(fill="x", padx=28)
         self._sys_box.insert("1.0", self.s.get("ai_system_prompt",
-                       "\u09a4\u09c1\u09ae\u09bf \u098f\u0995\u099c\u09a8 \u09a6\u0995\u09cd\u09b7 \u09ac\u09be\u0982\u09b2\u09be \u0993 \u0987\u0982\u09b0\u09c7\u099c\u09bf \u09b2\u09c7\u0996\u0995 \u09b8\u09b9\u0995\u09be\u09b0\u09c0\u0964 \u09b8\u0982\u0995\u09cd\u09b7\u09bf\u09aa\u09cd\u09a4 \u0989\u09a4\u09cd\u09a4\u09b0 \u09a6\u09be\u0993\u0964"))
+                       tr("set_sys_prompt_default")))
         self._sys_box.bind("<KeyRelease>", lambda e: self.s.update(
             {"ai_system_prompt": self._sys_box.get("1.0", "end-1c").strip()}))
+        # Persist on focus-out so changes survive a close-without-save
+        self._sys_box.bind("<FocusOut>", lambda e: self._persist(), add="+")
 
         # Image System Instruction
-        self._section(frame, "\U0001f5bc\ufe0f ইমেজ সিস্টেম ইন্সট্রাকশন (স্ক্রিনশট AI)")
+        self._section(frame, tr("set_sec_img_prompt"))
         ctk.CTkLabel(frame,
-                     text="স্ক্রিনশট নিয়ে AI বাটন চাপলে এই ইন্সট্রাকশন ব্যবহার হবে।  খালি রাখলে ডিফল্ট ব্যবহার হবে।",
+                     text=tr("set_img_prompt_help"),
                      font=("Segoe UI", 10), text_color="#555555").pack(anchor="w", padx=28, pady=(0, 6))
         self._img_sys_box = ctk.CTkTextbox(frame, height=130, font=("Segoe UI", 11),
                                   fg_color="#1A1A20", border_color="#2A2A3A",
@@ -449,12 +491,12 @@ class SettingsPanel(ctk.CTkToplevel):
         self._img_sys_box.insert("1.0", self.s.get("image_system_prompt", ""))
         self._img_sys_box.bind("<KeyRelease>", lambda e: self.s.update(
             {"image_system_prompt": self._img_sys_box.get("1.0", "end-1c").strip()}))
+        self._img_sys_box.bind("<FocusOut>", lambda e: self._persist(), add="+")
 
         # Knowledge Base
-        self._section(frame, "\U0001f4da \u09a8\u09b2\u09c7\u099c \u09ac\u09c7\u099c (Smart Paste-\u098f\u09b0 \u099c\u09a8\u09cd\u09af)")
+        self._section(frame, tr("set_sec_kb"))
         ctk.CTkLabel(frame,
-                     text="Ctrl+Shift+V \u099a\u09be\u09aa\u09b2\u09c7 AI \u098f\u0987 \u09a4\u09a5\u09cd\u09af \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09c7 \u0995\u09aa\u09bf \u0995\u09b0\u09be \u09ae\u09c7\u09b8\u09c7\u099c\u09c7\u09b0 \u0989\u09a4\u09cd\u09a4\u09b0 \u09a4\u09c8\u09b0\u09bf \u0995\u09b0\u09ac\u09c7\u0964\n"
-                          "\u0989\u09a6\u09be\u09b9\u09b0\u09a3: \u0995\u09cb\u09b0\u09cd\u09b8\u09c7\u09b0 \u09a6\u09be\u09ae, \u0985\u09ab\u09bf\u09b8 \u09b8\u09ae\u09df, FAQ, \u09b0\u09bf\u099f\u09be\u09b0\u09cd\u09a8 \u09aa\u09b2\u09bf\u09b8\u09bf \u0987\u09a4\u09cd\u09af\u09be\u09a6\u09bf\u0964",
+                     text=tr("set_kb_help"),
                      font=("Segoe UI", 10), text_color="#555555",
                      justify="left").pack(anchor="w", padx=28, pady=(0, 6))
         self._kb_box = ctk.CTkTextbox(frame, height=180, font=("Segoe UI", 11),
@@ -464,9 +506,10 @@ class SettingsPanel(ctk.CTkToplevel):
         self._kb_box.insert("1.0", self.s.get("knowledge_base", ""))
         self._kb_box.bind("<KeyRelease>", lambda e: self.s.update(
             {"knowledge_base": self._kb_box.get("1.0", "end-1c").strip()}))
+        self._kb_box.bind("<FocusOut>", lambda e: self._persist(), add="+")
 
         ctk.CTkLabel(frame,
-                     text="\u2328\ufe0f  Ctrl+Shift+V  \u2192  \u0995\u09aa\u09bf \u0995\u09b0\u09be \u09ae\u09c7\u09b8\u09c7\u099c + \u09a8\u09b2\u09c7\u099c \u09ac\u09c7\u099c \u2192 AI reply paste \u09b9\u09ac\u09c7",
+                     text=tr("set_kb_footer"),
                      font=("Segoe UI", 10), text_color="#6C9EBF").pack(
             anchor="w", padx=28, pady=(8, 20))
 
@@ -475,17 +518,16 @@ class SettingsPanel(ctk.CTkToplevel):
         frame = self._scroll_frame(self.content_area)
         self._tab_frames["tts"] = frame
 
-        self._section(frame, "\U0001f50a Text-to-Speech \u09b8\u09c7\u099f\u09bf\u0982\u09b8")
+        self._section(frame, tr("set_sec_tts"))
         c = self._card(frame)
-        self._toggle_row(c, "\u09ad\u09be\u09b7\u09be \u09b8\u09cd\u09ac\u09df\u0982\u0995\u09cd\u09b0\u09bf\u09df\u09ad\u09be\u09ac\u09c7 \u09b6\u09a8\u09be\u0995\u09cd\u09a4 \u0995\u09b0\u09c1\u09a8", "tts_auto_detect")
+        self._toggle_row(c, tr("set_lbl_tts_auto"), "tts_auto_detect")
         ctk.CTkLabel(frame,
-                     text="\u099a\u09be\u09b2\u09c1: typed text-\u098f\u09b0 \u09ad\u09be\u09b7\u09be detect \u0995\u09b0\u09c7 \u09b8\u09a0\u09bf\u0995 voice \u09ac\u09be\u099c\u09be\u09ac\u09c7\n"
-                          "\u09ac\u09a8\u09cd\u09a7: \u09a8\u09bf\u099a \u09a5\u09c7\u0995\u09c7 manually voice \u099a\u09c1\u09a8 (\u09b8\u09ac \u09ad\u09be\u09b7\u09be\u09df \u0995\u09be\u099c \u09a8\u09be\u0993 \u0995\u09b0\u09a4\u09c7 \u09aa\u09be\u09b0\u09c7)",
+                     text=tr("set_tts_auto_help"),
                      font=("Segoe UI", 10), text_color="#555555",
                      justify="left").pack(anchor="w", padx=28, pady=(4, 16))
         # Reading speed
         c2 = self._card(frame)
-        self._segmented_row(c2, "Reading Speed", "reading_speed",
+        self._segmented_row(c2, tr("set_lbl_reading_speed"), "reading_speed",
                              ["1.0", "1.5", "2.0", "2.5"], ["1x", "1.5x", "2x", "2.5x"])
 
     # -- TAB: Subscription -----------------------------------------
@@ -493,18 +535,18 @@ class SettingsPanel(ctk.CTkToplevel):
         frame = self._scroll_frame(self.content_area)
         self._tab_frames["subscription"] = frame
 
-        self._section(frame, "\U0001f511 \u09aa\u09cd\u09b2\u09cd\u09af\u09be\u09a8 \u0993 \u09b8\u09be\u09ac\u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09aa\u09b6\u09a8")
+        self._section(frame, tr("set_sec_subscription"))
         c = self._card(frame)
         plan = getattr(self.app, 'user_cache', {}).get('plan_type', 'Trial')
-        ctk.CTkLabel(c, text=f"\u09ac\u09b0\u09cd\u09a4\u09ae\u09be\u09a8 \u09aa\u09cd\u09b2\u09cd\u09af\u09be\u09a8: {plan}",
+        ctk.CTkLabel(c, text=tr("set_current_plan", plan=plan),
                      font=("Segoe UI", 14, "bold")).pack(padx=16, pady=(16, 4))
 
         # Plans table
         plans = [
-            ("\u09ab\u09cd\u09b0\u09bf", "\u09f3\u09e6", "Voice typing \u0986\u099c\u09c0\u09ac\u09a8", "\u2705"),
-            ("\u09ac\u09c7\u09b8\u09bf\u0995", "\u09f3\u09e7\u09ef\u09ef/\u09ae\u09be\u09b8", "AI 200 calls/day, 2 PC", ""),
-            ("\u09aa\u09cd\u09b0\u09cb", "\u09f3\u09e9\u09ef\u09ef/\u09ae\u09be\u09b8", "AI \u0986\u09a8\u09b2\u09bf\u09ae\u09bf\u099f\u09c7\u09a1, 3 PC", "\u2b50"),
-            ("\u099f\u09bf\u09ae", "\u09f3\u09ee\u09ef\u09ef/\u09ae\u09be\u09b8", "AI \u0986\u09a8\u09b2\u09bf\u09ae\u09bf\u099f\u09c7\u09a1, 10 PC", ""),
+            (tr("set_plan_free"),  tr("set_plan_free_price"),  tr("set_plan_free_feat"),  "\u2705"),
+            (tr("set_plan_basic"), tr("set_plan_basic_price"), tr("set_plan_basic_feat"), ""),
+            (tr("set_plan_pro"),   tr("set_plan_pro_price"),   tr("set_plan_pro_feat"),   "\u2b50"),
+            (tr("set_plan_team"),  tr("set_plan_team_price"),  tr("set_plan_team_feat"),  ""),
         ]
         for pname, price, features, badge in plans:
             pr = ctk.CTkFrame(c, fg_color="#1E1E1E", corner_radius=6)
@@ -516,7 +558,7 @@ class SettingsPanel(ctk.CTkToplevel):
             ctk.CTkLabel(pr, text=features,
                          font=("Segoe UI", 10), text_color="#888888").pack(side="left", padx=8)
 
-        ctk.CTkButton(c, text="\u09b8\u09be\u09ac\u09b8\u09cd\u0995\u09cd\u09b0\u09be\u0987\u09ac \u0995\u09b0\u09c1\u09a8 \u2192", height=36,
+        ctk.CTkButton(c, text=tr("set_btn_subscribe"), height=36,
                       fg_color="#1A5A1A", hover_color="#2A7A2A",
                       command=lambda: webbrowser.open(f"{BACKEND_BASE}/pricing")
                       ).pack(fill="x", padx=16, pady=(12, 16))
@@ -527,13 +569,13 @@ class SettingsPanel(ctk.CTkToplevel):
         self._tab_frames["about"] = frame
 
         ctk.CTkLabel(frame, text=APP_NAME, font=("Segoe UI", 22, "bold")).pack(pady=(40, 4))
-        ctk.CTkLabel(frame, text=f"Version {APP_VERSION}", font=("Segoe UI", 12),
-                     text_color="#777777").pack()
-        ctk.CTkLabel(frame, text="Powered by EJOSB IT\nejobsit.com",
+        ctk.CTkLabel(frame, text=tr("set_about_version", ver=APP_VERSION),
+                     font=("Segoe UI", 12), text_color="#777777").pack()
+        ctk.CTkLabel(frame, text=tr("set_about_powered"),
                      font=("Segoe UI", 11), text_color="#888888",
                      justify="center").pack(pady=(12, 4))
-        ctk.CTkButton(frame, text="\u0993\u09df\u09c7\u09ac\u09b8\u09be\u0987\u099f \u09ad\u09bf\u099c\u09bf\u099f \u0995\u09b0\u09c1\u09a8",
+        ctk.CTkButton(frame, text=tr("set_btn_visit_website"),
                       command=lambda: webbrowser.open("https://ejobsit.com")
                       ).pack(pady=8)
-        ctk.CTkLabel(frame, text="\u00a9 2025-2026 EJOSB IT \u2022 Developed by Ahsanullah Shaon",
+        ctk.CTkLabel(frame, text=tr("set_about_copyright"),
                      font=("Segoe UI", 9), text_color="#444444").pack(pady=(20, 4))

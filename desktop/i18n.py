@@ -150,6 +150,149 @@ _TRANSLATIONS = {
         "bn": "আপনি একজন সহায়ক সহকারী। স্ক্রিনশটটি বিশ্লেষণ করে বাংলায় স্পষ্ট ও সংক্ষিপ্ত উত্তর দিন।"
     },
 
+    # ─────────────────────── Settings panel — sidebar nav ───────────────────────
+    "set_nav_general":      {"en": "⚙️  General",       "bn": "⚙️  সাধারণ"},
+    "set_nav_language":     {"en": "🌐  Language",      "bn": "🌐  ভাষা"},
+    "set_nav_ai":           {"en": "🤖  AI Settings",   "bn": "🤖  AI সেটিংস"},
+    "set_nav_tts":          {"en": "🔊  TTS",           "bn": "🔊  টিটিএস"},
+    "set_nav_subscription": {"en": "🔑  Subscription",  "bn": "🔑  সাবস্ক্রিপশন"},
+    "set_nav_about":        {"en": "ℹ️  About",         "bn": "ℹ️  সম্পর্কে"},
+
+    "set_btn_save":         {"en": "Save",              "bn": "সংরক্ষণ"},
+    "set_btn_close":        {"en": "Close",             "bn": "বন্ধ করুন"},
+    "set_window_title":     {"en": "{app} — Settings",  "bn": "{app} — সেটিংস"},
+
+    # ─────────────────────── Settings panel — General tab ───────────────────────
+    "set_sec_account":      {"en": "👤 Account",        "bn": "👤 অ্যাকাউন্ট"},
+    "set_btn_logout":       {"en": "Logout",            "bn": "লগআউট"},
+    "set_acct_expiry":      {"en": "Expires: {expiry}  •  Devices: {dev}/{max}",
+                             "bn": "মেয়াদ: {expiry}  •  ডিভাইস: {dev}/{max}"},
+
+    "set_sec_settings":     {"en": "🔧 Settings",       "bn": "🔧 সাধারণ"},
+    "set_lbl_desktop_icon": {"en": "Desktop Icon",      "bn": "ডেস্কটপ আইকন"},
+    "set_lbl_sound_fx":     {"en": "Sound Effects",     "bn": "সাউন্ড ইফেক্ট"},
+    "set_lbl_btn_labels":   {"en": "Button Labels",     "bn": "বাটন লেবেল"},
+
+    "set_sec_editor":       {"en": "📝 Editor",         "bn": "📝 এডিটর"},
+    "set_btn_open_editor":  {"en": "📝 Open Editor",    "bn": "📝 এডিটর খুলুন"},
+
+    "set_sec_ui_lang":      {"en": "🗣️ Interface Language",
+                             "bn": "🗣️ ইন্টারফেস ভাষা"},
+    "set_lbl_restart_lang": {"en": "Restart the app to fully apply the language change.",
+                             "bn": "ভাষা পরিবর্তন সম্পূর্ণভাবে প্রয়োগ করতে অ্যাপ পুনরায় চালু করুন।"},
+
+    "set_sec_microphone":   {"en": "🎙️ Microphone",     "bn": "🎙️ মাইক্রোফোন"},
+    "set_lbl_noise_filter": {"en": "Noise Filter",      "bn": "নয়েজ ফিল্টার"},
+    "set_lbl_pause_left":   {"en": "← Less Pause",      "bn": "← মাঝে বিরতি"},
+    "set_lbl_pause_right":  {"en": "More Sensitive →",  "bn": "আবার লিখি →"},
+
+    "set_sec_appearance":   {"en": "🎨 Appearance & Behavior",
+                             "bn": "🎨 চেহারা ও আচরণ"},
+    "set_lbl_idle_opacity": {"en": "Idle Opacity",      "bn": "নিষ্ক্রিয় অস্বচ্ছতা"},
+    "set_lbl_active_opacity":{"en": "Active Opacity",   "bn": "সক্রিয় অস্বচ্ছতা"},
+    "set_lbl_widget_size":  {"en": "Widget Size",       "bn": "উইজেট আকার"},
+    "set_lbl_auto_timeout": {"en": "Auto Stop Timeout", "bn": "অটো স্টপ টাইমআউট"},
+
+    "set_sec_actions":      {"en": "🛠️ Actions",        "bn": "🛠️ অ্যাকশন"},
+    "set_btn_reset_engine": {"en": "⟳  Reset Engine",   "bn": "⟳  ইঞ্জিন রিসেট"},
+    "set_btn_update":       {"en": "↑  Update (v{ver})","bn": "↑  আপডেট (v{ver})"},
+
+    "set_sec_screenshot":   {"en": "📷 Screenshot",     "bn": "📷 স্ক্রিনশট"},
+    "set_lbl_not_set":      {"en": "Not set",           "bn": "সেট করা নেই"},
+    "set_btn_browse":       {"en": "Browse",            "bn": "ব্রাউজ"},
+    "set_dlg_pick_ss_dir":  {"en": "Screenshot Save Folder",
+                             "bn": "স্ক্রিনশট সংরক্ষণ ফোল্ডার"},
+
+    # ─────────────────────── Settings panel — Language tab ───────────────────────
+    "set_sec_voice_lang":   {"en": "🌐 Voice Typing Language",
+                             "bn": "🌐 ভয়েস টাইপিং ভাষা"},
+    "set_voice_lang_help":  {"en": "Pick a language for each button. Powered by Google Speech API.",
+                             "bn": "প্রতিটি বাটনের জন্য আলাদা ভাষা সিলেক্ট করুন। Google Speech API ব্যবহার হয়।"},
+    "set_lbl_btn1":         {"en": "🎙️ Button 1 (Left)",  "bn": "🎙️ বাটন ১ (বাম)"},
+    "set_lbl_btn2":         {"en": "🎙️ Button 2 (Right)", "bn": "🎙️ বাটন ২ (মাঝ)"},
+    "set_lang_change_note": {"en": "💡 Language changes apply instantly.",
+                             "bn": "💡 ভাষা পরিবর্তন তাৎক্ষণিকভাবে কার্যকর হয়।"},
+
+    # ─────────────────────── Settings panel — AI tab ───────────────────────
+    "set_sec_ai":           {"en": "🤖 AI Assistant",   "bn": "🤖 AI সহকারী"},
+    "set_ai_hotkeys":       {"en": "Ctrl+Shift+A: AI on selected text  |  Ctrl+Shift+V: Smart Paste",
+                             "bn": "Ctrl+Shift+A: সিলেক্টেড টেক্সটে AI  |  Ctrl+Shift+V: স্মার্ট পেস্ট"},
+    "set_lbl_enable_ai":    {"en": "Enable AI",          "bn": "AI সক্রিয় করুন"},
+
+    "set_sec_output_fmt":   {"en": "Output Format",     "bn": "আউটপুট ফরম্যাট"},
+    "set_fmt_plain":        {"en": "Plain Text",        "bn": "প্লেইন টেক্সট"},
+    "set_fmt_plain_desc":   {"en": "No formatting — straight text",
+                             "bn": "কোনো formatting নেই — সরাসরি টেক্সট"},
+    "set_fmt_rich":         {"en": "Rich (Markdown)",   "bn": "রিচ (Markdown)"},
+    "set_fmt_rich_desc":    {"en": "**bold**, _italic_, • bullet etc.",
+                             "bn": "**bold**, _italic_, • bullet সহ"},
+
+    "set_sec_ai_model":     {"en": "AI Model",          "bn": "AI মডেল"},
+    "set_ai_model_note":    {"en": "Gemini Flash = Fast | GPT-4o Mini = Smart | Claude Haiku = Refined",
+                             "bn": "Gemini Flash = দ্রুত | GPT-4o Mini = স্মার্ট | Claude Haiku = সুনির্দিষ্ট"},
+
+    "set_sec_sys_prompt":   {"en": "System Instruction","bn": "সিস্টেম ইন্সট্রাকশন"},
+    "set_sys_prompt_help":  {"en": "Tell the AI how to behave. e.g. 'Always respond in formal English.'",
+                             "bn": "AI-কে কীভাবে আচরণ করতে হবে বলুন।  'সবসময় ফরমাল বাংলায় লিখবে'"},
+    "set_sys_prompt_default":{"en": "You are a skilled writing assistant. Keep replies concise.",
+                             "bn": "তুমি একজন দক্ষ বাংলা ও ইংরেজি লেখক সহকারী। সংক্ষিপ্ত উত্তর দাও।"},
+
+    "set_sec_img_prompt":   {"en": "🖼️ Image System Instruction (Screenshot AI)",
+                             "bn": "🖼️ ইমেজ সিস্টেম ইন্সট্রাকশন (স্ক্রিনশট AI)"},
+    "set_img_prompt_help":  {"en": "Used when you press the AI button on a screenshot. Leave blank for default.",
+                             "bn": "স্ক্রিনশট নিয়ে AI বাটন চাপলে এই ইন্সট্রাকশন ব্যবহার হবে। খালি রাখলে ডিফল্ট ব্যবহার হবে।"},
+
+    "set_sec_kb":           {"en": "📚 Knowledge Base (for Smart Paste)",
+                             "bn": "📚 নলেজ বেজ (Smart Paste-এর জন্য)"},
+    "set_kb_help":          {"en": "Pressing Ctrl+Shift+V uses this info to write a reply to the copied message.\n"
+                                   "Examples: course prices, office hours, FAQ, return policy etc.",
+                             "bn": "Ctrl+Shift+V চাপলে AI এই তথ্য ব্যবহার করে কপি করা মেসেজের উত্তর তৈরি করবে।\n"
+                                   "উদাহরণ: কোর্সের দাম, অফিস সময়, FAQ, রিটার্ন পলিসি ইত্যাদি।"},
+    "set_kb_footer":        {"en": "⌨️  Ctrl+Shift+V  →  Copied message + Knowledge Base → AI reply pasted",
+                             "bn": "⌨️  Ctrl+Shift+V  →  কপি করা মেসেজ + নলেজ বেজ → AI reply paste হবে"},
+
+    # ─────────────────────── Settings panel — TTS tab ───────────────────────
+    "set_sec_tts":          {"en": "🔊 Text-to-Speech Settings",
+                             "bn": "🔊 Text-to-Speech সেটিংস"},
+    "set_lbl_tts_auto":     {"en": "Auto-detect language",
+                             "bn": "ভাষা স্বয়ংক্রিয়ভাবে শনাক্ত করুন"},
+    "set_tts_auto_help":    {"en": "On: detect typed text language and use the right voice\n"
+                                   "Off: pick a voice manually below (may not work for all languages)",
+                             "bn": "চালু: typed text-এর ভাষা detect করে সঠিক voice বাজাবে\n"
+                                   "বন্ধ: নিচ থেকে manually voice চুন (সব ভাষায় কাজ নাও করতে পারে)"},
+    "set_lbl_reading_speed":{"en": "Reading Speed",     "bn": "পড়ার গতি"},
+
+    # ─────────────────────── Settings panel — Subscription tab ───────────────────────
+    "set_sec_subscription": {"en": "🔑 Plan & Subscription",
+                             "bn": "🔑 প্ল্যান ও সাবস্ক্রিপশন"},
+    "set_current_plan":     {"en": "Current Plan: {plan}",
+                             "bn": "বর্তমান প্ল্যান: {plan}"},
+    "set_plan_free":        {"en": "Free",              "bn": "ফ্রি"},
+    "set_plan_basic":       {"en": "Basic",             "bn": "বেসিক"},
+    "set_plan_pro":         {"en": "Pro",               "bn": "প্রো"},
+    "set_plan_team":        {"en": "Team",              "bn": "টিম"},
+    "set_plan_free_price":  {"en": "$0",                "bn": "৳০"},
+    "set_plan_basic_price": {"en": "$2/mo",             "bn": "৳১৯৯/মাস"},
+    "set_plan_pro_price":   {"en": "$4/mo",             "bn": "৳৩৯৯/মাস"},
+    "set_plan_team_price":  {"en": "$10/mo",            "bn": "৳৮৯৯/মাস"},
+    "set_plan_free_feat":   {"en": "Voice typing for life",
+                             "bn": "Voice typing আজীবন"},
+    "set_plan_basic_feat":  {"en": "AI 200 calls/day, 2 PCs",
+                             "bn": "AI 200 calls/day, 2 PC"},
+    "set_plan_pro_feat":    {"en": "AI unlimited, 3 PCs",
+                             "bn": "AI আনলিমিটেড, 3 PC"},
+    "set_plan_team_feat":   {"en": "AI unlimited, 10 PCs",
+                             "bn": "AI আনলিমিটেড, 10 PC"},
+    "set_btn_subscribe":    {"en": "Subscribe →",       "bn": "সাবস্ক্রাইব করুন →"},
+
+    # ─────────────────────── Settings panel — About tab ───────────────────────
+    "set_about_powered":    {"en": "Powered by EJOSB IT\nejobsit.com",
+                             "bn": "Powered by EJOSB IT\nejobsit.com"},
+    "set_btn_visit_website":{"en": "Visit Website",     "bn": "ওয়েবসাইট ভিজিট করুন"},
+    "set_about_copyright":  {"en": "© 2025-2026 EJOSB IT • Developed by Ahsanullah Shaon",
+                             "bn": "© 2025-2026 EJOSB IT • Developed by Ahsanullah Shaon"},
+    "set_about_version":    {"en": "Version {ver}",     "bn": "সংস্করণ {ver}"},
+
     # ─────────────────────── Misc ───────────────────────
     "loading":     {"en": "Loading...",   "bn": "লোড হচ্ছে..."},
     "saving":      {"en": "Saving...",    "bn": "সংরক্ষণ..."},

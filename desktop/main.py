@@ -125,10 +125,21 @@ socket.setdefaulttimeout(10)
 
 # CRITICAL: Define resource_path BEFORE Firebase initialization
 def resource_path(relative_path):
+    """Resolve a bundled resource path.
+
+    PyInstaller frozen builds: use sys._MEIPASS (the temp extraction dir).
+    Dev runs (not frozen):     use the directory where this main.py lives,
+                               so the lookup works no matter what CWD the
+                               user launched from. Previously we used
+                               os.path.abspath(".") which broke when the
+                               app was launched from outside desktop/ (e.g.
+                               from the project root) — the start/end SFX
+                               WAVs then silently failed to load.
+    """
     try:
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(".")
+        base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
 def silent_restart(app_instance=None):
@@ -1533,6 +1544,10 @@ class VoiceTypingApp(ctk.CTk):
     # ── AI Trigger Flow (Ctrl+Shift+A) ────────────────────────
     def ai_trigger_flow(self):
         from config import DEV_MODE
+        # Honour the AI on/off toggle from settings
+        if not self.settings.get("ai_enabled", True):
+            print("[AI] Disabled in settings — ignoring trigger")
+            return
         if not DEV_MODE and not self.is_authenticated:
             self.after(0, self.open_auth_panel)
             return
@@ -2633,10 +2648,10 @@ class VoiceTypingApp(ctk.CTk):
         self.save_settings()
     
     def toggle_sound(self):
-        """Toggle start/end sound effects"""
-        self.settings["sound_enabled"] = not self.settings.get("sound_enabled", True)
+        """Apply sound-effect toggle. Settings dict is already updated by the
+        settings panel from the switch's var.get() — we only persist + log."""
         self.save_settings()
-        print(f"[SETTINGS] Sound {'enabled' if self.settings['sound_enabled'] else 'disabled'}")
+        print(f"[SETTINGS] Sound {'enabled' if self.settings.get('sound_enabled', True) else 'disabled'}")
 
     def toggle_labels(self):
         """Toggle button label visibility"""
