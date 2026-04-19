@@ -960,6 +960,9 @@ class DrawingEngine:
             try:
                 state = "normal" if self._text_cursor_visible else "hidden"
                 self._canvas.itemconfigure(self._text_cursor_id, state=state)
+                # When making visible, raise above text so it never hides
+                if self._text_cursor_visible:
+                    self._canvas.tag_raise(self._text_cursor_id)
             except tk.TclError:
                 pass
         self._text_cursor_job = self._parent.after(500, self._blink_cursor)
@@ -987,6 +990,13 @@ class DrawingEngine:
             cursor_h = self._cursor_height(dfont)
             self._canvas.coords(self._text_cursor_id, cx, cy, cx, cy + cursor_h)
             self._canvas.itemconfigure(self._text_cursor_id, fill=color)
+            # ALWAYS raise caret above the text item — otherwise tag-raise
+            # operations elsewhere (selection rect lower, layer reordering on
+            # itemconfigure, etc.) can leave the caret hidden behind text.
+            try:
+                self._canvas.tag_raise(self._text_cursor_id)
+            except tk.TclError:
+                pass
 
     def _finalize_text(self):
         # Commit any pending IME character before finalizing

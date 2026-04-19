@@ -3084,17 +3084,21 @@ class VoiceTypingApp(ctk.CTk):
         """Type text with smart spacing for punctuation"""
         try:
             # Route to drawing engine if text/handwrite tool is active
+            # AND that surface is the foreground window — otherwise voice text
+            # goes to whatever OS app the user is actually typing into.
             target_engine = None
-            # Check editor window first
+            # Check editor window first — only if it's the foreground window
             if hasattr(self, '_editor_win') and self._editor_win:
                 try:
-                    if self._editor_win.winfo_exists():
+                    if (self._editor_win.winfo_exists()
+                            and getattr(self._editor_win, '_has_foreground', False)):
                         engine = getattr(self._editor_win, '_engine', None)
                         if engine and engine._text_active:
                             target_engine = engine
                 except Exception:
                     pass
-            # Check pen overlay
+            # Check pen overlay (overlay is always topmost when shown,
+            # so foreground check is implicit via _text_active)
             if not target_engine and hasattr(self, '_pen_overlay') and self._pen_overlay:
                 engine = getattr(self._pen_overlay, '_engine', None)
                 if engine and engine._text_active:
@@ -3103,19 +3107,27 @@ class VoiceTypingApp(ctk.CTk):
                 cleaned = text.strip()
                 if cleaned:
                     inject = (" " + cleaned) if leading_space else cleaned
-                    target_engine.inject_text(inject)
-                # Gentle focus restore — match the specific target
-                try:
-                    if hasattr(self, '_pen_overlay') and self._pen_overlay:
-                        eng = getattr(self._pen_overlay, '_engine', None)
-                        if eng is target_engine and hasattr(self._pen_overlay, '_grab_focus'):
-                            self._pen_overlay._grab_focus()
-                    elif hasattr(self, '_editor_win') and self._editor_win:
-                        eng = getattr(self._editor_win, '_engine', None)
-                        if eng is target_engine and self._editor_win.winfo_exists():
-                            self._editor_win._canvas.focus_set()
-                except Exception:
-                    pass
+                    # CRITICAL: voice typing fires from a background audio
+                    # thread. Tkinter is NOT thread-safe — calling canvas
+                    # methods from here causes silent failures, lost chars,
+                    # and caret/text desync. Marshal to the main UI thread.
+                    captured_engine = target_engine
+                    captured_inject = inject
+                    self.after(0, lambda: captured_engine.inject_text(captured_inject))
+                # Gentle focus restore — also marshal (same thread-safety reason)
+                def _restore_focus():
+                    try:
+                        if hasattr(self, '_pen_overlay') and self._pen_overlay:
+                            eng = getattr(self._pen_overlay, '_engine', None)
+                            if eng is target_engine and hasattr(self._pen_overlay, '_grab_focus'):
+                                self._pen_overlay._grab_focus()
+                        elif hasattr(self, '_editor_win') and self._editor_win:
+                            eng = getattr(self._editor_win, '_engine', None)
+                            if eng is target_engine and self._editor_win.winfo_exists():
+                                self._editor_win._canvas.focus_set()
+                    except Exception:
+                        pass
+                self.after(0, _restore_focus)
                 return
             # Handle embedded newlines FIRST (before strip removes them)
             if "\n" in text:

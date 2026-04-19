@@ -509,9 +509,21 @@ class EditorWindow(tk.Toplevel):
         self.bind("<F11>", lambda e: self._toggle_fullscreen())
         self.bind("<Escape>", self._on_escape)
         self.bind("<Control-v>", lambda e: self._paste_from_clipboard())
+        # Track foreground state — used by voice typing in main.py to decide
+        # whether to inject into the editor's text item or send to the OS-
+        # active window. Default False so voice goes to the OS app the user
+        # is actually looking at, not the editor in the background.
+        self._has_foreground = False
         # Ensure canvas gets focus when editor window is activated
-        self.bind("<FocusIn>", lambda e: self._canvas.focus_set()
-                  if e.widget == self else None)
+        def _on_focus_in(e):
+            if e.widget is self:
+                self._has_foreground = True
+                self._canvas.focus_set()
+        def _on_focus_out(e):
+            if e.widget is self:
+                self._has_foreground = False
+        self.bind("<FocusIn>", _on_focus_in, add="+")
+        self.bind("<FocusOut>", _on_focus_out, add="+")
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
         # Start periodic auto-save (every 60s)
         self._autosave_job = None

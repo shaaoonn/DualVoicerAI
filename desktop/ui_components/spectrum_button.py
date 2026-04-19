@@ -128,35 +128,65 @@ class SpectrumButton(tk.Canvas):
         else:
             self._ring_metallic(d, cx, cy, r)
 
-        # ── Emoji icon ──
-        emoji = EMOJI.get(self.label, self.label)
+        # ── Icon ──
+        # SND-pause uses vector pause bars (pixel-perfect centering).
+        # Color emoji centering via font metrics is unreliable — different
+        # glyphs (🔊 vs ⏸️) have inconsistent bearings/advance widths so
+        # anchor="mm" or textbbox math leaves them visibly shifted.
         if self.label == "SND" and self._icon_mode == "pause":
-            emoji = PAUSE_EMOJI
+            # Two white rounded rectangles (vector pause symbol)
+            bar_h = int(big * 0.30)
+            bar_w = max(4, int(big * 0.07))
+            gap   = max(3, int(big * 0.06))
+            top   = cy - bar_h // 2
+            x_left  = cx - gap // 2 - bar_w
+            x_right = cx + gap // 2
+            radius  = max(2, bar_w // 3)
+            d.rounded_rectangle(
+                [x_left, top, x_left + bar_w, top + bar_h],
+                radius=radius, fill=(255, 255, 255, 255))
+            d.rounded_rectangle(
+                [x_right, top, x_right + bar_w, top + bar_h],
+                radius=radius, fill=(255, 255, 255, 255))
+        else:
+            emoji = EMOJI.get(self.label, self.label)
+            emoji_sz = int(sz * 0.52)  # ~52% of button size — bigger, clearer
+            try:
+                efont = ImageFont.truetype("seguiemj.ttf", emoji_sz)
+            except OSError:
+                try: efont = ImageFont.truetype("segoeui.ttf", emoji_sz)
+                except OSError: efont = ImageFont.load_default()
 
-        emoji_sz = int(sz * 0.52)  # ~52% of button size — bigger, clearer
-        try:
-            efont = ImageFont.truetype("seguiemj.ttf", emoji_sz)
-        except OSError:
-            try: efont = ImageFont.truetype("segoeui.ttf", emoji_sz)
-            except OSError: efont = ImageFont.load_default()
-
-        # Use Pillow's middle-middle anchor — most reliable for color emojis.
-        # Different glyphs (🔊 vs ⏸️) have inconsistent textbbox metrics, so
-        # any manual centering math leaves them shifted on icon swap.
-        # anchor="mm" places the *visual* glyph center at (x, y) directly.
-        try:
-            d.text((cx, cy - int(sz * 0.06)), emoji,
-                   font=efont, fill=(255, 255, 255, 255), anchor="mm")
-        except (TypeError, ValueError):
-            # Fallback for very old Pillow without the anchor parameter
-            bb = d.textbbox((0, 0), emoji, font=efont)
-            ex = cx - (bb[0] + bb[2]) // 2
-            ey = cy - (bb[1] + bb[3]) // 2 - int(sz * 0.06)
-            d.text((ex, ey), emoji, font=efont, fill=(255, 255, 255, 255))
+            # Render-and-recenter: render glyph to a temp surface, find its
+            # actual non-transparent bbox, then composite at the true center.
+            # This bypasses font-metric quirks entirely.
+            try:
+                pad = emoji_sz
+                tmp = Image.new("RGBA", (pad * 3, pad * 3), (0, 0, 0, 0))
+                td = ImageDraw.Draw(tmp)
+                td.text((pad, pad), emoji,
+                        font=efont, fill=(255, 255, 255, 255), embedded_color=True)
+            except TypeError:
+                # Older Pillow without embedded_color — fall back without it
+                pad = emoji_sz
+                tmp = Image.new("RGBA", (pad * 3, pad * 3), (0, 0, 0, 0))
+                td = ImageDraw.Draw(tmp)
+                td.text((pad, pad), emoji, font=efont, fill=(255, 255, 255, 255))
+            bb = tmp.getbbox()
+            if bb:
+                glyph = tmp.crop(bb)
+                gw, gh = glyph.size
+                paste_x = cx - gw // 2
+                paste_y = cy - gh // 2 - int(sz * 0.04)
+                img.alpha_composite(glyph, (paste_x, paste_y))
+            else:
+                # Nothing rendered (font missing) — final fallback
+                d.text((cx, cy), emoji, font=efont,
+                       fill=(255, 255, 255, 255), anchor="mm")
 
         # ── Label (bigger, bold, gold) ──
         if self._show_label:
-            lbl_sz = max(10, int(sz * 0.36))
+            lbl_sz = max(7, int(sz * 0.24))  # 2/3 of previous 0.36
             try: lfont = ImageFont.truetype("segoeuib.ttf", lbl_sz)
             except OSError:
                 try: lfont = ImageFont.truetype("segoeui.ttf", lbl_sz)
