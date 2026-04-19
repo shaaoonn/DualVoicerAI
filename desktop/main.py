@@ -206,6 +206,31 @@ def silent_restart(app_instance=None):
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
+# CustomTkinter widget scaling for crisp text on high-DPI displays.
+# After enabling per-monitor DPI awareness above, the OS reports the *real*
+# DPI to tk — but ctk renders widgets at logical (1.0x) size by default,
+# so on a 1.5x or 2.0x display text looks tiny and aliased. Match ctk's
+# scaling factor to the OS scale so the panel renders crisply.
+if sys.platform == 'win32':
+    try:
+        import ctypes
+        # GetScaleFactorForDevice returns the scale percent (e.g. 150 for 1.5x).
+        # Falls back gracefully on older Windows.
+        try:
+            scale_pct = ctypes.windll.shcore.GetScaleFactorForDevice(0)
+            dpi_scale = max(1.0, scale_pct / 100.0)
+        except (AttributeError, OSError):
+            # Fallback: GetDeviceCaps LOGPIXELSX (88) → DPI; baseline = 96
+            hdc = ctypes.windll.user32.GetDC(0)
+            dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)
+            ctypes.windll.user32.ReleaseDC(0, hdc)
+            dpi_scale = max(1.0, dpi / 96.0)
+        ctk.set_widget_scaling(dpi_scale)
+        ctk.set_window_scaling(dpi_scale)
+        print(f"[DPI] Scale factor: {dpi_scale:.2f}x")
+    except Exception as e:
+        print(f"[DPI] Scaling setup failed: {e}")
+
 
 class BackgroundUpdateManager:
     def __init__(self, app_version, repo_url, on_update_ready_callback):
@@ -2597,9 +2622,10 @@ class VoiceTypingApp(ctk.CTk):
         """Silent reset - no message shown to user. Called when manually stopping voice typing."""
         # Prevent cascading resets
         if getattr(self, '_resetting', False):
-            return
+            return self._resetting
         self._resetting = True
 
+        ok = False
         try:
             # Signal mic thread to restart
             self.restart_mic_flag = True
@@ -2624,10 +2650,44 @@ class VoiceTypingApp(ctk.CTk):
             socket.setdefaulttimeout(10)
 
             print("[SILENT RESET] Voice engine reset (user won't notice)")
+            ok = True
         except Exception as e:
             print(f"[SILENT RESET ERROR] {e}")
         finally:
             self._resetting = False
+        return ok
+
+    def reset_engine_with_feedback(self):
+        """User-facing reset (called from Settings → Reset Engine button).
+        Runs the silent reset and pops a small toast so the user knows it
+        actually happened — otherwise the click feels like nothing changed."""
+        ok = self._silent_reset()
+        # Show a tiny toast next to the widget so the user sees feedback
+        try:
+            self._show_toast(
+                "✓ Engine reset" if ok else "⚠ Reset busy — try again",
+                color=("#1A5A1A" if ok else "#8B5A20"))
+        except Exception as e:
+            print(f"[reset toast] {e}")
+
+    def _show_toast(self, text: str, color: str = "#1A5A1A", duration_ms: int = 1400):
+        """Floating non-blocking toast near the widget. Self-dismissing."""
+        try:
+            toast = ctk.CTkToplevel(self)
+            toast.overrideredirect(True)
+            toast.attributes('-topmost', True)
+            toast.configure(fg_color=color)
+            wx, wy, wh = self.winfo_x(), self.winfo_y(), self.winfo_height()
+            toast.geometry(f"220x32+{wx}+{wy + wh + 6}")
+            ctk.CTkLabel(toast, text=text, text_color="white",
+                         fg_color=color, font=("Segoe UI", 12, "bold"),
+                         height=32, corner_radius=8).pack(fill="both", expand=True)
+            def _dismiss():
+                try: toast.destroy()
+                except tk.TclError: pass
+            toast.after(duration_ms, _dismiss)
+        except tk.TclError:
+            pass
 
     def close_settings(self):
         self.save_settings()

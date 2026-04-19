@@ -197,8 +197,12 @@ _TRANSLATIONS = {
     "set_btn_reset_engine": {"en": "⟳  Reset Engine",   "bn": "⟳  ইঞ্জিন রিসেট"},
     "set_btn_update":       {"en": "↑  Update (v{ver})","bn": "↑  আপডেট (v{ver})"},
 
-    "set_sec_screenshot":   {"en": "📷 Screenshot",     "bn": "📷 স্ক্রিনশট"},
-    "set_lbl_not_set":      {"en": "Not set",           "bn": "সেট করা নেই"},
+    "set_sec_screenshot":   {"en": "📷 Screenshot Save Folder",
+                             "bn": "📷 স্ক্রীনশট সেভ ফোল্ডার"},
+    "set_lbl_screenshot_help": {"en": "Choose where AI screenshots are saved on your computer.",
+                                "bn": "AI স্ক্রীনশট কোথায় সেভ হবে সেই ফোল্ডার নির্বাচন করুন।"},
+    "set_lbl_not_set":      {"en": "Not set — using default Pictures folder",
+                             "bn": "সেট করা নেই — ডিফল্ট Pictures ফোল্ডার ব্যবহৃত হবে"},
     "set_btn_browse":       {"en": "Browse",            "bn": "ব্রাউজ"},
     "set_dlg_pick_ss_dir":  {"en": "Screenshot Save Folder",
                              "bn": "স্ক্রিনশট সংরক্ষণ ফোল্ডার"},
@@ -339,3 +343,18 @@ def get_ui_language():
 def get_available_languages():
     """Return list of (code, display_name) tuples for the language picker."""
     return list(AVAILABLE_LANGUAGES)
+
+
+# Per-script font choice — Segoe UI has no Bengali glyphs, so on Windows it
+# falls back to a low-quality bitmap renderer that produces visibly aliased
+# Bengali text. Nirmala UI is Microsoft's Indic font with proper anti-aliasing
+# and ligatures and looks dramatically crisper than the fallback.
+_FONT_BY_LANG = {
+    "en": "Segoe UI",
+    "bn": "Nirmala UI",
+}
+
+
+def get_ui_font():
+    """Return the best UI font family for the active language."""
+    return _FONT_BY_LANG.get(_current_lang, "Segoe UI")

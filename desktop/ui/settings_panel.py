@@ -9,7 +9,10 @@ import webbrowser
 from config import (APP_NAME, APP_VERSION, SETTINGS_WINDOW_SIZE,
                     SETTINGS_MIN_SIZE, AI_MODELS, BACKEND_BASE)
 from ui_components.language_data import GOOGLE_STT_LANGUAGES
-from i18n import tr
+from i18n import tr, get_ui_font
+
+# UI font — Segoe UI for English, Nirmala UI for Bengali (much crisper for Indic text)
+F = get_ui_font()
 
 class SettingsPanel(ctk.CTkToplevel):
     def __init__(self, parent, app_ref):
@@ -43,10 +46,10 @@ class SettingsPanel(ctk.CTkToplevel):
 
         # App logo area
         ctk.CTkLabel(self.sidebar, text=APP_NAME,
-                     font=("Segoe UI", 13, "bold"),
+                     font=(F, 13, "bold"),
                      text_color="#FFFFFF").pack(pady=(20, 2))
         ctk.CTkLabel(self.sidebar, text=f"v{APP_VERSION}",
-                     font=("Segoe UI", 9),
+                     font=(F, 9),
                      text_color="#555555").pack(pady=(0, 16))
         ctk.CTkFrame(self.sidebar, height=1, fg_color="#2A2A2A").pack(fill="x", padx=12, pady=4)
 
@@ -63,7 +66,7 @@ class SettingsPanel(ctk.CTkToplevel):
             btn = ctk.CTkButton(
                 self.sidebar, text=label, anchor="w",
                 fg_color="transparent", hover_color="#252525",
-                font=("Segoe UI", 12), height=36,
+                font=(F, 12), height=36,
                 command=lambda k=key: self._show_tab(k)
             )
             btn.pack(fill="x", padx=8, pady=2)
@@ -122,7 +125,7 @@ class SettingsPanel(ctk.CTkToplevel):
 
     def _section(self, parent, title: str):
         ctk.CTkLabel(parent, text=title,
-                     font=("Segoe UI", 12, "bold"),
+                     font=(F, 12, "bold"),
                      text_color="#CCCCCC").pack(anchor="w", padx=28, pady=(18, 5))
 
     def _divider(self, parent):
@@ -146,7 +149,7 @@ class SettingsPanel(ctk.CTkToplevel):
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=7)
         ctk.CTkLabel(row, text=label,
-                     font=("Segoe UI", 12)).pack(side="left")
+                     font=(F, 12)).pack(side="left")
         var = ctk.BooleanVar(value=self.s.get(key, True))
         def _cb():
             self.s[key] = var.get()
@@ -160,9 +163,9 @@ class SettingsPanel(ctk.CTkToplevel):
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(6, 0))
         ctk.CTkLabel(row, text=label,
-                     font=("Segoe UI", 11), text_color="#999999").pack(side="left")
+                     font=(F, 11), text_color="#999999").pack(side="left")
         val_lbl = ctk.CTkLabel(row, text=f"{self.s.get(key, min_v):.2f}",
-                                font=("Segoe UI", 10), text_color="#4FC3F7", width=40)
+                                font=(F, 10), text_color="#4FC3F7", width=40)
         val_lbl.pack(side="right")
         def _cb(v):
             self.s[key] = v
@@ -179,7 +182,7 @@ class SettingsPanel(ctk.CTkToplevel):
         """Radio-style segmented button row."""
         if labels is None: labels = options
         ctk.CTkLabel(parent, text=label,
-                     font=("Segoe UI", 11), text_color="#999999").pack(
+                     font=(F, 11), text_color="#999999").pack(
             anchor="w", padx=16, pady=(8, 4))
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(0, 10))
@@ -198,7 +201,7 @@ class SettingsPanel(ctk.CTkToplevel):
             b = ctk.CTkButton(row, text=lbl, width=70, height=30,
                                fg_color="#1E3A5F" if val == current else "#2A2A2A",
                                hover_color="#2A5080" if val == current else "#383838",
-                               font=("Segoe UI", 11),
+                               font=(F, 11),
                                command=lambda v=val: _select(v))
             b.pack(side="left", padx=3)
             btns[val] = b
@@ -215,7 +218,7 @@ class SettingsPanel(ctk.CTkToplevel):
         is_premium = plan.lower() not in ('trial', 'expired')
         badge_color = "#1A4A1A" if is_premium else "#3A2A00"
         badge_text  = f"\u2713 {plan}" if is_premium else f"\u23f3 {plan}"
-        ctk.CTkLabel(acct, text=badge_text, font=("Segoe UI", 13, "bold"),
+        ctk.CTkLabel(acct, text=badge_text, font=(F, 13, "bold"),
                      fg_color=badge_color, corner_radius=6,
                      text_color="#AAFFAA" if is_premium else "#FFCC44"
                      ).pack(side="left", padx=16, pady=14)
@@ -231,7 +234,7 @@ class SettingsPanel(ctk.CTkToplevel):
         if expiry:
             ctk.CTkLabel(frame,
                          text=tr("set_acct_expiry", expiry=expiry, dev=dev_ct, max=max_dev),
-                         font=("Segoe UI", 10), text_color="#4CAF50"
+                         font=(F, 10), text_color="#4CAF50"
                          ).pack(anchor="w", padx=28, pady=(2, 8))
 
         # Toggles
@@ -260,7 +263,7 @@ class SettingsPanel(ctk.CTkToplevel):
         ctk.CTkButton(editor_card, text=tr("set_btn_open_editor"),
                        width=180, height=34,
                        fg_color="#2A4A6A", hover_color="#3A5A7A",
-                       font=("Segoe UI", 12),
+                       font=(F, 12),
                        command=lambda: self.app.open_editor_window()
                        ).pack(padx=16, pady=10)
 
@@ -292,12 +295,12 @@ class SettingsPanel(ctk.CTkToplevel):
                 self._persist()
 
         ctk.CTkComboBox(ui_card, variable=ui_var, values=ui_lang_display,
-                        width=300, font=("Segoe UI", 11),
+                        width=300, font=(F, 11),
                         command=_on_ui_lang_change
                         ).pack(padx=16, pady=(12, 4))
         ctk.CTkLabel(ui_card,
                      text=tr("set_lbl_restart_lang"),
-                     font=("Segoe UI", 10), text_color="#888888"
+                     font=(F, 10), text_color="#888888"
                      ).pack(anchor="w", padx=16, pady=(0, 12))
 
         # Microphone
@@ -311,7 +314,7 @@ class SettingsPanel(ctk.CTkToplevel):
             # Mic loop in main.py polls settings["mic_index"] every iteration
             # and restarts the stream when it changes — no extra apply needed.
         ctk.CTkComboBox(mic_card, variable=mic_var, values=mic_list,
-                        width=500, font=("Segoe UI", 11),
+                        width=500, font=(F, 11),
                         command=_on_mic_change
                         ).pack(padx=16, pady=(14, 4))
 
@@ -322,9 +325,9 @@ class SettingsPanel(ctk.CTkToplevel):
         # Pause labels
         pl = ctk.CTkFrame(mic_card, fg_color="transparent")
         pl.pack(fill="x", padx=16, pady=(0, 12))
-        ctk.CTkLabel(pl, text=tr("set_lbl_pause_left"), font=("Segoe UI", 9),
+        ctk.CTkLabel(pl, text=tr("set_lbl_pause_left"), font=(F, 9),
                      text_color="#555555").pack(side="left")
-        ctk.CTkLabel(pl, text=tr("set_lbl_pause_right"), font=("Segoe UI", 9),
+        ctk.CTkLabel(pl, text=tr("set_lbl_pause_right"), font=(F, 9),
                      text_color="#555555").pack(side="right")
 
         # Appearance
@@ -347,10 +350,15 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_actions"))
         act = ctk.CTkFrame(frame, fg_color="transparent")
         act.pack(fill="x", padx=28, pady=(4, 20))
-        if hasattr(self.app, '_silent_reset'):
+        # Reset Engine — prefer the user-facing variant that shows a toast
+        # (the bare _silent_reset runs but gives no visible feedback, which
+        # makes the click feel like nothing happened).
+        reset_cmd = (getattr(self.app, 'reset_engine_with_feedback', None)
+                     or getattr(self.app, '_silent_reset', None))
+        if reset_cmd:
             ctk.CTkButton(act, text=tr("set_btn_reset_engine"), width=160, height=36,
                           fg_color="#8B2020", hover_color="#AA2828",
-                          command=self.app._silent_reset).pack(side="left", padx=(0, 8))
+                          command=reset_cmd).pack(side="left", padx=(0, 8))
         if hasattr(self.app, 'check_for_update'):
             ctk.CTkButton(act, text=tr("set_btn_update", ver=APP_VERSION), width=180, height=36,
                           fg_color="#4A1A7A", hover_color="#6A2A9A",
@@ -358,12 +366,15 @@ class SettingsPanel(ctk.CTkToplevel):
 
         # Screenshot save folder
         self._section(frame, tr("set_sec_screenshot"))
+        ctk.CTkLabel(frame, text=tr("set_lbl_screenshot_help"),
+                     font=(F, 10), text_color="#666666"
+                     ).pack(anchor="w", padx=28, pady=(0, 4))
         ss_card = self._card(frame)
         ss_row = ctk.CTkFrame(ss_card, fg_color="transparent")
         ss_row.pack(fill="x", padx=16, pady=10)
         cur_dir = self.s.get("screenshot_save_dir", "")
         self._ss_label = ctk.CTkLabel(ss_row, text=cur_dir or tr("set_lbl_not_set"),
-                                       font=("Segoe UI", 10), text_color="#888888",
+                                       font=(F, 10), text_color="#888888",
                                        width=350, anchor="w")
         self._ss_label.pack(side="left")
 
@@ -385,7 +396,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_voice_lang"))
         ctk.CTkLabel(frame,
                      text=tr("set_voice_lang_help"),
-                     font=("Segoe UI", 10), text_color="#666666").pack(anchor="w", padx=28)
+                     font=(F, 10), text_color="#666666").pack(anchor="w", padx=28)
 
         lang_display = [f"{name}  ({code})" for name, code in GOOGLE_STT_LANGUAGES]
         lang_codes   = [code for _, code in GOOGLE_STT_LANGUAGES]
@@ -396,7 +407,7 @@ class SettingsPanel(ctk.CTkToplevel):
         ]:
             c = self._card(frame)
             ctk.CTkLabel(c, text=btn_label,
-                         font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=16, pady=(12, 4))
+                         font=(F, 12, "bold")).pack(anchor="w", padx=16, pady=(12, 4))
             cur = self.s.get(btn_key, default)
             cur_disp = lang_display[lang_codes.index(cur)] if cur in lang_codes else lang_display[0]
             var = ctk.StringVar(value=cur_disp)
@@ -405,13 +416,13 @@ class SettingsPanel(ctk.CTkToplevel):
                              if v in lang_display else lang_codes[0])
                 self._persist()
             ctk.CTkComboBox(c, variable=var, values=lang_display, width=540,
-                            font=("Segoe UI", 11),
+                            font=(F, 11),
                             command=_on_lang_change
                             ).pack(padx=16, pady=(0, 14))
 
         ctk.CTkLabel(frame,
                      text=tr("set_lang_change_note"),
-                     font=("Segoe UI", 10), text_color="#555555").pack(
+                     font=(F, 10), text_color="#555555").pack(
             anchor="w", padx=28, pady=(8, 20))
 
     # -- TAB: AI ---------------------------------------------------
@@ -422,7 +433,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_ai"))
         ctk.CTkLabel(frame,
                      text=tr("set_ai_hotkeys"),
-                     font=("Segoe UI", 10), text_color="#666666").pack(anchor="w", padx=28)
+                     font=(F, 10), text_color="#666666").pack(anchor="w", padx=28)
         self._divider(frame)
 
         # Enable toggle
@@ -443,10 +454,10 @@ class SettingsPanel(ctk.CTkToplevel):
                 self.s["ai_output_format"] = v
                 self._persist()
             ctk.CTkRadioButton(r, text=lbl, variable=fmt_var, value=val,
-                               font=("Segoe UI", 12),
+                               font=(F, 12),
                                command=_on_fmt_change
                                ).pack(side="left")
-            ctk.CTkLabel(r, text=desc, font=("Segoe UI", 10),
+            ctk.CTkLabel(r, text=desc, font=(F, 10),
                          text_color="#555555").pack(side="left", padx=14)
 
         # Model
@@ -461,14 +472,14 @@ class SettingsPanel(ctk.CTkToplevel):
                           command=_on_model_change
                           ).pack(padx=16, pady=(14, 4))
         ctk.CTkLabel(c2, text=tr("set_ai_model_note"),
-                     font=("Segoe UI", 9), text_color="#555555").pack(anchor="w", padx=16, pady=(0, 12))
+                     font=(F, 9), text_color="#555555").pack(anchor="w", padx=16, pady=(0, 12))
 
         # System instruction
         self._section(frame, tr("set_sec_sys_prompt"))
         ctk.CTkLabel(frame,
                      text=tr("set_sys_prompt_help"),
-                     font=("Segoe UI", 10), text_color="#555555").pack(anchor="w", padx=28, pady=(0, 6))
-        self._sys_box = ctk.CTkTextbox(frame, height=130, font=("Segoe UI", 11),
+                     font=(F, 10), text_color="#555555").pack(anchor="w", padx=28, pady=(0, 6))
+        self._sys_box = ctk.CTkTextbox(frame, height=130, font=(F, 11),
                                   fg_color="#1A1A1A", border_color="#2A2A2A",
                                   border_width=1, wrap="word")
         self._sys_box.pack(fill="x", padx=28)
@@ -483,8 +494,8 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_img_prompt"))
         ctk.CTkLabel(frame,
                      text=tr("set_img_prompt_help"),
-                     font=("Segoe UI", 10), text_color="#555555").pack(anchor="w", padx=28, pady=(0, 6))
-        self._img_sys_box = ctk.CTkTextbox(frame, height=130, font=("Segoe UI", 11),
+                     font=(F, 10), text_color="#555555").pack(anchor="w", padx=28, pady=(0, 6))
+        self._img_sys_box = ctk.CTkTextbox(frame, height=130, font=(F, 11),
                                   fg_color="#1A1A20", border_color="#2A2A3A",
                                   border_width=1, wrap="word")
         self._img_sys_box.pack(fill="x", padx=28)
@@ -497,9 +508,9 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_kb"))
         ctk.CTkLabel(frame,
                      text=tr("set_kb_help"),
-                     font=("Segoe UI", 10), text_color="#555555",
+                     font=(F, 10), text_color="#555555",
                      justify="left").pack(anchor="w", padx=28, pady=(0, 6))
-        self._kb_box = ctk.CTkTextbox(frame, height=180, font=("Segoe UI", 11),
+        self._kb_box = ctk.CTkTextbox(frame, height=180, font=(F, 11),
                                  fg_color="#141A14", border_color="#2A3A2A",
                                  border_width=1, wrap="word")
         self._kb_box.pack(fill="x", padx=28)
@@ -510,7 +521,7 @@ class SettingsPanel(ctk.CTkToplevel):
 
         ctk.CTkLabel(frame,
                      text=tr("set_kb_footer"),
-                     font=("Segoe UI", 10), text_color="#6C9EBF").pack(
+                     font=(F, 10), text_color="#6C9EBF").pack(
             anchor="w", padx=28, pady=(8, 20))
 
     # -- TAB: TTS --------------------------------------------------
@@ -523,7 +534,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self._toggle_row(c, tr("set_lbl_tts_auto"), "tts_auto_detect")
         ctk.CTkLabel(frame,
                      text=tr("set_tts_auto_help"),
-                     font=("Segoe UI", 10), text_color="#555555",
+                     font=(F, 10), text_color="#555555",
                      justify="left").pack(anchor="w", padx=28, pady=(4, 16))
         # Reading speed
         c2 = self._card(frame)
@@ -539,7 +550,7 @@ class SettingsPanel(ctk.CTkToplevel):
         c = self._card(frame)
         plan = getattr(self.app, 'user_cache', {}).get('plan_type', 'Trial')
         ctk.CTkLabel(c, text=tr("set_current_plan", plan=plan),
-                     font=("Segoe UI", 14, "bold")).pack(padx=16, pady=(16, 4))
+                     font=(F, 14, "bold")).pack(padx=16, pady=(16, 4))
 
         # Plans table
         plans = [
@@ -552,11 +563,11 @@ class SettingsPanel(ctk.CTkToplevel):
             pr = ctk.CTkFrame(c, fg_color="#1E1E1E", corner_radius=6)
             pr.pack(fill="x", padx=16, pady=3)
             ctk.CTkLabel(pr, text=f"{badge} {pname}",
-                         font=("Segoe UI", 11, "bold"), width=80).pack(side="left", padx=12, pady=8)
+                         font=(F, 11, "bold"), width=80).pack(side="left", padx=12, pady=8)
             ctk.CTkLabel(pr, text=price,
-                         font=("Segoe UI", 11), text_color="#4FC3F7", width=100).pack(side="left")
+                         font=(F, 11), text_color="#4FC3F7", width=100).pack(side="left")
             ctk.CTkLabel(pr, text=features,
-                         font=("Segoe UI", 10), text_color="#888888").pack(side="left", padx=8)
+                         font=(F, 10), text_color="#888888").pack(side="left", padx=8)
 
         ctk.CTkButton(c, text=tr("set_btn_subscribe"), height=36,
                       fg_color="#1A5A1A", hover_color="#2A7A2A",
@@ -568,14 +579,14 @@ class SettingsPanel(ctk.CTkToplevel):
         frame = self._scroll_frame(self.content_area)
         self._tab_frames["about"] = frame
 
-        ctk.CTkLabel(frame, text=APP_NAME, font=("Segoe UI", 22, "bold")).pack(pady=(40, 4))
+        ctk.CTkLabel(frame, text=APP_NAME, font=(F, 22, "bold")).pack(pady=(40, 4))
         ctk.CTkLabel(frame, text=tr("set_about_version", ver=APP_VERSION),
-                     font=("Segoe UI", 12), text_color="#777777").pack()
+                     font=(F, 12), text_color="#777777").pack()
         ctk.CTkLabel(frame, text=tr("set_about_powered"),
-                     font=("Segoe UI", 11), text_color="#888888",
+                     font=(F, 11), text_color="#888888",
                      justify="center").pack(pady=(12, 4))
         ctk.CTkButton(frame, text=tr("set_btn_visit_website"),
                       command=lambda: webbrowser.open("https://ejobsit.com")
                       ).pack(pady=8)
         ctk.CTkLabel(frame, text=tr("set_about_copyright"),
-                     font=("Segoe UI", 9), text_color="#444444").pack(pady=(20, 4))
+                     font=(F, 9), text_color="#444444").pack(pady=(20, 4))
