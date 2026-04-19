@@ -3422,11 +3422,18 @@ class VoiceTypingApp(ctk.CTk):
             else:
                 voice = self.settings.get("tts_voice", "en-US-JennyNeural")
 
-            rate = "+0%"
-            s = str(self.settings.get("reading_speed", "1.0"))
-            if s == "1.5": rate = "+50%"
-            elif s == "2": rate = "+100%"
-            elif s == "2.5": rate = "+150%"
+            # Reading speed → edge_tts rate string. Old code used brittle
+            # string equality ("2" never matched the saved "2.0"), so 2x
+            # silently fell back to normal speed. Parse as float instead so
+            # any speed (1.0/1.5/2.0/2.5/etc.) maps correctly.
+            try:
+                speed = float(self.settings.get("reading_speed", "1.0"))
+            except (ValueError, TypeError):
+                speed = 1.0
+            # Clamp to edge_tts safe range (it accepts roughly -50%..+200%)
+            speed = max(0.5, min(speed, 3.0))
+            rate_pct = int(round((speed - 1.0) * 100))
+            rate = f"{'+' if rate_pct >= 0 else ''}{rate_pct}%"
 
             for i, sentence in enumerate(sentences):
                 if not self.is_reading or self._tts_session_id != session_id:
