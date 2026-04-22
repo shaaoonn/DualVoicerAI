@@ -852,10 +852,11 @@ class VoiceTypingApp(ctk.CTk):
 
     @staticmethod
     def _calc_tools_panel_w(btn_s):
-        """Pen tools panel width. Floored at 520px so every tool stays visible
-        at all widget sizes (XS/S/M/L/XL); at larger sizes it scales up."""
+        """Pen tools panel width. Floored at 440px so every tool stays visible
+        at all widget sizes (XS/S/M/L/XL) using the compact toolbar layout;
+        at larger sizes it scales up proportionally."""
         scale = btn_s / 72.0
-        return max(520, int(450 * scale))
+        return max(440, int(450 * scale))
 
     def init_ui(self):
         import tkinter as tk

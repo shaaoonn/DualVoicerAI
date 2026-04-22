@@ -338,8 +338,8 @@ class PenToolbar:
         self._emb_main = main
         self._bind_drag(main)
 
-        # Shared button config
-        _bcfg = dict(fg="#E0E0E0", relief="flat", bd=0, padx=4, pady=2)
+        # Shared button config (compact)
+        _bcfg = dict(fg="#E0E0E0", relief="flat", bd=0, padx=2, pady=1)
 
         # ══════════════════════════════════════════════════
         # ROW 1: [Pen Highlight Eraser] | [Text Handwrite] | [Font ▼] | [✖]
@@ -369,7 +369,7 @@ class PenToolbar:
 
         # Separator
         tk.Frame(row1, bg=sep_clr, width=1).pack(
-            side="left", fill="y", padx=5, pady=3)
+            side="left", fill="y", padx=3, pady=3)
 
         # - Text tools group -
         self._btn_text = tk.Button(
@@ -388,7 +388,7 @@ class PenToolbar:
 
         # Separator
         tk.Frame(row1, bg=sep_clr, width=1).pack(
-            side="left", fill="y", padx=5, pady=3)
+            side="left", fill="y", padx=3, pady=3)
 
         # - Font dropdown (modern: anchored popup with built-in scrollbar) -
         self._font_var = tk.StringVar(
@@ -396,8 +396,8 @@ class PenToolbar:
         self._font_menu = ctk.CTkComboBox(
             row1, values=self._font_list, variable=self._font_var,
             command=self._on_font_change,
-            width=120, height=24,
-            font=("Segoe UI", 10), dropdown_font=("Segoe UI", 10),
+            width=96, height=22,
+            font=("Segoe UI", 9), dropdown_font=("Segoe UI", 10),
             fg_color="#1E1C3A", border_color=self.BG_EMB_ACTIVE,
             border_width=1,
             button_color=self.BG_EMB_ACTIVE,
@@ -407,13 +407,13 @@ class PenToolbar:
             dropdown_text_color="#DDD",
             dropdown_hover_color=self.BG_EMB_ACTIVE,
             state="readonly")
-        self._font_menu.pack(side="left", padx=4, pady=2)
+        self._font_menu.pack(side="left", padx=2, pady=1)
 
         # - Close button (right-aligned, accent) -
         tk.Button(
             row1, text="\u2716", bg="#5A2030", fg="#FFF",
-            font=("Segoe UI", 11, "bold"), relief="flat", bd=0,
-            padx=6, pady=2, activebackground="#8A3050",
+            font=("Segoe UI", 10, "bold"), relief="flat", bd=0,
+            padx=4, pady=1, activebackground="#8A3050",
             command=self._on_retract
         ).pack(side="right", padx=(2, 0))
 
@@ -421,10 +421,10 @@ class PenToolbar:
         if getattr(self._overlay, '_supports_view_mode', True):
             tk.Button(
                 row1, text="\U0001f4c4", bg=bg, fg="#E0E0E0",
-                font=("Segoe UI Emoji", 11), relief="flat", bd=0,
-                padx=4, pady=2, activebackground=self.BG_EMB_HOVER,
+                font=("Segoe UI Emoji", 10), relief="flat", bd=0,
+                padx=2, pady=1, activebackground=self.BG_EMB_HOVER,
                 command=self._open_editor
-            ).pack(side="right", padx=2)
+            ).pack(side="right", padx=1)
 
         # ══════════════════════════════════════════════════
         # ROW 2: [■■■■■■] | [✏ ═══] | [T ═══] | [↩ ↪ 🗑]
@@ -437,10 +437,10 @@ class PenToolbar:
         self._color_btns = {}
         for hex_color, name in self.PEN_COLORS:
             btn = tk.Button(
-                row2, bg=hex_color, width=2, relief="groove", bd=1,
+                row2, bg=hex_color, width=2, height=1, relief="groove", bd=1,
                 activebackground=hex_color,
                 command=lambda c=hex_color: self._set_color(c))
-            btn.pack(side="left", padx=1, pady=1)
+            btn.pack(side="left", padx=0, pady=1)
             self._color_btns[hex_color] = btn
             if hex_color == "#FF0000":
                 btn.configure(relief="solid", bd=2)
@@ -448,7 +448,7 @@ class PenToolbar:
 
         # Separator
         tk.Frame(row2, bg=sep_clr, width=1).pack(
-            side="left", fill="y", padx=5, pady=3)
+            side="left", fill="y", padx=3, pady=3)
 
         # - Pen thickness slider (modern: thin track + gold thumb) -
         tk.Label(row2, text="\u270f", bg=bg, fg="#AAA",
@@ -457,11 +457,11 @@ class PenToolbar:
         self._slider = ctk.CTkSlider(
             row2, from_=1, to=100, number_of_steps=99,
             variable=self._thickness_var,
-            width=70, height=14,
+            width=54, height=12,
             fg_color=_SLIDER_TRACK, progress_color=_SLIDER_FILL,
             button_color=_SLIDER_THUMB, button_hover_color=_SLIDER_HOVER,
             command=self._on_thickness_change)
-        self._slider.pack(side="left", padx=(4, 2), pady=2)
+        self._slider.pack(side="left", padx=(3, 1), pady=2)
         self._pen_val_lbl = tk.Label(
             row2, text="4", bg=bg, fg="#AAA",
             font=("Segoe UI", 8), width=3, anchor="w")
@@ -469,7 +469,7 @@ class PenToolbar:
 
         # Separator
         tk.Frame(row2, bg=sep_clr, width=1).pack(
-            side="left", fill="y", padx=5, pady=3)
+            side="left", fill="y", padx=3, pady=3)
 
         # - Font size slider (modern: thin track + gold thumb) -
         tk.Label(row2, text="T", bg=bg, fg="#AAA",
@@ -478,11 +478,11 @@ class PenToolbar:
         self._font_slider = ctk.CTkSlider(
             row2, from_=8, to=72, number_of_steps=64,
             variable=self._font_size_var,
-            width=70, height=14,
+            width=54, height=12,
             fg_color=_SLIDER_TRACK, progress_color=_SLIDER_FILL,
             button_color=_SLIDER_THUMB, button_hover_color=_SLIDER_HOVER,
             command=self._on_font_size_change)
-        self._font_slider.pack(side="left", padx=(4, 2), pady=2)
+        self._font_slider.pack(side="left", padx=(3, 1), pady=2)
         self._font_val_lbl = tk.Label(
             row2, text="16", bg=bg, fg="#AAA",
             font=("Segoe UI", 8), width=3, anchor="w")
@@ -490,14 +490,14 @@ class PenToolbar:
 
         # - Actions (right-aligned) -
         act_f = tk.Frame(row2, bg=bg)
-        act_f.pack(side="right", padx=(4, 0))
+        act_f.pack(side="right", padx=(2, 0))
         for icon, cmd in [("\u21a9", self._undo), ("\u21aa", self._redo),
                           ("\U0001f5d1", self._clear)]:
             tk.Button(
                 act_f, text=icon, bg=bg, fg="#CCC",
-                font=("Segoe UI", 11), relief="flat", bd=0,
-                padx=3, activebackground=self.BG_EMB_HOVER,
-                command=cmd).pack(side="left", padx=1)
+                font=("Segoe UI", 10), relief="flat", bd=0,
+                padx=1, pady=0, activebackground=self.BG_EMB_HOVER,
+                command=cmd).pack(side="left", padx=0)
 
     def _bind_drag(self, widget):
         """Bind drag events on a widget to forward to main app.
@@ -532,10 +532,10 @@ class PenToolbar:
 
     @staticmethod
     def calc_panel_width(btn_s):
-        """Embedded panel width. Floored at 520px to fit every tool at all
-        widget size presets; at larger sizes it scales up proportionally."""
+        """Embedded panel width. Floored at 440px (compact layout fits every
+        tool at all size presets); at larger sizes it scales up proportionally."""
         scale = btn_s / 72.0
-        return max(520, int(450 * scale))
+        return max(440, int(450 * scale))
 
     # ── Delegation (winfo_exists, destroy, etc.) ──────
 
