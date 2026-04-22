@@ -8,7 +8,14 @@ Thickness controlled by slider (1-100px)."""
 import tkinter as tk
 import tkinter.font as tkfont
 import ctypes
+import customtkinter as ctk
 from i18n import tr
+
+# Modern slider/dropdown look (gold thumb on subtle dark track)
+_SLIDER_TRACK   = "#1E1C3A"   # unfilled portion of track
+_SLIDER_FILL    = "#4A4680"   # filled portion (left of thumb)
+_SLIDER_THUMB   = "#E5B453"   # gold thumb
+_SLIDER_HOVER   = "#FFD27D"
 
 user32 = ctypes.windll.user32
 GWL_EXSTYLE     = -20
@@ -383,21 +390,24 @@ class PenToolbar:
         tk.Frame(row1, bg=sep_clr, width=1).pack(
             side="left", fill="y", padx=5, pady=3)
 
-        # - Font dropdown -
+        # - Font dropdown (modern: anchored popup with built-in scrollbar) -
         self._font_var = tk.StringVar(
             value=self._font_list[0] if self._font_list else "Segoe UI")
-        self._font_menu = tk.OptionMenu(
-            row1, self._font_var, *self._font_list,
-            command=self._on_font_change)
-        self._font_menu.configure(
-            bg="#1E1C3A", fg="#DDD", font=("Segoe UI", 9),
-            highlightthickness=0, bd=1, relief="solid",
-            activebackground=self.BG_EMB_HOVER, activeforeground="#FFF",
-            width=9, anchor="w")
-        self._font_menu["menu"].configure(
-            bg="#1E1C3A", fg="#DDD", font=("Segoe UI", 9),
-            activebackground=self.BG_EMB_ACTIVE, activeforeground="#FFF")
-        self._font_menu.pack(side="left", padx=4)
+        self._font_menu = ctk.CTkComboBox(
+            row1, values=self._font_list, variable=self._font_var,
+            command=self._on_font_change,
+            width=120, height=24,
+            font=("Segoe UI", 10), dropdown_font=("Segoe UI", 10),
+            fg_color="#1E1C3A", border_color=self.BG_EMB_ACTIVE,
+            border_width=1,
+            button_color=self.BG_EMB_ACTIVE,
+            button_hover_color=self.BG_EMB_HOVER,
+            text_color="#DDD",
+            dropdown_fg_color="#1E1C3A",
+            dropdown_text_color="#DDD",
+            dropdown_hover_color=self.BG_EMB_ACTIVE,
+            state="readonly")
+        self._font_menu.pack(side="left", padx=4, pady=2)
 
         # - Close button (right-aligned, accent) -
         tk.Button(
@@ -440,18 +450,18 @@ class PenToolbar:
         tk.Frame(row2, bg=sep_clr, width=1).pack(
             side="left", fill="y", padx=5, pady=3)
 
-        # - Pen thickness slider -
+        # - Pen thickness slider (modern: thin track + gold thumb) -
         tk.Label(row2, text="\u270f", bg=bg, fg="#AAA",
                  font=("Segoe UI Emoji", 9)).pack(side="left")
         self._thickness_var = tk.IntVar(value=4)
-        self._slider = tk.Scale(
-            row2, from_=1, to=100, orient="horizontal",
-            variable=self._thickness_var, length=55, sliderlength=12,
-            showvalue=False, bg=bg, fg="#DDD", troughcolor="#1E1C3A",
-            highlightthickness=0, bd=0,
-            activebackground=self.BG_EMB_ACTIVE,
+        self._slider = ctk.CTkSlider(
+            row2, from_=1, to=100, number_of_steps=99,
+            variable=self._thickness_var,
+            width=70, height=14,
+            fg_color=_SLIDER_TRACK, progress_color=_SLIDER_FILL,
+            button_color=_SLIDER_THUMB, button_hover_color=_SLIDER_HOVER,
             command=self._on_thickness_change)
-        self._slider.pack(side="left", padx=(2, 0))
+        self._slider.pack(side="left", padx=(4, 2), pady=2)
         self._pen_val_lbl = tk.Label(
             row2, text="4", bg=bg, fg="#AAA",
             font=("Segoe UI", 8), width=3, anchor="w")
@@ -461,18 +471,18 @@ class PenToolbar:
         tk.Frame(row2, bg=sep_clr, width=1).pack(
             side="left", fill="y", padx=5, pady=3)
 
-        # - Font size slider -
+        # - Font size slider (modern: thin track + gold thumb) -
         tk.Label(row2, text="T", bg=bg, fg="#AAA",
                  font=("Segoe UI", 9, "bold")).pack(side="left")
         self._font_size_var = tk.IntVar(value=16)
-        self._font_slider = tk.Scale(
-            row2, from_=8, to=72, orient="horizontal",
-            variable=self._font_size_var, length=55, sliderlength=12,
-            showvalue=False, bg=bg, fg="#DDD", troughcolor="#1E1C3A",
-            highlightthickness=0, bd=0,
-            activebackground=self.BG_EMB_ACTIVE,
+        self._font_slider = ctk.CTkSlider(
+            row2, from_=8, to=72, number_of_steps=64,
+            variable=self._font_size_var,
+            width=70, height=14,
+            fg_color=_SLIDER_TRACK, progress_color=_SLIDER_FILL,
+            button_color=_SLIDER_THUMB, button_hover_color=_SLIDER_HOVER,
             command=self._on_font_size_change)
-        self._font_slider.pack(side="left", padx=(2, 0))
+        self._font_slider.pack(side="left", padx=(4, 2), pady=2)
         self._font_val_lbl = tk.Label(
             row2, text="16", bg=bg, fg="#AAA",
             font=("Segoe UI", 8), width=3, anchor="w")
@@ -522,9 +532,10 @@ class PenToolbar:
 
     @staticmethod
     def calc_panel_width(btn_s):
-        """Calculate embedded panel width for a given button size."""
+        """Embedded panel width. Floored at 520px to fit every tool at all
+        widget size presets; at larger sizes it scales up proportionally."""
         scale = btn_s / 72.0
-        return max(360, int(450 * scale))
+        return max(520, int(450 * scale))
 
     # ── Delegation (winfo_exists, destroy, etc.) ──────
 
