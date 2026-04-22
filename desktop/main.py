@@ -90,6 +90,7 @@ import winsound
 
 # Auto-Update System
 from updater import UpdateChecker, UpdateDownloader, UpdateInstaller
+from i18n import tr
 
 # Application Version
 APP_VERSION = "4.0.8"
@@ -1780,138 +1781,10 @@ class VoiceTypingApp(ctk.CTk):
         self._settings_win.lift()
 
     def show_instructions(self):
-        txt = """━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  🎤 DUAL VOICER v4.0.8 - সম্পূর্ণ ব্যবহার নির্দেশিকা
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📌 ১. কীবোর্ড শর্টকাট (Keyboard Shortcuts)
-──────────────────────────────────────
-   Alt + Z  →  বাংলায় ভয়েস টাইপিং শুরু করুন
-   Alt + X  →  ইংরেজিতে ভয়েস টাইপিং শুরু করুন
-   Alt + C  →  ক্লিপবোর্ডের লেখা জোরে পড়ুন (Text Reader)
-
-   💡 টিপস: যেকোনো বাটন আবার চাপলে বা কিছুক্ষণ চুপ থাকলে 
-          মাইক অটোমেটিক বন্ধ হয়ে যাবে।
-
-
-📌 ২. স্মার্ট যতিচিহ্ন (Smart Punctuation)
-──────────────────────────────────────
-   কথা বলার সময় যতিচিহ্নের নাম বললে সেটি স্বয়ংক্রিয়ভাবে
-   লেখায় বসে যাবে। শব্দের মাঝে বা শেষে বলা যাবে।
-
-   ✦ বাংলা যতিচিহ্ন (Bangla):
-   ─────────────────────────
-   "দাড়ি" বা "দাঁড়ি"     →  ।  (পূর্ণচ্ছেদ)
-   "ফুলস্টপ" বা "ফুল স্টপ" →  ।
-   "কমা"                   →  ,  (বাক্যের বিরতি)
-   "প্রশ্নবোধক"            →  ?  (প্রশ্নচিহ্ন)
-   "প্রশ্নবোধক চিহ্ন"      →  ?
-   "জিজ্ঞাসা চিহ্ন"        →  ?
-   "কোশ্চেন মার্ক"         →  ?
-   "বিস্ময়সূচক"           →  !  (বিস্ময়চিহ্ন)
-   "বিস্ময়বোধক"           →  !
-   "আশ্চর্যবোধক"          →  !
-   "নতুন লাইন"            →  ↵  (নিচের লাইনে যাবে)
-   "নিউ লাইন"             →  ↵
-
-   ✦ ইংরেজি যতিচিহ্ন (English):
-   ─────────────────────────
-   "full stop" বা "period"  →  .
-   "comma"                  →  ,
-   "question mark"          →  ?
-   "exclamation"            →  !
-   "new line" বা "newline"  →  ↵
-
-
-📌 ৩. ভয়েস কমান্ড (Voice Commands)
-──────────────────────────────────────
-   মুখে বললেই নিচের কাজগুলো স্বয়ংক্রিয়ভাবে হবে:
-
-   ┌────────────────────────────────────────────┐
-   │ কমান্ড                  │ কী করবে         │
-   ├────────────────────────────────────────────┤
-   │ "ব্যাকস্পেস"             │ এক অক্ষর মুছবে   │
-   │ "Backspace"             │ Delete one char │
-   ├────────────────────────────────────────────┤
-   │ "ব্যাক সেন্টেন্স"         │ আগের কাজ বাতিল  │
-   │ "Back sentence"         │ Undo (Ctrl+Z)   │
-   ├────────────────────────────────────────────┤
-   │ "সিলেক্ট অল"             │ সব সিলেক্ট করবে │
-   │ "সব সিলেক্ট"             │ Select All      │
-   │ "Select all"            │ (Ctrl+A)        │
-   ├────────────────────────────────────────────┤
-   │ "কপি" / "কপি করি"        │ কপি করবে        │
-   │ "Copy"                  │ (Ctrl+C)        │
-   ├────────────────────────────────────────────┤
-   │ "পেস্ট" / "পেস্ট করি"    │ পেস্ট করবে      │
-   │ "Paste"                 │ (Ctrl+V)        │
-   └────────────────────────────────────────────┘
-
-
-📌 ৪. সেটিংস বর্ণনা (Settings Guide)
-──────────────────────────────────────
-   ⚙️ Desktop Icon
-      - ON: উইজেট স্ক্রিনে দেখা যাবে
-      - OFF: উইজেট লুকিয়ে থাকবে (শুধু শর্টকাট দিয়ে চালু)
-
-   ⚙️ Idle Opacity (০%-১০০%)
-      - মাইক বন্ধ অবস্থায় উইজেটের স্বচ্ছতা
-      - কম মান = বেশি স্বচ্ছ (ব্যাকগ্রাউন্ডে মিশে যায়)
-
-   ⚙️ Max Opacity (০%-১০০%)
-      - মাইক চালু অবস্থায় উইজেটের স্বচ্ছতা
-      - বেশি মান = বেশি দৃশ্যমান
-
-   ⚙️ Widget Size (০.৮x - ১.৫x)
-      - উইজেটের আকার ছোট/বড় করুন
-      - ছোট স্ক্রিনে ০.৮x, বড় মনিটরে ১.৫x ভালো
-
-   ⚙️ Auto Stop Time (৫-৯০ সেকেন্ড বা ∞)
-      - কত সেকেন্ড চুপ থাকলে মাইক অটো বন্ধ হবে
-      - ∞ = কখনো বন্ধ হবে না (ম্যানুয়ালি বন্ধ করতে হবে)
-
-   ⚙️ Mic Sensitivity
-      - Normal: ডেস্কটপ/এক্সটার্নাল মাইকের জন্য
-      - High: ল্যাপটপ বিল্ট-ইন মাইকের জন্য
-      - Very High: নয়েজি পরিবেশে
-
-
-📌 ৫. টেক্সট রিডার (Text-to-Speech)
-──────────────────────────────────────
-   ১. যেকোনো টেক্সট কপি করুন (Ctrl+C)
-   ২. Sound বাটনে ক্লিক করুন বা Alt+C চাপুন
-   ৩. টেক্সট জোরে পড়া হবে!
-
-   ⏸️ চলাকালীন বাটনে ক্লিক করলে Pause/Resume হবে
-   ⏹️ আবার লং প্রেস করলে সম্পূর্ণ বন্ধ হবে
-
-
-📌 ৬. সমস্যা সমাধান (Troubleshooting)
-──────────────────────────────────────
-   ❌ মাইক কাজ করছে না?
-      → উইন্ডোজ সেটিংসে মাইক পারমিশন চেক করুন
-      → অ্যাপ রিস্টার্ট করুন
-
-   ❌ টাইপিং স্লো হচ্ছে?
-      → ইন্টারনেট কানেকশন চেক করুন
-      → Google API ল্যাটেন্সি স্বাভাবিক হতে পারে
-
-   ❌ ভুল শব্দ টাইপ হচ্ছে?
-      → স্পষ্ট করে কথা বলুন
-      → Mic Sensitivity বাড়ান
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📞 সাপোর্ট ও যোগাযোগ
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ডেভেলপার: Ahsanullah Shaon
-   WhatsApp: +8801730481212
-   Email: shaaoonn@gmail.com
-   Website: ejobsit.com
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+        txt = tr("instructions_text")
+        # Legacy hardcoded text replaced by tr("instructions_text") - see desktop/i18n.py
         info_win = ctk.CTkToplevel(self)
-        info_win.title("নির্দেশনা")
+        info_win.title(tr("instructions_window_title"))
         info_win.attributes('-topmost', True)  # Set topmost first
         
         # Position to the RIGHT of settings window
@@ -2200,14 +2073,9 @@ class VoiceTypingApp(ctk.CTk):
                                 if datetime.datetime.now() > expiry_datetime:
                                     # EXPIRED! Block login
                                     if plan_type.lower() == "trial":
-                                        error_msg = "⏰ আপনার ৭ দিনের ফ্রি ট্রায়াল শেষ!\n\n" \
-                                                   "সফটওয়্যার ব্যবহার করতে সাবস্ক্রিপশন কিনতে হবে।\n" \
-                                                   "ওয়েবসাইট: https://dualvoicer.ejobsit.com\n\n" \
-                                                   "প্যাকেজ দেখতে নিচের বাটনে ক্লিক করুন:"
+                                        error_msg = tr("err_trial_expired")
                                     else:
-                                        error_msg = "⏰ আপনার সাবস্ক্রিপশনের মেয়াদ শেষ!\n\n" \
-                                                   "রিনিউ করতে ভিজিট করুন:\n" \
-                                                   "https://dualvoicer.ejobsit.com"
+                                        error_msg = tr("err_subscription_expired")
                                     
                                     # Clear saved config for expired users
                                     try:
@@ -2260,7 +2128,7 @@ class VoiceTypingApp(ctk.CTk):
                     if is_auto_login:
                         return
                     
-                    self.after(0, lambda: self.login_failed("⚠️ সার্ভার কানেকশন সমস্যা। ইন্টারনেট চেক করুন।", status_label))
+                    self.after(0, lambda: self.login_failed(tr("err_server_connection"), status_label))
                     
             except Exception as e:
                 print(f"[API] System Error: {e}")
@@ -2395,10 +2263,8 @@ class VoiceTypingApp(ctk.CTk):
         self.clear_login_config()
         self.update_window_title()
         messagebox.showwarning(
-            "সাবস্ক্রিপশন শেষ",
-            "⏰ আপনার সাবস্ক্রিপশনের মেয়াদ শেষ!\n\n"
-            "দয়া করে 'Buy Subscription' বাটনে ক্লিক করে\n"
-            "প্যাকেজ দেখুন এবং সাবস্ক্রাইব করুন।"
+            tr("title_subscription_ended"),
+            tr("msg_subscription_ended"),
         )
         self.open_auth_panel()
     

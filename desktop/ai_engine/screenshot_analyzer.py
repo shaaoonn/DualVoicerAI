@@ -10,36 +10,18 @@ Features:
 
 import base64, io, time
 from typing import Optional, Tuple
+from i18n import tr
 
 
-# ── System prompt for screenshot analysis ──
-SCREENSHOT_SYSTEM_PROMPT = """তুমি একজন অত্যন্ত দক্ষ ভিজ্যুয়াল বিশ্লেষক এবং AI সহকারী। ব্যবহারকারী তোমাকে একটি স্ক্রিনশট দিচ্ছে। নিচের নিয়ম অনুসরণ করো:
+def _get_system_prompt() -> str:
+    """Returns the screenshot-analysis system prompt in the active UI language.
+    Looked up at call-time so language switches take effect immediately."""
+    return tr("ai_screenshot_system")
 
-📋 যদি স্ক্রিনশটে টেক্সট থাকে:
-- সমস্ত দৃশ্যমান টেক্সট হুবহু লিখে দাও (OCR)
-- টেক্সটের ভাষা বুঝে সেই ভাষায় লেখো
 
-🖼️ যদি কোনো ছবি/গ্রাফিক্স থাকে:
-- ছবিতে কী আছে তা বর্ণনা করো
-- চার্ট/গ্রাফ থাকলে ডেটা ব্যাখ্যা করো
-
-💬 যদি এটি চ্যাট/মেসেজিং অ্যাপের স্ক্রিনশট হয় (Facebook, WhatsApp, Messenger, Telegram, Viber, IMO, Instagram DM, Discord, Slack, Teams ইত্যাদি):
-- কথোপকথনের সারসংক্ষেপ দাও
-- সর্বশেষ মেসেজের উপযুক্ত উত্তর লিখে দাও
-- উত্তরের ভাষা কথোপকথনের ভাষা অনুসারে হবে
-- উত্তরটি স্বাভাবিক, বন্ধুসুলভ এবং প্রাসঙ্গিক হবে
-
-📧 যদি ইমেইলের স্ক্রিনশট হয়:
-- ইমেইলের সারসংক্ষেপ দাও
-- উপযুক্ত রিপ্লাই ড্রাফট লিখে দাও
-
-📄 যদি ডকুমেন্ট/ওয়েবপেজের স্ক্রিনশট হয়:
-- মূল বিষয়বস্তু সংক্ষেপে তুলে ধরো
-
-⚠️ গুরুত্বপূর্ণ নিয়ম:
-- সংক্ষিপ্ত কিন্তু সম্পূর্ণ উত্তর দাও
-- কোনো ভূমিকা বা অপ্রয়োজনীয় ব্যাখ্যা দিও না
-- সরাসরি কাজের উত্তর দাও"""
+# Backwards-compatible module-level reference (resolved at import time);
+# prefer _get_system_prompt() to honour live language changes.
+SCREENSHOT_SYSTEM_PROMPT = _get_system_prompt()
 
 
 def grab_clipboard_image() -> Optional[str]:
@@ -72,8 +54,8 @@ def build_vision_messages(image_data_url: str,
         user_prompt: Optional extra instruction from user
         system_prompt: Override default system prompt
     """
-    sys_prompt = system_prompt or SCREENSHOT_SYSTEM_PROMPT
-    user_text = user_prompt or "এই স্ক্রিনশটটি বিশ্লেষণ করো।"
+    sys_prompt = system_prompt or _get_system_prompt()
+    user_text = user_prompt or tr("ai_screenshot_user_default")
 
     messages = [
         {"role": "system", "content": sys_prompt},

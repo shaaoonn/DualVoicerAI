@@ -8,30 +8,30 @@
 import re, asyncio
 from ai_engine.openrouter import complete
 from ai_engine.format_handler import format_for_paste
+from i18n import tr
 
+# Continue triggers stay multilingual - they are spoken/typed words the user
+# might end a prompt with, regardless of UI language.
 CONTINUE_TRIGGERS = [
     "\u099a\u09be\u09b2\u09bf\u09df\u09c7 \u09af\u09be\u0993", "continue", "\u09b2\u09bf\u0996\u09a4\u09c7 \u09a5\u09be\u0995\u09cb",
     "go on", "keep going", "\u098f\u0997\u09bf\u09df\u09c7 \u09af\u09be\u0993", "...",
 ]
 
-# Rich mode: tell AI to use full markdown with headings, lists, bold, etc.
-RICH_FORMAT_INSTRUCTION = """
+# Format instructions are looked up per-call so language switches take effect.
+def _rich_format_instruction() -> str:
+    return tr("ai_rich_format_instruction")
 
-আউটপুট ফরম্যাট: স্বাভাবিক Markdown ব্যবহার করো:
-- শিরোনাম লাগলে ## বা ### ব্যবহার করো
-- **bold** শুধু সত্যিকারের গুরুত্বপূর্ণ শব্দে, অতিরিক্ত bold করো না - স্বাভাবিক লেখার মতো লেখো
-- _italic_ খুব কম ব্যবহার করো
-- তালিকা দরকার হলে - bullet ব্যবহার করো
-- কোড থাকলে `code` ব্যবহার করো
-মনে রাখো: বাস্তব মানুষের লেখার মতো স্বাভাবিক হবে, প্রতিটা শব্দ bold করো না।"""
+def _plain_format_instruction() -> str:
+    return tr("ai_plain_format_instruction")
 
-PLAIN_FORMAT_INSTRUCTION = "\n\n\u0986\u0989\u099f\u09aa\u09c1\u099f: plain text, \u0995\u09cb\u09a8\u09cb markdown \u09a8\u09df\u0964"
+# Backwards-compatible module-level references (resolved at import time).
+RICH_FORMAT_INSTRUCTION = _rich_format_instruction()
+PLAIN_FORMAT_INSTRUCTION = _plain_format_instruction()
 
 
 class TextProcessor:
     def __init__(self, system_instruction="", output_format="plain"):
-        self.system = system_instruction or (
-            "\u09a4\u09c1\u09ae\u09bf \u098f\u0995\u099c\u09a8 \u09a6\u0995\u09cd\u09b7 \u09ac\u09be\u0982\u09b2\u09be \u0993 \u0987\u0982\u09b0\u09c7\u099c\u09bf \u09b2\u09c7\u0996\u0995 \u09b8\u09b9\u0995\u09be\u09b0\u09c0\u0964 \u09b8\u0982\u0995\u09cd\u09b7\u09bf\u09aa\u09cd\u09a4 \u0989\u09a4\u09cd\u09a4\u09b0 \u09a6\u09be\u0993\u0964")
+        self.system = system_instruction or tr("ai_text_system_default")
         self.format = output_format
 
     def _detect_mode(self, text):

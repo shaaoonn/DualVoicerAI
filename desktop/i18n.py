@@ -372,6 +372,395 @@ _TRANSLATIONS = {
     "tb_zoom":               {"en": "Zoom {z}%",             "bn": "জুম {z}%"},
     "tb_thickness_pen":      {"en": "Pen",                   "bn": "পেন"},
     "tb_thickness_font":     {"en": "Font",                  "bn": "ফন্ট"},
+
+    # ─────────────────────── Login / subscription messages ───────────────────────
+    "err_trial_expired": {
+        "en": "⏰ Your 7-day free trial has ended!\n\n"
+              "A subscription is required to keep using the software.\n"
+              "Website: https://dualvoicer.ejobsit.com\n\n"
+              "Click the button below to view plans:",
+        "bn": "⏰ আপনার ৭ দিনের ফ্রি ট্রায়াল শেষ!\n\n"
+              "সফটওয়্যার ব্যবহার করতে সাবস্ক্রিপশন কিনতে হবে।\n"
+              "ওয়েবসাইট: https://dualvoicer.ejobsit.com\n\n"
+              "প্যাকেজ দেখতে নিচের বাটনে ক্লিক করুন:",
+    },
+    "err_subscription_expired": {
+        "en": "⏰ Your subscription has expired!\n\n"
+              "To renew, please visit:\n"
+              "https://dualvoicer.ejobsit.com",
+        "bn": "⏰ আপনার সাবস্ক্রিপশনের মেয়াদ শেষ!\n\n"
+              "রিনিউ করতে ভিজিট করুন:\n"
+              "https://dualvoicer.ejobsit.com",
+    },
+    "err_server_connection": {
+        "en": "⚠️ Server connection problem. Please check your internet.",
+        "bn": "⚠️ সার্ভার কানেকশন সমস্যা। ইন্টারনেট চেক করুন।",
+    },
+    "title_subscription_ended": {"en": "Subscription Ended", "bn": "সাবস্ক্রিপশন শেষ"},
+    "msg_subscription_ended": {
+        "en": "⏰ Your subscription has expired!\n\n"
+              "Please click the 'Buy Subscription' button\n"
+              "to view plans and subscribe.",
+        "bn": "⏰ আপনার সাবস্ক্রিপশনের মেয়াদ শেষ!\n\n"
+              "দয়া করে 'Buy Subscription' বাটনে ক্লিক করে\n"
+              "প্যাকেজ দেখুন এবং সাবস্ক্রাইব করুন।",
+    },
+
+    # ─────────────────────── Instructions / Help window ───────────────────────
+    "instructions_window_title":   {"en": "Instructions",           "bn": "নির্দেশনা"},
+    "instructions_header_label":   {"en": "Dual Voicer Guide",     "bn": "ডুয়েল ভয়েসার গাইডলাইন"},
+    "instructions_text": {
+        "en": """━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🎤 DUAL VOICER v4.0.8 - Complete User Guide
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📌 1. Keyboard Shortcuts
+──────────────────────────────────────
+   Alt + Z  →  Start voice typing in Bengali
+   Alt + X  →  Start voice typing in English
+   Alt + C  →  Read clipboard text aloud (Text Reader)
+
+   💡 Tip: Press the same hotkey again, or stay silent
+          for a moment, to stop the mic automatically.
+
+
+📌 2. Smart Punctuation
+──────────────────────────────────────
+   While speaking, just say a punctuation name and it
+   will be inserted automatically. Works mid-sentence
+   or at the end.
+
+   ✦ Bangla punctuation:
+   ─────────────────────────
+   "দাড়ি" / "দাঁড়ি"      →  ।  (full stop)
+   "ফুলস্টপ" / "ফুল স্টপ"  →  ।
+   "কমা"                   →  ,  (pause)
+   "প্রশ্নবোধক"            →  ?
+   "প্রশ্নবোধক চিহ্ন"      →  ?
+   "জিজ্ঞাসা চিহ্ন"        →  ?
+   "কোশ্চেন মার্ক"         →  ?
+   "বিস্ময়সূচক"           →  !
+   "বিস্ময়বোধক"           →  !
+   "আশ্চর্যবোধক"           →  !
+   "নতুন লাইন"             →  ↵  (new line)
+   "নিউ লাইন"              →  ↵
+
+   ✦ English punctuation:
+   ─────────────────────────
+   "full stop" / "period"   →  .
+   "comma"                  →  ,
+   "question mark"          →  ?
+   "exclamation"            →  !
+   "new line" / "newline"   →  ↵
+
+
+📌 3. Voice Commands
+──────────────────────────────────────
+   Say any of these out loud and the action runs:
+
+   ┌────────────────────────────────────────────┐
+   │ Command                 │ Action           │
+   ├────────────────────────────────────────────┤
+   │ "Backspace"             │ Delete one char  │
+   │ "ব্যাকস্পেস"             │                  │
+   ├────────────────────────────────────────────┤
+   │ "Back sentence"         │ Undo (Ctrl+Z)    │
+   │ "ব্যাক সেন্টেন্স"         │                  │
+   ├────────────────────────────────────────────┤
+   │ "Select all"            │ Select all       │
+   │ "সিলেক্ট অল"             │ (Ctrl+A)         │
+   ├────────────────────────────────────────────┤
+   │ "Copy"                  │ Copy (Ctrl+C)    │
+   │ "কপি" / "কপি করি"        │                  │
+   ├────────────────────────────────────────────┤
+   │ "Paste"                 │ Paste (Ctrl+V)   │
+   │ "পেস্ট" / "পেস্ট করি"    │                  │
+   └────────────────────────────────────────────┘
+
+
+📌 4. Settings Guide
+──────────────────────────────────────
+   ⚙️ Desktop Icon
+      - ON: widget visible on screen
+      - OFF: widget hidden (hotkeys still work)
+
+   ⚙️ Idle Opacity (0%-100%)
+      - Widget transparency when mic is OFF
+      - Lower = more transparent (blends in)
+
+   ⚙️ Max Opacity (0%-100%)
+      - Widget transparency when mic is ON
+      - Higher = more visible
+
+   ⚙️ Widget Size (0.8x - 1.5x)
+      - Make the widget smaller or larger
+      - 0.8x for small screens, 1.5x for big monitors
+
+   ⚙️ Auto Stop Time (5-90 seconds or ∞)
+      - How long of silence before mic auto-stops
+      - ∞ = never stops (must stop manually)
+
+   ⚙️ Mic Sensitivity
+      - Normal: desktop / external mic
+      - High: laptop built-in mic
+      - Very High: noisy environments
+
+
+📌 5. Text Reader (Text-to-Speech)
+──────────────────────────────────────
+   1. Copy any text (Ctrl+C)
+   2. Click the Sound button or press Alt+C
+   3. The text will be read aloud!
+
+   ⏸️ Click the button while playing to Pause/Resume
+   ⏹️ Long-press again to fully stop
+
+
+📌 6. Troubleshooting
+──────────────────────────────────────
+   ❌ Mic not working?
+      → Check mic permission in Windows Settings
+      → Restart the app
+
+   ❌ Typing is slow?
+      → Check your internet connection
+      → Some Google API latency is normal
+
+   ❌ Wrong words being typed?
+      → Speak clearly
+      → Increase Mic Sensitivity
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📞 Support & Contact
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Developer: Ahsanullah Shaon
+   WhatsApp: +8801730481212
+   Email: shaaoonn@gmail.com
+   Website: ejobsit.com
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+""",
+        "bn": """━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🎤 DUAL VOICER v4.0.8 - সম্পূর্ণ ব্যবহার নির্দেশিকা
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📌 ১. কীবোর্ড শর্টকাট (Keyboard Shortcuts)
+──────────────────────────────────────
+   Alt + Z  →  বাংলায় ভয়েস টাইপিং শুরু করুন
+   Alt + X  →  ইংরেজিতে ভয়েস টাইপিং শুরু করুন
+   Alt + C  →  ক্লিপবোর্ডের লেখা জোরে পড়ুন (Text Reader)
+
+   💡 টিপস: যেকোনো বাটন আবার চাপলে বা কিছুক্ষণ চুপ থাকলে
+          মাইক অটোমেটিক বন্ধ হয়ে যাবে।
+
+
+📌 ২. স্মার্ট যতিচিহ্ন (Smart Punctuation)
+──────────────────────────────────────
+   কথা বলার সময় যতিচিহ্নের নাম বললে সেটি স্বয়ংক্রিয়ভাবে
+   লেখায় বসে যাবে। শব্দের মাঝে বা শেষে বলা যাবে।
+
+   ✦ বাংলা যতিচিহ্ন (Bangla):
+   ─────────────────────────
+   "দাড়ি" বা "দাঁড়ি"     →  ।  (পূর্ণচ্ছেদ)
+   "ফুলস্টপ" বা "ফুল স্টপ" →  ।
+   "কমা"                   →  ,  (বাক্যের বিরতি)
+   "প্রশ্নবোধক"            →  ?  (প্রশ্নচিহ্ন)
+   "প্রশ্নবোধক চিহ্ন"      →  ?
+   "জিজ্ঞাসা চিহ্ন"        →  ?
+   "কোশ্চেন মার্ক"         →  ?
+   "বিস্ময়সূচক"           →  !  (বিস্ময়চিহ্ন)
+   "বিস্ময়বোধক"           →  !
+   "আশ্চর্যবোধক"          →  !
+   "নতুন লাইন"            →  ↵  (নিচের লাইনে যাবে)
+   "নিউ লাইন"             →  ↵
+
+   ✦ ইংরেজি যতিচিহ্ন (English):
+   ─────────────────────────
+   "full stop" বা "period"  →  .
+   "comma"                  →  ,
+   "question mark"          →  ?
+   "exclamation"            →  !
+   "new line" বা "newline"  →  ↵
+
+
+📌 ৩. ভয়েস কমান্ড (Voice Commands)
+──────────────────────────────────────
+   মুখে বললেই নিচের কাজগুলো স্বয়ংক্রিয়ভাবে হবে:
+
+   ┌────────────────────────────────────────────┐
+   │ কমান্ড                  │ কী করবে         │
+   ├────────────────────────────────────────────┤
+   │ "ব্যাকস্পেস"             │ এক অক্ষর মুছবে   │
+   │ "Backspace"             │ Delete one char │
+   ├────────────────────────────────────────────┤
+   │ "ব্যাক সেন্টেন্স"         │ আগের কাজ বাতিল  │
+   │ "Back sentence"         │ Undo (Ctrl+Z)   │
+   ├────────────────────────────────────────────┤
+   │ "সিলেক্ট অল"             │ সব সিলেক্ট করবে │
+   │ "সব সিলেক্ট"             │ Select All      │
+   │ "Select all"            │ (Ctrl+A)        │
+   ├────────────────────────────────────────────┤
+   │ "কপি" / "কপি করি"        │ কপি করবে        │
+   │ "Copy"                  │ (Ctrl+C)        │
+   ├────────────────────────────────────────────┤
+   │ "পেস্ট" / "পেস্ট করি"    │ পেস্ট করবে      │
+   │ "Paste"                 │ (Ctrl+V)        │
+   └────────────────────────────────────────────┘
+
+
+📌 ৪. সেটিংস বর্ণনা (Settings Guide)
+──────────────────────────────────────
+   ⚙️ Desktop Icon
+      - ON: উইজেট স্ক্রিনে দেখা যাবে
+      - OFF: উইজেট লুকিয়ে থাকবে (শুধু শর্টকাট দিয়ে চালু)
+
+   ⚙️ Idle Opacity (০%-১০০%)
+      - মাইক বন্ধ অবস্থায় উইজেটের স্বচ্ছতা
+      - কম মান = বেশি স্বচ্ছ (ব্যাকগ্রাউন্ডে মিশে যায়)
+
+   ⚙️ Max Opacity (০%-১০০%)
+      - মাইক চালু অবস্থায় উইজেটের স্বচ্ছতা
+      - বেশি মান = বেশি দৃশ্যমান
+
+   ⚙️ Widget Size (০.৮x - ১.৫x)
+      - উইজেটের আকার ছোট/বড় করুন
+      - ছোট স্ক্রিনে ০.৮x, বড় মনিটরে ১.৫x ভালো
+
+   ⚙️ Auto Stop Time (৫-৯০ সেকেন্ড বা ∞)
+      - কত সেকেন্ড চুপ থাকলে মাইক অটো বন্ধ হবে
+      - ∞ = কখনো বন্ধ হবে না (ম্যানুয়ালি বন্ধ করতে হবে)
+
+   ⚙️ Mic Sensitivity
+      - Normal: ডেস্কটপ/এক্সটার্নাল মাইকের জন্য
+      - High: ল্যাপটপ বিল্ট-ইন মাইকের জন্য
+      - Very High: নয়েজি পরিবেশে
+
+
+📌 ৫. টেক্সট রিডার (Text-to-Speech)
+──────────────────────────────────────
+   ১. যেকোনো টেক্সট কপি করুন (Ctrl+C)
+   ২. Sound বাটনে ক্লিক করুন বা Alt+C চাপুন
+   ৩. টেক্সট জোরে পড়া হবে!
+
+   ⏸️ চলাকালীন বাটনে ক্লিক করলে Pause/Resume হবে
+   ⏹️ আবার লং প্রেস করলে সম্পূর্ণ বন্ধ হবে
+
+
+📌 ৬. সমস্যা সমাধান (Troubleshooting)
+──────────────────────────────────────
+   ❌ মাইক কাজ করছে না?
+      → উইন্ডোজ সেটিংসে মাইক পারমিশন চেক করুন
+      → অ্যাপ রিস্টার্ট করুন
+
+   ❌ টাইপিং স্লো হচ্ছে?
+      → ইন্টারনেট কানেকশন চেক করুন
+      → Google API ল্যাটেন্সি স্বাভাবিক হতে পারে
+
+   ❌ ভুল শব্দ টাইপ হচ্ছে?
+      → স্পষ্ট করে কথা বলুন
+      → Mic Sensitivity বাড়ান
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📞 সাপোর্ট ও যোগাযোগ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ডেভেলপার: Ahsanullah Shaon
+   WhatsApp: +8801730481212
+   Email: shaaoonn@gmail.com
+   Website: ejobsit.com
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+""",
+    },
+
+    # ─────────────────────── AI system prompts ───────────────────────
+    "ai_screenshot_system": {
+        "en": """You are a highly skilled visual analyst and AI assistant. The user is sending you a screenshot. Follow these rules:
+
+📋 If the screenshot contains text:
+- Extract every visible piece of text exactly (OCR)
+- Reply in the same language as the text
+
+🖼️ If it contains an image / graphic:
+- Describe what is shown
+- If there is a chart or graph, explain the data
+
+💬 If it is a chat / messaging app screenshot (Facebook, WhatsApp, Messenger, Telegram, Viber, IMO, Instagram DM, Discord, Slack, Teams, etc.):
+- Summarise the conversation
+- Draft an appropriate reply to the latest message
+- Reply in the same language as the conversation
+- Keep the reply natural, friendly, and on-topic
+
+📧 If it is an email screenshot:
+- Summarise the email
+- Draft a suitable reply
+
+📄 If it is a document / web-page screenshot:
+- Capture the key points concisely
+
+⚠️ Important rules:
+- Be concise but complete
+- No preamble or unnecessary explanation
+- Get straight to the answer""",
+        "bn": """তুমি একজন অত্যন্ত দক্ষ ভিজ্যুয়াল বিশ্লেষক এবং AI সহকারী। ব্যবহারকারী তোমাকে একটি স্ক্রিনশট দিচ্ছে। নিচের নিয়ম অনুসরণ করো:
+
+📋 যদি স্ক্রিনশটে টেক্সট থাকে:
+- সমস্ত দৃশ্যমান টেক্সট হুবহু লিখে দাও (OCR)
+- টেক্সটের ভাষা বুঝে সেই ভাষায় লেখো
+
+🖼️ যদি কোনো ছবি/গ্রাফিক্স থাকে:
+- ছবিতে কী আছে তা বর্ণনা করো
+- চার্ট/গ্রাফ থাকলে ডেটা ব্যাখ্যা করো
+
+💬 যদি এটি চ্যাট/মেসেজিং অ্যাপের স্ক্রিনশট হয় (Facebook, WhatsApp, Messenger, Telegram, Viber, IMO, Instagram DM, Discord, Slack, Teams ইত্যাদি):
+- কথোপকথনের সারসংক্ষেপ দাও
+- সর্বশেষ মেসেজের উপযুক্ত উত্তর লিখে দাও
+- উত্তরের ভাষা কথোপকথনের ভাষা অনুসারে হবে
+- উত্তরটি স্বাভাবিক, বন্ধুসুলভ এবং প্রাসঙ্গিক হবে
+
+📧 যদি ইমেইলের স্ক্রিনশট হয়:
+- ইমেইলের সারসংক্ষেপ দাও
+- উপযুক্ত রিপ্লাই ড্রাফট লিখে দাও
+
+📄 যদি ডকুমেন্ট/ওয়েবপেজের স্ক্রিনশট হয়:
+- মূল বিষয়বস্তু সংক্ষেপে তুলে ধরো
+
+⚠️ গুরুত্বপূর্ণ নিয়ম:
+- সংক্ষিপ্ত কিন্তু সম্পূর্ণ উত্তর দাও
+- কোনো ভূমিকা বা অপ্রয়োজনীয় ব্যাখ্যা দিও না
+- সরাসরি কাজের উত্তর দাও""",
+    },
+    "ai_screenshot_user_default": {
+        "en": "Analyse this screenshot.",
+        "bn": "এই স্ক্রিনশটটি বিশ্লেষণ করো।",
+    },
+    "ai_text_system_default": {
+        "en": "You are a skilled Bengali and English writing assistant. Give concise answers.",
+        "bn": "তুমি একজন দক্ষ বাংলা ও ইংরেজি লেখক সহকারী। সংক্ষিপ্ত উত্তর দাও।",
+    },
+    "ai_rich_format_instruction": {
+        "en": """
+
+Output format: use natural Markdown:
+- Use ## or ### only when a heading is appropriate
+- **bold** only for genuinely important words - don't over-bold; write naturally
+- Use _italic_ very sparingly
+- Use - bullets when a list is needed
+- Use `code` for code
+Remember: write naturally like a real person; don't bold every word.""",
+        "bn": """
+
+আউটপুট ফরম্যাট: স্বাভাবিক Markdown ব্যবহার করো:
+- শিরোনাম লাগলে ## বা ### ব্যবহার করো
+- **bold** শুধু সত্যিকারের গুরুত্বপূর্ণ শব্দে, অতিরিক্ত bold করো না - স্বাভাবিক লেখার মতো লেখো
+- _italic_ খুব কম ব্যবহার করো
+- তালিকা দরকার হলে - bullet ব্যবহার করো
+- কোড থাকলে `code` ব্যবহার করো
+মনে রাখো: বাস্তব মানুষের লেখার মতো স্বাভাবিক হবে, প্রতিটা শব্দ bold করো না।""",
+    },
+    "ai_plain_format_instruction": {
+        "en": "\n\nOutput: plain text, no markdown.",
+        "bn": "\n\nআউটপুট: plain text, কোনো markdown নয়।",
+    },
 }
 
 # Available languages for the picker UI
