@@ -1218,14 +1218,14 @@ class EditorWindow(tk.Toplevel):
         if not self._pages:
             return
         if len(self._pages) == 1:
-            messagebox.showinfo("ডিলিট", "শেষ পেজ ডিলিট করা যাবে না।",
+            messagebox.showinfo(tr("dlg_delete_title"), tr("dlg_delete_last_page"),
                                 parent=self)
             return
         idx = self._active_page_idx
         page = self._pages[idx]
         confirm = messagebox.askyesno(
-            "পেজ ডিলিট",
-            f"পেজ {idx + 1} ডিলিট করতে চান?",
+            tr("dlg_delete_page_title"),
+            tr("dlg_delete_page_q", n=idx + 1),
             parent=self
         )
         if not confirm:
@@ -1383,7 +1383,7 @@ class EditorWindow(tk.Toplevel):
         if idx is None or not self._pages:
             return
         if len(self._pages) == 1:
-            messagebox.showinfo("ডিলিট", "শেষ পেজ ডিলিট করা যাবে না।",
+            messagebox.showinfo(tr("dlg_delete_title"), tr("dlg_delete_last_page"),
                                 parent=self)
             return
         page = self._pages[idx]
@@ -1401,7 +1401,7 @@ class EditorWindow(tk.Toplevel):
         if self._pen_toolbar and hasattr(self._pen_toolbar, '_zoom_var'):
             z = int(self._zoom_level * 100)
             self._pen_toolbar._zoom_var.set(z)
-            self._pen_toolbar._zoom_label.configure(text=f"জুম {z}%")
+            self._pen_toolbar._zoom_label.configure(text=tr("dlg_zoom_label", z=z))
 
     def _on_escape(self, event):
         if self._fullscreen:
@@ -1461,21 +1461,21 @@ class EditorWindow(tk.Toplevel):
     # ── New File Dialog ────────────────────────────────
 
     BG_TYPES = [
-        ("সাদা", "white", "#FFFFFF"),
-        ("কালো", "black", "#000000"),
-        ("ধূসর", "gray", "#808080"),
-        ("গ্রাফ পেপার", "graph", "#F8F8F8"),
+        (tr("color_white"), "white", "#FFFFFF"),
+        (tr("color_black"), "black", "#000000"),
+        (tr("color_gray"), "gray", "#808080"),
+        (tr("color_graph"), "graph", "#F8F8F8"),
     ]
 
     def _new_file_dialog(self):
         dialog = tk.Toplevel(self)
-        dialog.title("নতুন ফাইল")
+        dialog.title(tr("dlg_new_file_title"))
         dialog.geometry("320x480")
         dialog.configure(bg="#2A2A40")
         dialog.transient(self)
         dialog.grab_set()
 
-        tk.Label(dialog, text="ব্যাকগ্রাউন্ড",
+        tk.Label(dialog, text=tr("dlg_lbl_background"),
                  bg="#2A2A40", fg="#CCC", font=("Segoe UI", 11, "bold")
                  ).pack(pady=(10, 5))
 
@@ -1494,7 +1494,7 @@ class EditorWindow(tk.Toplevel):
                                 font=("Segoe UI", 8))
             rb.pack()
 
-        tk.Label(dialog, text="পেজ সাইজ",
+        tk.Label(dialog, text=tr("dlg_lbl_page_size"),
                  bg="#2A2A40", fg="#CCC", font=("Segoe UI", 11, "bold")
                  ).pack(pady=(12, 5))
 
@@ -1510,7 +1510,7 @@ class EditorWindow(tk.Toplevel):
             ).pack(pady=2)
 
         tk.Button(
-            dialog, text="কাস্টম সাইজ (ইঞ্চি)...",
+            dialog, text=tr("dlg_btn_custom_size"),
             bg="#3A3A55", fg="#CCC", font=("Segoe UI", 10),
             relief="flat", bd=0, activebackground="#4A4A6A", width=28,
             command=lambda: self._custom_size_dialog(dialog, bg_var.get())
@@ -1574,10 +1574,10 @@ class EditorWindow(tk.Toplevel):
         return img
 
     def _custom_size_dialog(self, parent_dialog, bg_type):
-        w_str = simpledialog.askstring("প্রস্থ", "প্রস্থ (ইঞ্চি):", parent=parent_dialog)
+        w_str = simpledialog.askstring(tr("dlg_width_title"), tr("dlg_width_prompt"), parent=parent_dialog)
         if not w_str:
             return
-        h_str = simpledialog.askstring("উচ্চতা", "উচ্চতা (ইঞ্চি):", parent=parent_dialog)
+        h_str = simpledialog.askstring(tr("dlg_height_title"), tr("dlg_height_prompt"), parent=parent_dialog)
         if not h_str:
             return
         try:
@@ -1586,15 +1586,15 @@ class EditorWindow(tk.Toplevel):
             if w > 0 and h > 0:
                 self._create_new_file(w, h, bg_type, parent_dialog)
         except ValueError:
-            messagebox.showerror("ত্রুটি", "সঠিক সংখ্যা দিন।", parent=parent_dialog)
+            messagebox.showerror(tr("dlg_error_title"), tr("dlg_invalid_number"), parent=parent_dialog)
 
     # ── Open File ─────────────────────────────────────
 
     def _open_file(self):
-        ftypes = [("সকল সমর্থিত", "*.png *.jpg *.jpeg *.bmp *.gif *.pdf"),
-                  ("ছবি", "*.png *.jpg *.jpeg *.bmp *.gif"),
+        ftypes = [(tr("ftype_all_supported"), "*.png *.jpg *.jpeg *.bmp *.gif *.pdf"),
+                  (tr("ftype_image"), "*.png *.jpg *.jpeg *.bmp *.gif"),
                   ("PDF", "*.pdf"),
-                  ("DVAI প্রজেক্ট", "*.dvai")]
+                  (tr("ftype_dvai"), "*.dvai")]
         path = filedialog.askopenfilename(filetypes=ftypes, parent=self)
         if not path:
             return
@@ -1611,7 +1611,7 @@ class EditorWindow(tk.Toplevel):
         try:
             img = Image.open(path).convert("RGBA")
         except Exception as e:
-            messagebox.showerror("ত্রুটি", f"ছবি খুলতে পারেনি:\n{e}", parent=self)
+            messagebox.showerror(tr("dlg_error_title"), tr("err_image_open", e=e), parent=self)
             return
         self._clear_all_pages()
         self._add_page(img.width, img.height, bg_image=img)
@@ -1619,20 +1619,20 @@ class EditorWindow(tk.Toplevel):
 
     def _open_pdf(self, path):
         if not HAS_PYMUPDF:
-            messagebox.showerror("ত্রুটি", "PyMuPDF ইন্সটল নেই।\npip install PyMuPDF",
+            messagebox.showerror(tr("dlg_error_title"), tr("err_pymupdf_missing"),
                                  parent=self)
             return
         try:
             doc = fitz.open(path)
         except Exception as e:
-            messagebox.showerror("ত্রুটি", f"PDF খুলতে পারেনি:\n{e}", parent=self)
+            messagebox.showerror(tr("dlg_error_title"), tr("err_pdf_open", e=e), parent=self)
             return
         total = len(doc)
         self._clear_all_pages()
         self.title(f"{tr('editor_title')} - {os.path.basename(path)} ({tr('loading')})")
         # Progress label on canvas
         self._pdf_progress = tk.Label(
-            self._canvas, text=f"লোড হচ্ছে... 0/{total}",
+            self._canvas, text=tr("msg_loading_n", i=0, n=total),
             bg=BG_COLOR, fg="#AAA", font=("Segoe UI", 14))
         self.update_idletasks()
         cx = max(self._canvas.winfo_width() // 2, 200)
@@ -1664,7 +1664,7 @@ class EditorWindow(tk.Toplevel):
         if not self._pdf_loading:
             return
         self._add_page(img.width, img.height, bg_image=img, batch=True)
-        self._pdf_progress.configure(text=f"লোড হচ্ছে... {idx + 1}/{total}")
+        self._pdf_progress.configure(text=tr("msg_loading_n", i=idx + 1, n=total))
         # Relayout every 5 pages or on last page
         if (idx + 1) % 5 == 0 or idx == total - 1:
             self._relayout_pages()
@@ -1686,8 +1686,8 @@ class EditorWindow(tk.Toplevel):
     # ── Import ────────────────────────────────────────
 
     def _import_file(self):
-        ftypes = [("সকল সমর্থিত", "*.png *.jpg *.jpeg *.bmp *.gif *.pdf"),
-                  ("ছবি", "*.png *.jpg *.jpeg *.bmp *.gif"),
+        ftypes = [(tr("ftype_all_supported"), "*.png *.jpg *.jpeg *.bmp *.gif *.pdf"),
+                  (tr("ftype_image"), "*.png *.jpg *.jpeg *.bmp *.gif"),
                   ("PDF", "*.pdf")]
         path = filedialog.askopenfilename(filetypes=ftypes, parent=self)
         if not path:
@@ -1704,7 +1704,7 @@ class EditorWindow(tk.Toplevel):
             img = Image.open(path).convert("RGBA")
             self._place_image_on_page(img)
         except Exception as e:
-            messagebox.showerror("ত্রুটি", f"ছবি ইম্পোর্ট করতে পারেনি:\n{e}",
+            messagebox.showerror(tr("dlg_error_title"), tr("err_image_import", e=e),
                                  parent=self)
 
     def _place_image_on_page(self, img: Image.Image):
@@ -1745,7 +1745,7 @@ class EditorWindow(tk.Toplevel):
 
     def _import_pdf(self, path, insert_at):
         if not HAS_PYMUPDF:
-            messagebox.showerror("ত্রুটি", "PyMuPDF ইন্সটল নেই।", parent=self)
+            messagebox.showerror(tr("dlg_error_title"), tr("err_pymupdf_short"), parent=self)
             return
         try:
             doc = fitz.open(path)
@@ -1759,7 +1759,7 @@ class EditorWindow(tk.Toplevel):
                                insert_at=insert_at + i)
             doc.close()
         except Exception as e:
-            messagebox.showerror("ত্রুটি", f"PDF ইম্পোর্ট করতে পারেনি:\n{e}",
+            messagebox.showerror(tr("dlg_error_title"), tr("err_pdf_import", e=e),
                                  parent=self)
 
     # ── Clipboard Paste ────────────────────────────────
@@ -1795,7 +1795,7 @@ class EditorWindow(tk.Toplevel):
     def _save_as(self):
         path = filedialog.asksaveasfilename(
             defaultextension=".dvai",
-            filetypes=[("DVAI প্রজেক্ট", "*.dvai")],
+            filetypes=[(tr("ftype_dvai"), "*.dvai")],
             parent=self
         )
         if path:
@@ -1844,7 +1844,7 @@ class EditorWindow(tk.Toplevel):
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception as e:
-            messagebox.showerror("ত্রুটি", f"ফাইল লোড করতে পারেনি:\n{e}",
+            messagebox.showerror(tr("dlg_error_title"), tr("err_file_load", e=e),
                                  parent=self)
             return
 
@@ -1921,7 +1921,7 @@ class EditorWindow(tk.Toplevel):
 
     def _export(self, fmt):
         if not self._pages:
-            messagebox.showinfo("তথ্য", "এক্সপোর্ট করার মতো পেজ নেই।", parent=self)
+            messagebox.showinfo(tr("dlg_info_title"), tr("msg_no_pages_export"), parent=self)
             return
         if fmt == "pdf":
             self._export_pdf()
@@ -1930,22 +1930,22 @@ class EditorWindow(tk.Toplevel):
 
     def _export_pdf(self):
         if not HAS_PYMUPDF:
-            messagebox.showerror("ত্রুটি", "PyMuPDF ইন্সটল নেই।", parent=self)
+            messagebox.showerror(tr("dlg_error_title"), tr("err_pymupdf_short"), parent=self)
             return
         path = filedialog.asksaveasfilename(
             defaultextension=".pdf", filetypes=[("PDF", "*.pdf")],
-            title="PDF সেভ করুন", parent=self
+            title=tr("dlg_save_pdf_title"), parent=self
         )
         if not path:
             return
         total = len(self._pages)
         # Progress dialog
         prog_win = tk.Toplevel(self)
-        prog_win.title("PDF এক্সপোর্ট")
+        prog_win.title(tr("dlg_pdf_export_title"))
         prog_win.geometry("300x80")
         prog_win.resizable(False, False)
         prog_win.transient(self)
-        prog_label = tk.Label(prog_win, text=f"এক্সপোর্ট হচ্ছে... 0/{total}",
+        prog_label = tk.Label(prog_win, text=tr("msg_exporting_n", i=0, n=total),
                               font=("Segoe UI", 11))
         prog_label.pack(expand=True, padx=20, pady=20)
         prog_win.update()
@@ -1958,7 +1958,7 @@ class EditorWindow(tk.Toplevel):
                     img = page_obj.composite(skip_text=False).convert("RGB")
                     page_images.append((img, page_obj.width, page_obj.height))
                     self.after(0, lambda idx=i: prog_label.configure(
-                        text=f"এক্সপোর্ট হচ্ছে... {idx + 1}/{total}"))
+                        text=tr("msg_exporting_n", i=idx + 1, n=total)))
                 self.after(0, _finish)
             except Exception as e:
                 self.after(0, lambda: _error(e))
@@ -1976,7 +1976,7 @@ class EditorWindow(tk.Toplevel):
                 doc.save(path)
                 doc.close()
                 prog_win.destroy()
-                messagebox.showinfo("সফল", f"PDF এক্সপোর্ট হয়েছে:\n{path}",
+                messagebox.showinfo(tr("dlg_success_title"), tr("msg_pdf_exported", path=path),
                                     parent=self)
             except Exception as e:
                 _error(e)
@@ -1986,7 +1986,7 @@ class EditorWindow(tk.Toplevel):
                 prog_win.destroy()
             except Exception:
                 pass
-            messagebox.showerror("ত্রুটি", f"PDF এক্সপোর্ট ব্যর্থ:\n{e}",
+            messagebox.showerror(tr("dlg_error_title"), tr("err_pdf_export", e=e),
                                  parent=self)
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -2001,7 +2001,7 @@ class EditorWindow(tk.Toplevel):
             path = filedialog.asksaveasfilename(
                 defaultextension=f".{ext}",
                 filetypes=ft,
-                title="ইমেজ সেভ করুন",
+                title=tr("dlg_save_image_title"),
                 parent=self
             )
             if not path:
@@ -2011,16 +2011,16 @@ class EditorWindow(tk.Toplevel):
                 if pil_fmt == "JPEG":
                     img = img.convert("RGB")
                 img.save(path, format=pil_fmt, quality=95)
-                messagebox.showinfo("সফল", f"সেভ হয়েছে:\n{path}",
+                messagebox.showinfo(tr("dlg_success_title"), tr("msg_saved_to", path=path),
                                     parent=self)
             except Exception as e:
-                messagebox.showerror("ত্রুটি", f"সেভ ব্যর্থ:\n{e}", parent=self)
+                messagebox.showerror(tr("dlg_error_title"), tr("err_save_failed", e=e), parent=self)
         else:
             # Multiple pages: ask for base filename, save as name_1, name_2...
             path = filedialog.asksaveasfilename(
                 defaultextension=f".{ext}",
                 filetypes=ft,
-                title="ইমেজ সেভ করুন (পেজ নম্বর যোগ হবে)",
+                title=tr("dlg_save_image_multi"),
                 parent=self
             )
             if not path:
@@ -2033,11 +2033,11 @@ class EditorWindow(tk.Toplevel):
                         img = img.convert("RGB")
                     out_path = f"{base}_{i+1}{fext}"
                     img.save(out_path, format=pil_fmt, quality=95)
-                messagebox.showinfo("সফল",
-                                    f"{len(self._pages)} পেজ সেভ হয়েছে:\n{base}_*.{ext}",
+                messagebox.showinfo(tr("dlg_success_title"),
+                                    tr("msg_saved_pages", n=len(self._pages), base=base, ext=ext),
                                     parent=self)
             except Exception as e:
-                messagebox.showerror("ত্রুটি", f"সেভ ব্যর্থ:\n{e}", parent=self)
+                messagebox.showerror(tr("dlg_error_title"), tr("err_save_failed", e=e), parent=self)
 
     # ── Helpers ───────────────────────────────────────
 

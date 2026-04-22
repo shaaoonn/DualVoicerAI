@@ -8,6 +8,7 @@ Thickness controlled by slider (1-100px)."""
 import tkinter as tk
 import tkinter.font as tkfont
 import ctypes
+from i18n import tr
 
 user32 = ctypes.windll.user32
 GWL_EXSTYLE     = -20
@@ -49,7 +50,7 @@ class PenToolbar:
         "Comic Sans MS",
         "Consolas",
     ]
-    SEPARATOR = "── আরো ──"
+    SEPARATOR = tr("tb_separator")
 
     def __init__(self, parent, overlay, app_ref, mode="standalone",
                  on_retract=None):
@@ -189,7 +190,7 @@ class PenToolbar:
             zoom_frame = tk.Frame(row, bg=self.BG)
             zoom_frame.pack(side="left", padx=(0, 4))
             self._zoom_label = tk.Label(
-                zoom_frame, text="জুম 100%", bg=self.BG, fg="#CCC",
+                zoom_frame, text=tr("tb_zoom", z=100), bg=self.BG, fg="#CCC",
                 font=("Segoe UI", 8), width=8
             )
             self._zoom_label.pack(side="left")
@@ -252,7 +253,7 @@ class PenToolbar:
         thick_frame.pack(side="left", padx=(0, 6))
 
         self._slider_label = tk.Label(
-            thick_frame, text="পেন", bg=self.BG, fg="#CCC",
+            thick_frame, text=tr("tb_thickness_pen"), bg=self.BG, fg="#CCC",
             font=("Segoe UI", 7), width=4
         )
         self._slider_label.pack(side="left")
@@ -598,12 +599,12 @@ class PenToolbar:
                         pen_w = getattr(engine, '_pen_width', 4) if engine else 4
                         txt_size = pen_w * 4
                     self._thickness_var.set(txt_size)
-                self._slider_label.configure(text="ফন্ট")
+                self._slider_label.configure(text=tr("tb_thickness_font"))
             elif leaving_font:
                 saved = getattr(self, '_saved_pen_thickness', 4)
                 self._thickness_var.set(saved)
                 self._overlay.set_width(saved)
-                self._slider_label.configure(text="পেন")
+                self._slider_label.configure(text=tr("tb_thickness_pen"))
 
     def _activate_eraser(self):
         self._active_tool = "eraser"
@@ -763,7 +764,7 @@ class PenToolbar:
     def _on_zoom_change(self, value):
         level = int(value)
         if hasattr(self, '_zoom_label'):
-            self._zoom_label.configure(text=f"জুম {level}%")
+            self._zoom_label.configure(text=tr("tb_zoom", z=level))
         if hasattr(self._overlay, 'set_zoom'):
             self._overlay.set_zoom(level / 100.0)
 

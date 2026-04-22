@@ -3004,7 +3004,15 @@ class VoiceTypingApp(ctk.CTk):
                             # Listen for small chunks (OPTIMIZED v3.6.9)
                             # Shorter phrase_time_limit = faster API response, less queue buildup
                             audio = self.recognizer.listen(source, timeout=1.0, phrase_time_limit=8)
-                            self.audio_queue.put((audio, self.active_lang))
+                            # Race guard: listen() can block up to phrase_time_limit
+                            # seconds. If the user stopped typing in the meantime,
+                            # active_lang has been cleared to None - queueing it
+                            # would later cause recognize_google() to error with
+                            # "`language` must be a string". Drop stale chunks.
+                            captured_lang = self.active_lang
+                            if not self.is_listening or not isinstance(captured_lang, str) or not captured_lang:
+                                continue
+                            self.audio_queue.put((audio, captured_lang))
                             
                             # CRITICAL: Update watchdog timestamp
                             self.last_process_time = time.time()
@@ -3756,6 +3764,14 @@ class VoiceTypingApp(ctk.CTk):
                 try:
                     audio_data, lang = self.audio_queue.get(timeout=0.2)
                 except queue.Empty:
+                    continue
+
+                # Defensive: a stale chunk could still slip in between the
+                # listener's race guard and the queue. recognize_google() needs
+                # a non-empty string for `language`, otherwise it throws.
+                if not isinstance(lang, str) or not lang:
+                    print(f"[SKIP] Dropping audio chunk with invalid lang={lang!r}")
+                    self.audio_queue.task_done()
                     continue
 
                 self.is_processing = True
