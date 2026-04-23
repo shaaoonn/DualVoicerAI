@@ -1055,6 +1055,14 @@ class VoiceTypingApp(ctk.CTk):
             if hasattr(btn, 'resize'):
                 btn.resize(btn_s)
 
+        # Scale the embedded pen toolbar in lock-step with the widget
+        # (only matters when the panel is currently open)
+        if getattr(self, '_pen_toolbar', None):
+            try:
+                self._pen_toolbar.set_scale(scale)
+            except Exception:
+                pass
+
         # Scale tool buttons
         tool_font = max(10, int(13 * scale))
         for btn in [self.btn_pen, self.btn_screenshot, self.btn_settings]:
@@ -1183,12 +1191,15 @@ class VoiceTypingApp(ctk.CTk):
             from ui_components.pen_toolbar import PenToolbar
 
             self._pen_overlay = PenOverlay(self, on_close_callback=self._close_pen_mode)
+            preset = self.settings.get("size_preset", "medium")
+            btn_s_now = self.BTN_SIZES.get(preset, 72)
             self._pen_toolbar = PenToolbar(
                 self._panel_container,  # parent = panel container frame
                 self._pen_overlay,
                 self,
                 mode="embedded",
-                on_retract=self._retract_pen_tools
+                on_retract=self._retract_pen_tools,
+                scale=btn_s_now / 72.0,
             )
 
             # Main toolbar: pen icon → mouse icon
