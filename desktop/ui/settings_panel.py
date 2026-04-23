@@ -38,22 +38,23 @@ class SettingsPanel(ctk.CTkToplevel):
 
     # -- Layout ---------------------------------------------------
     def _build_layout(self):
-        # Sidebar
-        self.sidebar = ctk.CTkFrame(self, width=190, corner_radius=0,
-                                     fg_color="#161616")
+        # Sidebar — slightly tinted blue-grey for subtle depth vs white content
+        self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0,
+                                     fg_color="#F0F2F8")
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
         # App logo area
         ctk.CTkLabel(self.sidebar, text=APP_NAME,
-                     font=(F, 13, "bold"),
-                     text_color="#FFFFFF").pack(pady=(20, 2))
+                     font=(F, 14, "bold"),
+                     text_color="#0F1A3A").pack(pady=(22, 2))
         ctk.CTkLabel(self.sidebar, text=f"v{APP_VERSION}",
                      font=(F, 9),
-                     text_color="#555555").pack(pady=(0, 16))
-        ctk.CTkFrame(self.sidebar, height=1, fg_color="#2A2A2A").pack(fill="x", padx=12, pady=4)
+                     text_color="#64748B").pack(pady=(0, 18))
+        ctk.CTkFrame(self.sidebar, height=1,
+                     fg_color="#D4D8E0").pack(fill="x", padx=14, pady=4)
 
-        # Nav buttons
+        # Nav buttons with explicit dark text for readability on light sidebar
         TABS = [
             (tr("set_nav_general"),      "general"),
             (tr("set_nav_language"),     "language"),
@@ -65,25 +66,31 @@ class SettingsPanel(ctk.CTkToplevel):
         for label, key in TABS:
             btn = ctk.CTkButton(
                 self.sidebar, text=label, anchor="w",
-                fg_color="transparent", hover_color="#252525",
-                font=(F, 12), height=36,
+                fg_color="transparent", hover_color="#E2E6F0",
+                text_color="#1A1A2E", text_color_disabled="#64748B",
+                font=(F, 12), height=38, corner_radius=8,
                 command=lambda k=key: self._show_tab(k)
             )
-            btn.pack(fill="x", padx=8, pady=2)
+            btn.pack(fill="x", padx=10, pady=2)
             self._nav_btns[key] = btn
 
-        # Footer buttons
+        # Footer buttons — Save is accent blue, Close is subtle grey
         footer = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        footer.pack(side="bottom", fill="x", padx=8, pady=12)
-        ctk.CTkButton(footer, text=tr("set_btn_save"), height=32,
-                      command=self._save_and_close).pack(fill="x", pady=(0, 4))
+        footer.pack(side="bottom", fill="x", padx=10, pady=14)
+        ctk.CTkButton(footer, text=tr("set_btn_save"), height=36,
+                      fg_color="#3D5AFE", hover_color="#5070FF",
+                      text_color="#FFFFFF", font=(F, 12, "bold"),
+                      corner_radius=8,
+                      command=self._save_and_close).pack(fill="x", pady=(0, 6))
         ctk.CTkButton(footer, text=tr("set_btn_close"), height=32,
-                      fg_color="#2A2A2A", hover_color="#3A3A3A",
+                      fg_color="#E2E6F0", hover_color="#D4D8E0",
+                      text_color="#1A1A2E", font=(F, 11),
+                      corner_radius=8,
                       command=self.destroy).pack(fill="x")
 
-        # Content area
+        # Content area — pure white for crisp legibility
         self.content_area = ctk.CTkFrame(self, corner_radius=0,
-                                          fg_color="#141414")
+                                          fg_color="#FFFFFF")
         self.content_area.pack(side="right", fill="both", expand=True)
 
         # Build all tab frames (but only show one)
@@ -100,7 +107,12 @@ class SettingsPanel(ctk.CTkToplevel):
         if key in self._tab_frames:
             self._tab_frames[key].pack(fill="both", expand=True, padx=0, pady=0)
         for k, btn in self._nav_btns.items():
-            btn.configure(fg_color="#1E3A5F" if k == key else "transparent")
+            if k == key:
+                btn.configure(fg_color="#3D5AFE", text_color="#FFFFFF",
+                              hover_color="#5070FF")
+            else:
+                btn.configure(fg_color="transparent", text_color="#1A1A2E",
+                              hover_color="#E2E6F0")
         self._active_tab = key
 
     def _save_and_close(self):
@@ -120,21 +132,28 @@ class SettingsPanel(ctk.CTkToplevel):
     # -- Helper widgets --------------------------------------------
     def _scroll_frame(self, parent) -> ctk.CTkScrollableFrame:
         f = ctk.CTkScrollableFrame(parent, fg_color="transparent",
-                                    scrollbar_fg_color="#1A1A1A")
+                                    scrollbar_fg_color="#E2E6F0",
+                                    scrollbar_button_color="#C0C4D0",
+                                    scrollbar_button_hover_color="#A8ADBE")
         return f
 
     def _section(self, parent, title: str):
+        # Section heading — slightly larger, darker, with more breathing room
         ctk.CTkLabel(parent, text=title,
-                     font=(F, 12, "bold"),
-                     text_color="#CCCCCC").pack(anchor="w", padx=28, pady=(18, 5))
+                     font=(F, 13, "bold"),
+                     text_color="#0F1A3A").pack(anchor="w", padx=28,
+                                                pady=(22, 8))
 
     def _divider(self, parent):
-        ctk.CTkFrame(parent, height=1, fg_color="#242424").pack(
-            fill="x", padx=28, pady=6)
+        ctk.CTkFrame(parent, height=1, fg_color="#E2E6F0").pack(
+            fill="x", padx=28, pady=8)
 
     def _card(self, parent) -> ctk.CTkFrame:
-        c = ctk.CTkFrame(parent, fg_color="#1C1C1C", corner_radius=10)
-        c.pack(fill="x", padx=28, pady=4)
+        # Subtle elevated card — soft grey fill + 1px blue-tinted border for
+        # clear boundaries against the white content area.
+        c = ctk.CTkFrame(parent, fg_color="#F7F8FB", corner_radius=12,
+                         border_width=1, border_color="#E2E6F0")
+        c.pack(fill="x", padx=28, pady=6)
         return c
 
     def _persist(self):
@@ -147,15 +166,18 @@ class SettingsPanel(ctk.CTkToplevel):
 
     def _toggle_row(self, parent, label: str, key: str, on_change=None):
         row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", padx=16, pady=7)
+        row.pack(fill="x", padx=18, pady=9)
         ctk.CTkLabel(row, text=label,
-                     font=(F, 12)).pack(side="left")
+                     font=(F, 12), text_color="#1A1A2E").pack(side="left")
         var = ctk.BooleanVar(value=self.s.get(key, True))
         def _cb():
             self.s[key] = var.get()
             self._persist()
             if on_change: on_change()
-        ctk.CTkSwitch(row, variable=var, text="", command=_cb).pack(side="right")
+        ctk.CTkSwitch(row, variable=var, text="", command=_cb,
+                      progress_color="#3D5AFE",
+                      button_color="#FFFFFF", button_hover_color="#F0F2F8",
+                      fg_color="#CBD5E1").pack(side="right")
         return var
 
     def _slider_row(self, parent, label: str, key: str,
@@ -163,9 +185,9 @@ class SettingsPanel(ctk.CTkToplevel):
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(6, 0))
         ctk.CTkLabel(row, text=label,
-                     font=(F, 11), text_color="#999999").pack(side="left")
+                     font=(F, 11), text_color="#374151").pack(side="left")
         val_lbl = ctk.CTkLabel(row, text=f"{self.s.get(key, min_v):.2f}",
-                                font=(F, 10), text_color="#4FC3F7", width=40)
+                                font=(F, 10), text_color="#2563EB", width=40)
         val_lbl.pack(side="right")
         def _cb(v):
             self.s[key] = v
@@ -173,16 +195,18 @@ class SettingsPanel(ctk.CTkToplevel):
             self._persist()
             if on_change: on_change(v)
         sl = ctk.CTkSlider(parent, from_=min_v, to=max_v, number_of_steps=steps,
-                            command=_cb, height=16)
+                            command=_cb, height=16,
+                            fg_color="#E2E6F0", progress_color="#3D5AFE",
+                            button_color="#3D5AFE", button_hover_color="#5070FF")
         sl.set(self.s.get(key, min_v))
-        sl.pack(fill="x", padx=16, pady=(2, 6))
+        sl.pack(fill="x", padx=16, pady=(2, 8))
 
     def _segmented_row(self, parent, label: str, key: str,
                         options: list, labels: list = None, on_change=None):
         """Radio-style segmented button row."""
         if labels is None: labels = options
         ctk.CTkLabel(parent, text=label,
-                     font=(F, 11), text_color="#999999").pack(
+                     font=(F, 11), text_color="#374151").pack(
             anchor="w", padx=16, pady=(8, 4))
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(0, 10))
@@ -192,17 +216,28 @@ class SettingsPanel(ctk.CTkToplevel):
         def _select(val):
             self.s[key] = val
             for v, b in btns.items():
-                b.configure(fg_color="#1E3A5F" if v == val else "#2A2A2A",
-                             hover_color="#2A5080" if v == val else "#383838")
+                if v == val:
+                    b.configure(fg_color="#3D5AFE", text_color="#FFFFFF",
+                                hover_color="#5070FF", border_width=0)
+                else:
+                    b.configure(fg_color="#FFFFFF", text_color="#374151",
+                                hover_color="#F0F2F8", border_width=1,
+                                border_color="#CBD5E1")
             self._persist()
             if on_change: on_change(val)
 
         for val, lbl in zip(options, labels):
-            b = ctk.CTkButton(row, text=lbl, width=70, height=30,
-                               fg_color="#1E3A5F" if val == current else "#2A2A2A",
-                               hover_color="#2A5080" if val == current else "#383838",
-                               font=(F, 11),
-                               command=lambda v=val: _select(v))
+            is_active = (val == current)
+            b = ctk.CTkButton(
+                row, text=lbl, width=72, height=32,
+                fg_color="#3D5AFE" if is_active else "#FFFFFF",
+                hover_color="#5070FF" if is_active else "#F0F2F8",
+                text_color="#FFFFFF" if is_active else "#374151",
+                border_width=0 if is_active else 1,
+                border_color="#CBD5E1",
+                corner_radius=8,
+                font=(F, 11, "bold" if is_active else "normal"),
+                command=lambda v=val: _select(v))
             b.pack(side="left", padx=3)
             btns[val] = b
 
@@ -216,15 +251,17 @@ class SettingsPanel(ctk.CTkToplevel):
         acct = self._card(frame)
         plan = getattr(self.app, 'user_cache', {}).get('plan_type', 'Trial')
         is_premium = plan.lower() not in ('trial', 'expired')
-        badge_color = "#1A4A1A" if is_premium else "#3A2A00"
+        badge_color = "#C8F0C8" if is_premium else "#FFE5B0"
         badge_text  = f"\u2713 {plan}" if is_premium else f"\u23f3 {plan}"
         ctk.CTkLabel(acct, text=badge_text, font=(F, 13, "bold"),
                      fg_color=badge_color, corner_radius=6,
-                     text_color="#AAFFAA" if is_premium else "#FFCC44"
+                     text_color="#2E7D32" if is_premium else "#996600"
                      ).pack(side="left", padx=16, pady=14)
         if hasattr(self.app, 'handle_logout'):
             ctk.CTkButton(acct, text=tr("set_btn_logout"), width=90, height=30,
-                          fg_color="#3A3A3A", hover_color="#4A4A4A",
+                          fg_color="#E2E6F0", hover_color="#D4D8E0",
+                          text_color="#1A1A2E", font=(F, 11),
+                          corner_radius=8,
                           command=self.app.handle_logout).pack(side="right", padx=16)
 
         # Expiry info
@@ -234,7 +271,7 @@ class SettingsPanel(ctk.CTkToplevel):
         if expiry:
             ctk.CTkLabel(frame,
                          text=tr("set_acct_expiry", expiry=expiry, dev=dev_ct, max=max_dev),
-                         font=(F, 10), text_color="#4CAF50"
+                         font=(F, 10), text_color="#2E7D32"
                          ).pack(anchor="w", padx=28, pady=(2, 8))
 
         # Toggles
@@ -261,11 +298,12 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_editor"))
         editor_card = self._card(frame)
         ctk.CTkButton(editor_card, text=tr("set_btn_open_editor"),
-                       width=180, height=34,
-                       fg_color="#2A4A6A", hover_color="#3A5A7A",
-                       font=(F, 12),
+                       width=180, height=36,
+                       fg_color="#3D5AFE", hover_color="#5070FF",
+                       text_color="#FFFFFF", font=(F, 12, "bold"),
+                       corner_radius=8,
                        command=lambda: self.app.open_editor_window()
-                       ).pack(padx=16, pady=10)
+                       ).pack(padx=16, pady=12)
 
         # UI Language switcher
         try:
@@ -296,11 +334,17 @@ class SettingsPanel(ctk.CTkToplevel):
 
         ctk.CTkComboBox(ui_card, variable=ui_var, values=ui_lang_display,
                         width=300, font=(F, 11),
+                        fg_color="#FFFFFF", border_color="#CBD5E1",
+                        border_width=1, text_color="#1A1A2E",
+                        button_color="#3D5AFE", button_hover_color="#5070FF",
+                        dropdown_fg_color="#FFFFFF",
+                        dropdown_text_color="#1A1A2E",
+                        dropdown_hover_color="#F0F2F8",
                         command=_on_ui_lang_change
                         ).pack(padx=16, pady=(12, 4))
         ctk.CTkLabel(ui_card,
                      text=tr("set_lbl_restart_lang"),
-                     font=(F, 10), text_color="#888888"
+                     font=(F, 10), text_color="#64748B"
                      ).pack(anchor="w", padx=16, pady=(0, 12))
 
         # Microphone
@@ -315,6 +359,12 @@ class SettingsPanel(ctk.CTkToplevel):
             # and restarts the stream when it changes - no extra apply needed.
         ctk.CTkComboBox(mic_card, variable=mic_var, values=mic_list,
                         width=500, font=(F, 11),
+                        fg_color="#FFFFFF", border_color="#CBD5E1",
+                        border_width=1, text_color="#1A1A2E",
+                        button_color="#3D5AFE", button_hover_color="#5070FF",
+                        dropdown_fg_color="#FFFFFF",
+                        dropdown_text_color="#1A1A2E",
+                        dropdown_hover_color="#F0F2F8",
                         command=_on_mic_change
                         ).pack(padx=16, pady=(14, 4))
 
@@ -326,9 +376,9 @@ class SettingsPanel(ctk.CTkToplevel):
         pl = ctk.CTkFrame(mic_card, fg_color="transparent")
         pl.pack(fill="x", padx=16, pady=(0, 12))
         ctk.CTkLabel(pl, text=tr("set_lbl_pause_left"), font=(F, 9),
-                     text_color="#555555").pack(side="left")
+                     text_color="#64748B").pack(side="left")
         ctk.CTkLabel(pl, text=tr("set_lbl_pause_right"), font=(F, 9),
-                     text_color="#555555").pack(side="right")
+                     text_color="#64748B").pack(side="right")
 
         # Appearance
         self._section(frame, tr("set_sec_appearance"))
@@ -357,24 +407,28 @@ class SettingsPanel(ctk.CTkToplevel):
                      or getattr(self.app, '_silent_reset', None))
         if reset_cmd:
             ctk.CTkButton(act, text=tr("set_btn_reset_engine"), width=160, height=36,
-                          fg_color="#8B2020", hover_color="#AA2828",
+                          fg_color="#E53935", hover_color="#FF5252",
+                          text_color="#FFFFFF", font=(F, 12, "bold"),
+                          corner_radius=8,
                           command=reset_cmd).pack(side="left", padx=(0, 8))
         if hasattr(self.app, 'check_for_update'):
             ctk.CTkButton(act, text=tr("set_btn_update", ver=APP_VERSION), width=180, height=36,
-                          fg_color="#4A1A7A", hover_color="#6A2A9A",
+                          fg_color="#9C27B0", hover_color="#BA68C8",
+                          text_color="#FFFFFF", font=(F, 12, "bold"),
+                          corner_radius=8,
                           command=self.app.check_for_update).pack(side="left")
 
         # Screenshot save folder
         self._section(frame, tr("set_sec_screenshot"))
         ctk.CTkLabel(frame, text=tr("set_lbl_screenshot_help"),
-                     font=(F, 10), text_color="#666666"
+                     font=(F, 10), text_color="#64748B"
                      ).pack(anchor="w", padx=28, pady=(0, 4))
         ss_card = self._card(frame)
         ss_row = ctk.CTkFrame(ss_card, fg_color="transparent")
         ss_row.pack(fill="x", padx=16, pady=10)
         cur_dir = self.s.get("screenshot_save_dir", "")
         self._ss_label = ctk.CTkLabel(ss_row, text=cur_dir or tr("set_lbl_not_set"),
-                                       font=(F, 10), text_color="#888888",
+                                       font=(F, 10), text_color="#64748B",
                                        width=350, anchor="w")
         self._ss_label.pack(side="left")
 
@@ -385,7 +439,10 @@ class SettingsPanel(ctk.CTkToplevel):
                 self.s["screenshot_save_dir"] = d
                 self._ss_label.configure(text=d)
                 self._persist()
-        ctk.CTkButton(ss_row, text=tr("set_btn_browse"), width=80, height=28,
+        ctk.CTkButton(ss_row, text=tr("set_btn_browse"), width=90, height=30,
+                      fg_color="#3D5AFE", hover_color="#5070FF",
+                      text_color="#FFFFFF", font=(F, 11, "bold"),
+                      corner_radius=8,
                       command=_pick_ss_dir).pack(side="right")
 
     # -- TAB: Language ---------------------------------------------
@@ -396,7 +453,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_voice_lang"))
         ctk.CTkLabel(frame,
                      text=tr("set_voice_lang_help"),
-                     font=(F, 10), text_color="#666666").pack(anchor="w", padx=28)
+                     font=(F, 10), text_color="#64748B").pack(anchor="w", padx=28)
 
         lang_display = [f"{name}  ({code})" for name, code in GOOGLE_STT_LANGUAGES]
         lang_codes   = [code for _, code in GOOGLE_STT_LANGUAGES]
@@ -406,7 +463,7 @@ class SettingsPanel(ctk.CTkToplevel):
             ("btn2_lang", tr("set_lbl_btn2"), "en-US"),
         ]:
             c = self._card(frame)
-            ctk.CTkLabel(c, text=btn_label,
+            ctk.CTkLabel(c, text=btn_label, text_color="#1A1A2E",
                          font=(F, 12, "bold")).pack(anchor="w", padx=16, pady=(12, 4))
             cur = self.s.get(btn_key, default)
             cur_disp = lang_display[lang_codes.index(cur)] if cur in lang_codes else lang_display[0]
@@ -417,12 +474,18 @@ class SettingsPanel(ctk.CTkToplevel):
                 self._persist()
             ctk.CTkComboBox(c, variable=var, values=lang_display, width=540,
                             font=(F, 11),
+                            fg_color="#FFFFFF", border_color="#CBD5E1",
+                            border_width=1, text_color="#1A1A2E",
+                            button_color="#3D5AFE", button_hover_color="#5070FF",
+                            dropdown_fg_color="#FFFFFF",
+                            dropdown_text_color="#1A1A2E",
+                            dropdown_hover_color="#F0F2F8",
                             command=_on_lang_change
                             ).pack(padx=16, pady=(0, 14))
 
         ctk.CTkLabel(frame,
                      text=tr("set_lang_change_note"),
-                     font=(F, 10), text_color="#555555").pack(
+                     font=(F, 10), text_color="#64748B").pack(
             anchor="w", padx=28, pady=(8, 20))
 
     # -- TAB: AI ---------------------------------------------------
@@ -433,7 +496,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_ai"))
         ctk.CTkLabel(frame,
                      text=tr("set_ai_hotkeys"),
-                     font=(F, 10), text_color="#666666").pack(anchor="w", padx=28)
+                     font=(F, 10), text_color="#64748B").pack(anchor="w", padx=28)
         self._divider(frame)
 
         # Enable toggle
@@ -454,11 +517,13 @@ class SettingsPanel(ctk.CTkToplevel):
                 self.s["ai_output_format"] = v
                 self._persist()
             ctk.CTkRadioButton(r, text=lbl, variable=fmt_var, value=val,
-                               font=(F, 12),
+                               font=(F, 12), text_color="#1A1A2E",
+                               border_color="#3D5AFE", fg_color="#3D5AFE",
+                               hover_color="#5070FF",
                                command=_on_fmt_change
                                ).pack(side="left")
             ctk.CTkLabel(r, text=desc, font=(F, 10),
-                         text_color="#555555").pack(side="left", padx=14)
+                         text_color="#64748B").pack(side="left", padx=14)
 
         # Model
         self._section(frame, tr("set_sec_ai_model"))
@@ -469,19 +534,25 @@ class SettingsPanel(ctk.CTkToplevel):
             self.s["ai_model"] = v
             self._persist()
         ctk.CTkOptionMenu(c2, variable=model_var, values=model_vals, width=500,
+                          fg_color="#3D5AFE", button_color="#3D5AFE",
+                          button_hover_color="#5070FF", text_color="#FFFFFF",
+                          dropdown_fg_color="#FFFFFF",
+                          dropdown_text_color="#1A1A2E",
+                          dropdown_hover_color="#F0F2F8",
                           command=_on_model_change
                           ).pack(padx=16, pady=(14, 4))
         ctk.CTkLabel(c2, text=tr("set_ai_model_note"),
-                     font=(F, 9), text_color="#555555").pack(anchor="w", padx=16, pady=(0, 12))
+                     font=(F, 9), text_color="#64748B").pack(anchor="w", padx=16, pady=(0, 12))
 
         # System instruction
         self._section(frame, tr("set_sec_sys_prompt"))
         ctk.CTkLabel(frame,
                      text=tr("set_sys_prompt_help"),
-                     font=(F, 10), text_color="#555555").pack(anchor="w", padx=28, pady=(0, 6))
+                     font=(F, 10), text_color="#64748B").pack(anchor="w", padx=28, pady=(0, 6))
         self._sys_box = ctk.CTkTextbox(frame, height=130, font=(F, 11),
-                                  fg_color="#1A1A1A", border_color="#2A2A2A",
-                                  border_width=1, wrap="word")
+                                  fg_color="#FFFFFF", border_color="#CBD5E1",
+                                  border_width=1, wrap="word",
+                                  text_color="#1A1A2E", corner_radius=8)
         self._sys_box.pack(fill="x", padx=28)
         self._sys_box.insert("1.0", self.s.get("ai_system_prompt",
                        tr("set_sys_prompt_default")))
@@ -494,10 +565,11 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_img_prompt"))
         ctk.CTkLabel(frame,
                      text=tr("set_img_prompt_help"),
-                     font=(F, 10), text_color="#555555").pack(anchor="w", padx=28, pady=(0, 6))
+                     font=(F, 10), text_color="#64748B").pack(anchor="w", padx=28, pady=(0, 6))
         self._img_sys_box = ctk.CTkTextbox(frame, height=130, font=(F, 11),
-                                  fg_color="#1A1A20", border_color="#2A2A3A",
-                                  border_width=1, wrap="word")
+                                  fg_color="#FFFFFF", border_color="#CBD5E1",
+                                  border_width=1, wrap="word",
+                                  text_color="#1A1A2E", corner_radius=8)
         self._img_sys_box.pack(fill="x", padx=28)
         self._img_sys_box.insert("1.0", self.s.get("image_system_prompt", ""))
         self._img_sys_box.bind("<KeyRelease>", lambda e: self.s.update(
@@ -508,11 +580,12 @@ class SettingsPanel(ctk.CTkToplevel):
         self._section(frame, tr("set_sec_kb"))
         ctk.CTkLabel(frame,
                      text=tr("set_kb_help"),
-                     font=(F, 10), text_color="#555555",
+                     font=(F, 10), text_color="#64748B",
                      justify="left").pack(anchor="w", padx=28, pady=(0, 6))
         self._kb_box = ctk.CTkTextbox(frame, height=180, font=(F, 11),
-                                 fg_color="#141A14", border_color="#2A3A2A",
-                                 border_width=1, wrap="word")
+                                 fg_color="#FFFFFF", border_color="#CBD5E1",
+                                 border_width=1, wrap="word",
+                                 text_color="#1A1A2E", corner_radius=8)
         self._kb_box.pack(fill="x", padx=28)
         self._kb_box.insert("1.0", self.s.get("knowledge_base", ""))
         self._kb_box.bind("<KeyRelease>", lambda e: self.s.update(
@@ -521,7 +594,7 @@ class SettingsPanel(ctk.CTkToplevel):
 
         ctk.CTkLabel(frame,
                      text=tr("set_kb_footer"),
-                     font=(F, 10), text_color="#6C9EBF").pack(
+                     font=(F, 10), text_color="#5A7A8A").pack(
             anchor="w", padx=28, pady=(8, 20))
 
     # -- TAB: TTS --------------------------------------------------
@@ -534,7 +607,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self._toggle_row(c, tr("set_lbl_tts_auto"), "tts_auto_detect")
         ctk.CTkLabel(frame,
                      text=tr("set_tts_auto_help"),
-                     font=(F, 10), text_color="#555555",
+                     font=(F, 10), text_color="#64748B",
                      justify="left").pack(anchor="w", padx=28, pady=(4, 16))
         # Reading speed
         c2 = self._card(frame)
@@ -550,6 +623,7 @@ class SettingsPanel(ctk.CTkToplevel):
         c = self._card(frame)
         plan = getattr(self.app, 'user_cache', {}).get('plan_type', 'Trial')
         ctk.CTkLabel(c, text=tr("set_current_plan", plan=plan),
+                     text_color="#1A1A2E",
                      font=(F, 14, "bold")).pack(padx=16, pady=(16, 4))
 
         # Plans table
@@ -560,33 +634,41 @@ class SettingsPanel(ctk.CTkToplevel):
             (tr("set_plan_team"),  tr("set_plan_team_price"),  tr("set_plan_team_feat"),  ""),
         ]
         for pname, price, features, badge in plans:
-            pr = ctk.CTkFrame(c, fg_color="#1E1E1E", corner_radius=6)
-            pr.pack(fill="x", padx=16, pady=3)
+            pr = ctk.CTkFrame(c, fg_color="#FFFFFF", corner_radius=8,
+                              border_width=1, border_color="#E2E6F0")
+            pr.pack(fill="x", padx=16, pady=4)
             ctk.CTkLabel(pr, text=f"{badge} {pname}",
-                         font=(F, 11, "bold"), width=80).pack(side="left", padx=12, pady=8)
+                         text_color="#1A1A2E",
+                         font=(F, 11, "bold"), width=80).pack(side="left", padx=12, pady=10)
             ctk.CTkLabel(pr, text=price,
-                         font=(F, 11), text_color="#4FC3F7", width=100).pack(side="left")
+                         font=(F, 11, "bold"), text_color="#2563EB", width=100).pack(side="left")
             ctk.CTkLabel(pr, text=features,
-                         font=(F, 10), text_color="#888888").pack(side="left", padx=8)
+                         font=(F, 10), text_color="#64748B").pack(side="left", padx=8)
 
-        ctk.CTkButton(c, text=tr("set_btn_subscribe"), height=36,
-                      fg_color="#1A5A1A", hover_color="#2A7A2A",
+        ctk.CTkButton(c, text=tr("set_btn_subscribe"), height=38,
+                      fg_color="#2E7D32", hover_color="#43A047",
+                      text_color="#FFFFFF", font=(F, 12, "bold"),
+                      corner_radius=8,
                       command=lambda: webbrowser.open(f"{BACKEND_BASE}/pricing")
-                      ).pack(fill="x", padx=16, pady=(12, 16))
+                      ).pack(fill="x", padx=16, pady=(14, 16))
 
     # -- TAB: About ------------------------------------------------
     def _build_about_tab(self):
         frame = self._scroll_frame(self.content_area)
         self._tab_frames["about"] = frame
 
-        ctk.CTkLabel(frame, text=APP_NAME, font=(F, 22, "bold")).pack(pady=(40, 4))
+        ctk.CTkLabel(frame, text=APP_NAME, text_color="#0F1A3A",
+                     font=(F, 22, "bold")).pack(pady=(40, 4))
         ctk.CTkLabel(frame, text=tr("set_about_version", ver=APP_VERSION),
-                     font=(F, 12), text_color="#777777").pack()
+                     font=(F, 12), text_color="#64748B").pack()
         ctk.CTkLabel(frame, text=tr("set_about_powered"),
-                     font=(F, 11), text_color="#888888",
+                     font=(F, 11), text_color="#64748B",
                      justify="center").pack(pady=(12, 4))
         ctk.CTkButton(frame, text=tr("set_btn_visit_website"),
+                      fg_color="#3D5AFE", hover_color="#5070FF",
+                      text_color="#FFFFFF", font=(F, 12, "bold"),
+                      corner_radius=8, height=36, width=180,
                       command=lambda: webbrowser.open("https://ejobsit.com")
-                      ).pack(pady=8)
+                      ).pack(pady=10)
         ctk.CTkLabel(frame, text=tr("set_about_copyright"),
-                     font=(F, 9), text_color="#444444").pack(pady=(20, 4))
+                     font=(F, 9), text_color="#A0A0AC").pack(pady=(20, 4))

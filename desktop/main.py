@@ -204,7 +204,7 @@ def silent_restart(app_instance=None):
 
 # Firebase removed - Uses API now
 
-ctk.set_appearance_mode("Dark")
+ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
 # CustomTkinter widget scaling for crisp text on high-DPI displays.
@@ -852,11 +852,53 @@ class VoiceTypingApp(ctk.CTk):
 
     @staticmethod
     def _calc_tools_panel_w(btn_s):
-        """Pen tools panel width. Floored at 440px so every tool stays visible
-        at all widget sizes (XS/S/M/L/XL) using the compact toolbar layout;
-        at larger sizes it scales up proportionally."""
+        """Pen tools panel width — initial estimate, refined by actual
+        measurement after the toolbar renders (see _refit_panel_to_toolbar).
+
+        The estimate floor (320) is chosen so XS/S widgets don't get a hard
+        440px container around a 290–340px toolbar, which produced visible
+        right-side empty space. Once the toolbar mounts we measure
+        winfo_reqwidth() and tighten the container to actual content."""
         scale = btn_s / 72.0
-        return max(440, int(450 * scale))
+        # Linear estimate matching observed embedded-toolbar content widths:
+        # scale 0.667 → ~310,  0.778 → ~360,  1.0 → ~445,  1.167 → ~520,
+        # 1.333 → ~590. Floor 320 keeps the smallest preset just barely
+        # roomier than its measured content (~290px) so the measurement
+        # step never has to expand, only shrink.
+        return max(320, int(445 * scale))
+
+    def _refit_panel_to_toolbar(self):
+        """Tighten the panel container to the toolbar's actual rendered width.
+
+        The toolbar is ``pack(fill="both", expand=True)`` inside
+        ``_panel_container`` which has ``pack_propagate(False)`` so the
+        container's set width wins. After mount, the toolbar's natural
+        ``winfo_reqwidth()`` reflects exactly how wide the buttons + paddings
+        are. Setting the container to that + tiny margin removes any
+        right-side gap at small widget sizes (XS/S) where the linear
+        estimate slightly overshoots."""
+        try:
+            tb = getattr(self, '_pen_toolbar', None)
+            if not tb or not getattr(self, '_pen_tools_expanded', False):
+                return
+            root = tb.get_root_widget()
+            root.update_idletasks()
+            req = root.winfo_reqwidth()
+            if req <= 1:
+                return
+            # +4px margin so border/highlightthickness doesn't clip
+            target = req + 4
+            preset = self.settings.get("size_preset", "medium")
+            btn_s = self.BTN_SIZES.get(preset, 72)
+            base_w, h = self._calc_dims(btn_s)
+            self._panel_container.configure(width=target, height=h)
+            try:
+                wx, wy = self.winfo_x(), self.winfo_y()
+            except Exception:
+                wx, wy = 0, 0
+            self.geometry(f"{base_w + target}x{h}+{wx}+{wy}")
+        except Exception:
+            pass
 
     def init_ui(self):
         import tkinter as tk
@@ -1062,6 +1104,10 @@ class VoiceTypingApp(ctk.CTk):
                 self._pen_toolbar.set_scale(scale)
             except Exception:
                 pass
+            # After the toolbar reflows at the new scale, tighten the panel
+            # container to its actual measured width — eliminates any gap at
+            # XS/S sizes where the linear estimate slightly overshoots.
+            self.after(60, self._refit_panel_to_toolbar)
 
         # Scale tool buttons
         tool_font = max(10, int(13 * scale))
@@ -1262,6 +1308,9 @@ class VoiceTypingApp(ctk.CTk):
             if i >= steps:
                 self._panel_container.configure(width=panel_w)
                 self.geometry(f"{target_w}x{h}+{wx}+{wy}")
+                # Open animation done — now measure actual toolbar width and
+                # tighten the container so there's no gap on the right.
+                self.after(40, self._refit_panel_to_toolbar)
                 return
             pw_so_far += step_pw
             pw_int = int(pw_so_far)

@@ -16,7 +16,7 @@ from typing import List, Tuple, Optional
 
 @dataclass
 class Stroke:
-    """Single drawn stroke or text item."""
+    """Single drawn stroke, text item, or shape."""
     points: List[Tuple[float, float]] = field(default_factory=list)
     color: str = "#FF0000"
     width: int = 4
@@ -30,6 +30,11 @@ class Stroke:
     font_size: int = 16
     anchor: str = "nw"  # canvas text anchor: "nw" for top-left growth
     wrap_width: int = 0  # 0 = auto-wrap to canvas edge; >0 = drag-defined box width
+    # Shape-specific fields (round 6: fixed-shape tools)
+    # is_shape=True + shape_kind ∈ {"arrow","circle","rtri","etri","rect","hex"}
+    # When is_shape, points = [(x1,y1),(x2,y2)] = drag bounding box (anchor + drag end).
+    is_shape: bool = False
+    shape_kind: str = ""
 
 
 class DrawingEngine:
@@ -117,6 +122,22 @@ class DrawingEngine:
         self._text_drag_rect_id = None
         self._text_wrap_w = 0  # last-used text wrap width (0 = auto)
 
+        # Shape tool state (round 6)
+        # When _tool starts with "shape_", a click-drag-release creates one
+        # of: arrow, circle, right-triangle, equilateral-triangle, rectangle,
+        # hexagon. _shape_drag_start holds the press position; _shape_preview_id
+        # is the live preview canvas item we replace each move event.
+        self._shape_drag_start = None
+        self._shape_preview_id = None
+
+    SHAPE_KINDS = ("arrow", "circle", "rtri", "etri", "rect", "hex")
+
+    def _is_shape_tool(self):
+        return self._tool.startswith("shape_") and self._tool[6:] in self.SHAPE_KINDS
+
+    def _current_shape_kind(self):
+        return self._tool[6:] if self._is_shape_tool() else ""
+
     # ── Public API (called by toolbar) ────────────────
 
     def set_color(self, color: str):
@@ -196,6 +217,14 @@ class DrawingEngine:
     def on_mouse_down(self, event):
         x, y = event.x, event.y
 
+        # Fixed-shape tool: just record the press; draw on move, commit on up.
+        if self._is_shape_tool():
+            if self._text_active:
+                self._finalize_text()
+            self._shape_drag_start = (x, y)
+            self._shape_preview_id = None
+            return
+
         if self._tool == "text":
             # If clicking on currently active text, start drag-select
             if self._text_active and self._text_canvas_id:
@@ -252,6 +281,21 @@ class DrawingEngine:
         self._current_stroke.canvas_ids.append(dot_id)
 
     def on_mouse_move(self, event):
+        # Fixed-shape tool live preview (round 6) — redraw dashed outline
+        # from press point to current cursor on each move event.
+        if self._is_shape_tool() and self._shape_drag_start is not None:
+            sx, sy = self._shape_drag_start
+            if self._shape_preview_id is not None:
+                try:
+                    self._canvas.delete(self._shape_preview_id)
+                except tk.TclError:
+                    pass
+            self._shape_preview_id = self._render_shape(
+                self._current_shape_kind(),
+                sx, sy, event.x, event.y,
+                self._pen_color, self._pen_width, preview=True)
+            return
+
         # Text drag-to-create-box preview (Photoshop style)
         if self._tool == "text" and self._text_drag_start is not None:
             sx, sy = self._text_drag_start
@@ -319,6 +363,36 @@ class DrawingEngine:
 
     def on_mouse_up(self, event):
         self._cancel_shape_hold()
+
+        # Fixed-shape tool commit (round 6): replace dashed preview with
+        # the final solid shape and store as a Stroke for undo/erase.
+        if self._is_shape_tool() and self._shape_drag_start is not None:
+            sx, sy = self._shape_drag_start
+            ex, ey = event.x, event.y
+            kind = self._current_shape_kind()
+            self._shape_drag_start = None
+            if self._shape_preview_id is not None:
+                try:
+                    self._canvas.delete(self._shape_preview_id)
+                except tk.TclError:
+                    pass
+                self._shape_preview_id = None
+            # Tiny click → ignore (no shape worth committing)
+            if abs(ex - sx) < 3 and abs(ey - sy) < 3:
+                return
+            cid = self._render_shape(
+                kind, sx, sy, ex, ey,
+                self._pen_color, self._pen_width, preview=False)
+            if cid is None:
+                return
+            stroke = Stroke(
+                points=[(sx, sy), (ex, ey)],
+                color=self._pen_color, width=self._pen_width,
+                canvas_ids=[cid], is_shape=True, shape_kind=kind,
+            )
+            self._strokes.append(stroke)
+            self._undo_stack.clear()
+            return
 
         # Text drag-to-create-box (Photoshop/OneNote style):
         #   click without drag → start text at click position (auto-wrap to canvas edge)
@@ -1149,6 +1223,91 @@ class DrawingEngine:
         self._strokes.append(stroke)
         self._undo_stack.clear()
 
+    # ── Fixed-shape tool (round 6) ───────────────────
+
+    def _render_shape(self, kind, x1, y1, x2, y2, color, width,
+                      preview=False):
+        """Draw one of the six fixed shapes between (x1,y1) and (x2,y2).
+
+        Returns the canvas item id (single id for all six shapes — preview
+        uses dashed outline so user sees what they're about to commit).
+
+        Shapes are derived from the drag bounding-box:
+          - arrow:  from press to release with arrow head at release
+          - circle: oval inscribed in bbox
+          - rect:   the bbox itself (outline only)
+          - rtri:   right triangle with right-angle at bottom-left of bbox
+          - etri:   equilateral triangle inscribed in bbox (apex up)
+          - hex:    regular hexagon inscribed in bbox (flat-top)"""
+        dash = (4, 3) if preview else None
+        tag = "shape_preview" if preview else "stroke"
+        common = dict(outline=color, width=max(1, int(width)), tags=tag)
+        if dash:
+            common["dash"] = dash
+
+        if kind == "arrow":
+            # Arrow goes from press point to release point. Arrow head must
+            # scale with the stroke width — at width=2 the default tk shape
+            # (8,10,3) was reasonable, but at width=20 the head looked tiny
+            # next to the shaft. Formula: head grows roughly 3-4× the width.
+            #   d1: distance from tip to shaft join along centreline
+            #   d2: total length of the head (tip → wing tail)
+            #   d3: half-width of the head (wing extent perpendicular)
+            w_eff = max(1, int(width))
+            d1 = max(8, int(w_eff * 3 + 2))
+            d2 = max(10, int(w_eff * 4 + 2))
+            d3 = max(3, int(w_eff * 1.6 + 1))
+            return self._canvas.create_line(
+                x1, y1, x2, y2, fill=color, width=w_eff,
+                arrow=tk.LAST, arrowshape=(d1, d2, d3),
+                capstyle=tk.ROUND, tags=tag,
+                **({"dash": dash} if dash else {}))
+
+        # Normalize bbox for the rest
+        ax, bx = (x1, x2) if x1 <= x2 else (x2, x1)
+        ay, by = (y1, y2) if y1 <= y2 else (y2, y1)
+        # Guarantee min size so degenerate clicks still produce visible shape
+        if bx - ax < 2: bx = ax + 2
+        if by - ay < 2: by = ay + 2
+
+        if kind == "circle":
+            return self._canvas.create_oval(ax, ay, bx, by, **common)
+        if kind == "rect":
+            return self._canvas.create_rectangle(ax, ay, bx, by, **common)
+        if kind == "rtri":
+            # Right angle at bottom-left
+            pts = [ax, by, bx, by, ax, ay]
+            return self._canvas.create_polygon(
+                *pts, fill="", outline=color, width=max(1, int(width)),
+                tags=tag, **({"dash": dash} if dash else {}))
+        if kind == "etri":
+            # Equilateral with apex centered at top of bbox
+            cx = (ax + bx) / 2.0
+            pts = [cx, ay, bx, by, ax, by]
+            return self._canvas.create_polygon(
+                *pts, fill="", outline=color, width=max(1, int(width)),
+                tags=tag, **({"dash": dash} if dash else {}))
+        if kind == "hex":
+            # Regular flat-top hexagon inscribed in bbox
+            cx = (ax + bx) / 2.0
+            cy = (ay + by) / 2.0
+            rx = (bx - ax) / 2.0
+            ry = (by - ay) / 2.0
+            # 6 vertices for flat-top hex: top-left, top-right, right,
+            # bottom-right, bottom-left, left
+            pts = [
+                cx - rx / 2, ay,
+                cx + rx / 2, ay,
+                bx, cy,
+                cx + rx / 2, by,
+                cx - rx / 2, by,
+                ax, cy,
+            ]
+            return self._canvas.create_polygon(
+                *pts, fill="", outline=color, width=max(1, int(width)),
+                tags=tag, **({"dash": dash} if dash else {}))
+        return None
+
     # ── Eraser ────────────────────────────────────────
 
     def _erase_at(self, x, y):
@@ -1195,6 +1354,23 @@ class DrawingEngine:
                 stroke.points[0][0], stroke.points[0][1], **kwargs
             )
             stroke.canvas_ids = [tid]
+            self._strokes.append(stroke)
+            return
+
+        # Round 6: redo for fixed shape strokes (arrow / circle / triangles
+        # / rect / hex). Re-render via the same _render_shape path used at
+        # commit time so the visual is identical to the original.
+        if getattr(stroke, "is_shape", False):
+            stroke.canvas_ids.clear()
+            try:
+                (sx, sy), (ex, ey) = stroke.points[0], stroke.points[1]
+            except (IndexError, ValueError):
+                return
+            cid = self._render_shape(
+                stroke.shape_kind, sx, sy, ex, ey,
+                stroke.color, stroke.width, preview=False)
+            if cid is not None:
+                stroke.canvas_ids = [cid]
             self._strokes.append(stroke)
             return
 

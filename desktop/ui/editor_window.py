@@ -46,8 +46,12 @@ PAGE_PRESETS = {
 }
 
 GAP = 30          # pixels between pages
-BG_COLOR = "#2B2B35"
-PAGE_SHADOW = "#1A1A22"
+# Light-theme editor canvas — refined palette matching settings panel for
+# coherent international-quality look. Slight blue-grey tint reads as
+# professional / Office-like, distinct enough from the toolbar (#F0F2F8)
+# that the toolbar reads as elevated above the canvas.
+BG_COLOR = "#E9ECF3"      # canvas background — cool light grey
+PAGE_SHADOW = "#CBD5E1"   # subtle shadow under each page
 SESSION_FILE = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')),
                             'DualVoicer', 'editor_session.dvai')
 
@@ -74,10 +78,11 @@ class EditorPage:
             4, y_offset + 4, width + 4, y_offset + height + 4,
             fill=PAGE_SHADOW, outline="", tags="page_bg"
         )
-        # Page rectangle
+        # Page rectangle — soft light border so it reads as a paper sheet
+        # against the cool grey canvas without heavy outlines.
         self._rect_id = canvas.create_rectangle(
             0, y_offset, width, y_offset + height,
-            fill="white", outline="#444", width=1, tags="page_bg"
+            fill="white", outline="#CBD5E1", width=1, tags="page_bg"
         )
 
         # Background image
@@ -443,14 +448,17 @@ class EditorWindow(tk.Toplevel):
 
     _supports_view_mode = False  # No click-through toggle in editor
 
-    # ── Unified toolbar theme (professional) ──
-    TB_BG = "#1A1A2E"
-    TB_BG_ACTIVE = "#3D5AFE"
-    TB_BG_HOVER = "#2A2A45"
-    TB_ACCENT = "#3D5AFE"
-    TB_TEXT = "#C8C8DC"
-    TB_TEXT_DIM = "#787890"
-    TB_BORDER = "#2E2E4A"
+    # ── Unified toolbar theme — refined light palette ──
+    # Matches settings panel sidebar (#F0F2F8) for visual coherence across
+    # the app. Slight blue-grey tint reads as Office-like / professional;
+    # softer borders + cool muted text give an international-quality feel.
+    TB_BG = "#F0F2F8"          # toolbar panel — same as settings sidebar
+    TB_BG_ACTIVE = "#3D5AFE"   # active tool — brand blue
+    TB_BG_HOVER = "#E2E6F0"    # hover — softer cool grey
+    TB_ACCENT = "#3D5AFE"      # accent ring on active swatches / brand
+    TB_TEXT = "#1A1A2E"        # main text — deep navy on light
+    TB_TEXT_DIM = "#64748B"    # secondary — slate grey
+    TB_BORDER = "#E2E6F0"      # divider/border — barely-there cool grey
     ICON_PEN = "\u270f\ufe0f"
     ICON_HIGHLIGHTER = "\U0001f58d\ufe0f"
     ICON_ERASER = "\U0001f9f9"
@@ -551,7 +559,7 @@ class EditorWindow(tk.Toplevel):
             kw["width"] = width
         btn = tk.Button(parent, text=text, bg=_bg, fg=_fg, font=_font,
                         relief="flat", bd=0, padx=6, pady=3, cursor="hand2",
-                        activebackground=self.TB_BG_HOVER, activeforeground="#FFF",
+                        activebackground=self.TB_BG_HOVER, activeforeground="#1A1A2E",
                         command=command, **kw)
         # Hover effect
         normal_bg = _bg
@@ -570,7 +578,7 @@ class EditorWindow(tk.Toplevel):
             tip = tk.Toplevel(widget)
             tip.wm_overrideredirect(True)
             tip.wm_geometry(f"+{e.x_root+10}+{e.y_root-28}")
-            lbl = tk.Label(tip, text=text, bg="#1E1E32", fg="#E0E0E0",
+            lbl = tk.Label(tip, text=text, bg="#FFFFE0", fg="#1A1A2E",
                            font=("Segoe UI", 8), relief="solid", bd=1, padx=4, pady=2)
             lbl.pack()
         def hide(e):
@@ -594,9 +602,12 @@ class EditorWindow(tk.Toplevel):
         # ── Main container with top accent border ──
         self._toolbar_frame = tk.Frame(self, bg=bg)
         self._toolbar_frame.pack(fill="x", side="bottom")
-        tk.Frame(self._toolbar_frame, bg=self.TB_ACCENT, height=2).pack(fill="x")
+        # Subtle 1px top divider — soft cool grey, not a heavy brand accent.
+        # Brand colour shows up via active button states + slider thumbs
+        # instead, which is more modern / less gaudy than a coloured strip.
+        tk.Frame(self._toolbar_frame, bg="#E2E6F0", height=1).pack(fill="x")
 
-        bar = tk.Frame(self._toolbar_frame, bg=bg, padx=6, pady=4)
+        bar = tk.Frame(self._toolbar_frame, bg=bg, padx=8, pady=6)
         bar.pack(fill="x")
 
         # ═══════════════════════════════════════════════════
@@ -689,6 +700,33 @@ class EditorWindow(tk.Toplevel):
         self._tb_separator(bar)
 
         # ═══════════════════════════════════════════════════
+        # ── GROUP 3.5: Fixed Shape Tools (round 7) ──
+        #   Same set as the embedded toolbar: arrow / circle /
+        #   right-tri / equi-tri / rect / hex. Shares pen colour and width.
+        # ═══════════════════════════════════════════════════
+        shape_grp = tk.Frame(bar, bg=bg)
+        shape_grp.pack(side="left")
+
+        SHAPE_DEFS = [
+            ("arrow", "\u27a4", "Arrow"),
+            ("circle", "\u25cb", "Circle"),
+            ("rtri", "\u25e3", "Right Triangle"),
+            ("etri", "\u25b3", "Equilateral Triangle"),
+            ("rect", "\u25ad", "Rectangle"),
+            ("hex", "\u2b21", "Hexagon"),
+        ]
+        self._tb_shape_btns = {}
+        for kind, glyph, tip in SHAPE_DEFS:
+            sb = self._tb_make_btn(
+                shape_grp, glyph,
+                (lambda k=kind: self._toggle_draw_tool(f"shape_{k}")),
+                font=("Segoe UI Symbol", 11), tooltip=tip)
+            sb.pack(side="left", padx=1)
+            self._tb_shape_btns[kind] = sb
+
+        self._tb_separator(bar)
+
+        # ═══════════════════════════════════════════════════
         # ── GROUP 4: Font Dropdown ──
         # ═══════════════════════════════════════════════════
         try:
@@ -708,13 +746,15 @@ class EditorWindow(tk.Toplevel):
         self._tb_font_menu = tk.OptionMenu(bar, self._tb_font_var,
             *font_list, command=self._tb_on_font_change)
         self._tb_font_menu.configure(
-            bg="#16162A", fg=self.TB_TEXT, font=("Segoe UI", 8),
-            highlightthickness=0, bd=1, relief="solid", width=9, anchor="w",
-            activebackground=self.TB_BG_HOVER, activeforeground="#FFF",
+            bg="#FFFFFF", fg=self.TB_TEXT, font=("Segoe UI", 9),
+            highlightthickness=1, highlightbackground="#CBD5E1",
+            bd=0, relief="flat", width=10, anchor="w",
+            activebackground=self.TB_BG_HOVER, activeforeground="#1A1A2E",
             cursor="hand2")
         self._tb_font_menu["menu"].configure(
-            bg="#16162A", fg=self.TB_TEXT, font=("Segoe UI", 9),
-            activebackground=self.TB_BG_ACTIVE, activeforeground="#FFF")
+            bg="#FFFFFF", fg=self.TB_TEXT, font=("Segoe UI", 9),
+            activebackground=self.TB_BG_ACTIVE, activeforeground="#FFFFFF",
+            bd=1, relief="solid")
         self._tb_font_menu.pack(side="left", padx=3)
 
         self._tb_separator(bar)
@@ -730,7 +770,7 @@ class EditorWindow(tk.Toplevel):
         for hex_color, name in self.TB_COLORS:
             btn = tk.Canvas(color_grp, width=16, height=16,
                             bg=hex_color, highlightthickness=1,
-                            highlightbackground="#555", cursor="hand2")
+                            highlightbackground="#CBD5E1", cursor="hand2")
             btn.pack(side="left", padx=2, pady=2)
             btn.bind("<Button-1>", lambda e, c=hex_color: self._tb_set_color(c))
             self._tb_color_btns[hex_color] = btn
@@ -754,13 +794,36 @@ class EditorWindow(tk.Toplevel):
         self._tb_pen_slider = tk.Scale(
             slider_grp, from_=1, to=100, orient="horizontal",
             variable=self._tb_thickness_var, length=60, sliderlength=14,
-            showvalue=False, bg=bg, fg=self.TB_TEXT, troughcolor="#16162A",
+            showvalue=False, bg=bg, fg=self.TB_TEXT, troughcolor="#E2E6F0",
             highlightthickness=0, bd=0, activebackground=self.TB_ACCENT,
             command=self._tb_on_thickness_change)
         self._tb_pen_slider.pack(side="left", padx=(2, 0))
-        self._tb_pen_val = tk.Label(slider_grp, text="4", bg=bg,
-            fg=self.TB_ACCENT, font=("Segoe UI", 8, "bold"), width=3, anchor="w")
-        self._tb_pen_val.pack(side="left")
+
+        # Pen-width value with click-to-toggle ◀ / ▶ steppers (round 7).
+        # Same UX as the embedded toolbar: click the number to reveal
+        # tiny inc/dec buttons that bump the value by ±1.
+        self._tb_pen_stepper_frame = tk.Frame(slider_grp, bg=bg)
+        self._tb_pen_stepper_frame.pack(side="left")
+        self._tb_pen_dec = tk.Button(
+            self._tb_pen_stepper_frame, text="\u25c0", bg=bg, fg=self.TB_TEXT_DIM,
+            font=("Segoe UI Symbol", 7), relief="flat", bd=0, padx=1, pady=0,
+            cursor="hand2", activebackground=self.TB_BG_HOVER,
+            command=lambda: self._tb_step_pen(-1))
+        self._tb_pen_dec.grid(row=0, column=0)
+        self._tb_pen_dec.grid_remove()
+        self._tb_pen_val = tk.Label(self._tb_pen_stepper_frame, text="4", bg=bg,
+            fg=self.TB_ACCENT, font=("Segoe UI", 8, "bold"),
+            width=3, anchor="center", cursor="hand2")
+        self._tb_pen_val.grid(row=0, column=1)
+        self._tb_pen_val.bind("<Button-1>", self._tb_toggle_pen_stepper)
+        self._tb_pen_inc = tk.Button(
+            self._tb_pen_stepper_frame, text="\u25b6", bg=bg, fg=self.TB_TEXT_DIM,
+            font=("Segoe UI Symbol", 7), relief="flat", bd=0, padx=1, pady=0,
+            cursor="hand2", activebackground=self.TB_BG_HOVER,
+            command=lambda: self._tb_step_pen(1))
+        self._tb_pen_inc.grid(row=0, column=2)
+        self._tb_pen_inc.grid_remove()
+        self._tb_pen_stepper_visible = False
 
         # Font size
         tk.Label(slider_grp, text="T", bg=bg, fg=self.TB_TEXT_DIM,
@@ -769,7 +832,7 @@ class EditorWindow(tk.Toplevel):
         self._tb_font_slider = tk.Scale(
             slider_grp, from_=8, to=72, orient="horizontal",
             variable=self._tb_fontsize_var, length=60, sliderlength=14,
-            showvalue=False, bg=bg, fg=self.TB_TEXT, troughcolor="#16162A",
+            showvalue=False, bg=bg, fg=self.TB_TEXT, troughcolor="#E2E6F0",
             highlightthickness=0, bd=0, activebackground=self.TB_ACCENT,
             command=self._tb_on_font_size_change)
         self._tb_font_slider.pack(side="left", padx=(2, 0))
@@ -794,14 +857,14 @@ class EditorWindow(tk.Toplevel):
         # ── RIGHT SIDE: Close + Fullscreen ──
         # ═══════════════════════════════════════════════════
         # Close button (distinct red)
-        close_btn = tk.Button(bar, text=self.ICON_CLOSE, bg="#6B1D30",
-                              fg="#FFD0D0", font=("Segoe UI", 10, "bold"),
+        close_btn = tk.Button(bar, text=self.ICON_CLOSE, bg="#E53935",
+                              fg="#FFFFFF", font=("Segoe UI", 10, "bold"),
                               relief="flat", bd=0, padx=8, pady=3, cursor="hand2",
-                              activebackground="#9B2D45", activeforeground="#FFF",
+                              activebackground="#FF5252", activeforeground="#FFFFFF",
                               command=self._on_close_window)
         close_btn.pack(side="right", padx=(4, 0))
-        close_btn.bind("<Enter>", lambda e: close_btn.configure(bg="#9B2D45"))
-        close_btn.bind("<Leave>", lambda e: close_btn.configure(bg="#6B1D30"))
+        close_btn.bind("<Enter>", lambda e: close_btn.configure(bg="#FF5252"))
+        close_btn.bind("<Leave>", lambda e: close_btn.configure(bg="#E53935"))
         self._tb_add_tooltip(close_btn, tr("tip_close"))
 
         # Fullscreen
@@ -814,9 +877,16 @@ class EditorWindow(tk.Toplevel):
 
     def _toggle_draw_tool(self, tool):
         """Toggle drawing tool - set active, update icons."""
+        # Round 7: shape tools clicked twice fall back to pen instead of
+        # select, so the user can keep drawing freehand without an extra
+        # click on the pen icon. (Aligns with embedded toolbar behaviour.)
         if self._active_tool == tool:
-            self._active_tool = "select"
-            self.set_tool("select")
+            if isinstance(tool, str) and tool.startswith("shape_"):
+                self._active_tool = "pen"
+                self.set_tool("pen")
+            else:
+                self._active_tool = "select"
+                self.set_tool("select")
         else:
             self._active_tool = tool
             self.set_tool(tool)
@@ -851,6 +921,48 @@ class EditorWindow(tk.Toplevel):
                 btn.bind("<Leave>", lambda e, b=btn: b.configure(bg=self.TB_BG))
                 if tool == "pen":
                     btn.configure(text=self.ICON_PEN)
+        # Round 7: highlight active shape button.
+        if hasattr(self, '_tb_shape_btns'):
+            for kind, btn in self._tb_shape_btns.items():
+                want = "shape_" + kind
+                if active == want:
+                    btn.configure(bg=self.TB_BG_ACTIVE)
+                    btn.bind("<Enter>", lambda e, b=btn: b.configure(bg=self.TB_BG_ACTIVE))
+                    btn.bind("<Leave>", lambda e, b=btn: b.configure(bg=self.TB_BG_ACTIVE))
+                else:
+                    btn.configure(bg=self.TB_BG)
+                    btn.bind("<Enter>", lambda e, b=btn: b.configure(bg=self.TB_BG_HOVER))
+                    btn.bind("<Leave>", lambda e, b=btn: b.configure(bg=self.TB_BG))
+
+    def _tb_toggle_pen_stepper(self, _evt=None):
+        """Show/hide ◀ ▶ stepper buttons around the pen-width number."""
+        if not hasattr(self, '_tb_pen_stepper_visible'):
+            return
+        self._tb_pen_stepper_visible = not self._tb_pen_stepper_visible
+        try:
+            if self._tb_pen_stepper_visible:
+                self._tb_pen_dec.grid()
+                self._tb_pen_inc.grid()
+            else:
+                self._tb_pen_dec.grid_remove()
+                self._tb_pen_inc.grid_remove()
+        except (AttributeError, tk.TclError):
+            pass
+
+    def _tb_step_pen(self, delta):
+        """Bump pen-thickness slider by ±delta, clamped to [1, 100]."""
+        try:
+            cur = int(self._tb_thickness_var.get())
+        except (AttributeError, tk.TclError):
+            return
+        new = max(1, min(100, cur + int(delta)))
+        if new == cur:
+            return
+        try:
+            self._tb_thickness_var.set(new)
+        except tk.TclError:
+            pass
+        self._tb_on_thickness_change(new)
 
     def _tb_set_color(self, color):
         """Set pen color and highlight active swatch with accent ring."""
@@ -858,7 +970,7 @@ class EditorWindow(tk.Toplevel):
         # Reset previous
         if self._tb_active_color_btn:
             self._tb_active_color_btn.configure(
-                highlightbackground="#555", highlightthickness=1)
+                highlightbackground="#CBD5E1", highlightthickness=1)
         btn = self._tb_color_btns.get(color)
         if btn:
             btn.configure(highlightbackground=self.TB_ACCENT, highlightthickness=2)
@@ -1030,11 +1142,11 @@ class EditorWindow(tk.Toplevel):
     # ── Menu ──────────────────────────────────────────
 
     def _build_menu(self):
-        self._menubar = tk.Menu(self, bg="#1E1E28", fg="#AAA",
-                                activebackground="#3A3A50",
-                                activeforeground="#FFF")
-        file_menu = tk.Menu(self._menubar, tearoff=0, bg="#1E1E28", fg="#AAA",
-                            activebackground="#3A3A50", activeforeground="#FFF")
+        self._menubar = tk.Menu(self, bg="#FFFFFF", fg="#1A1A2E",
+                                activebackground="#E0E5FF",
+                                activeforeground="#1A1A2E")
+        file_menu = tk.Menu(self._menubar, tearoff=0, bg="#FFFFFF", fg="#1A1A2E",
+                            activebackground="#3D5AFE", activeforeground="#FFFFFF")
         file_menu.add_command(label=tr("menu_new"), command=self._new_file_dialog,
                               accelerator="Ctrl+N")
         file_menu.add_command(label=tr("menu_open"), command=self._open_file,
@@ -1046,8 +1158,8 @@ class EditorWindow(tk.Toplevel):
         file_menu.add_command(label=tr("menu_save_as"), command=self._save_as)
         file_menu.add_separator()
 
-        export_menu = tk.Menu(file_menu, tearoff=0, bg="#1E1E28", fg="#AAA",
-                              activebackground="#3A3A50", activeforeground="#FFF")
+        export_menu = tk.Menu(file_menu, tearoff=0, bg="#FFFFFF", fg="#1A1A2E",
+                              activebackground="#3D5AFE", activeforeground="#FFFFFF")
         export_menu.add_command(label="PDF", command=lambda: self._export("pdf"))
         export_menu.add_command(label="PNG", command=lambda: self._export("png"))
         export_menu.add_command(label="JPG", command=lambda: self._export("jpg"))
@@ -1062,8 +1174,8 @@ class EditorWindow(tk.Toplevel):
         self._menubar.add_cascade(label=tr("menu_file"), menu=file_menu)
 
         # ── Page menu ──
-        page_menu = tk.Menu(self._menubar, tearoff=0, bg="#1E1E28", fg="#AAA",
-                            activebackground="#3A3A50", activeforeground="#FFF")
+        page_menu = tk.Menu(self._menubar, tearoff=0, bg="#FFFFFF", fg="#1A1A2E",
+                            activebackground="#3D5AFE", activeforeground="#FFFFFF")
         page_menu.add_command(label=tr("menu_add_page"), command=self._add_page_dialog)
         page_menu.add_command(label=tr("menu_delete_page"),
                               command=self._delete_current_page)
@@ -1112,13 +1224,18 @@ class EditorWindow(tk.Toplevel):
         self._canvas.bind("<ButtonPress-3>", self._on_canvas_right_click)
 
     def _build_status_bar(self):
-        self._status = tk.Frame(self, bg="#1E1E28", height=24)
-        self._status.pack(fill="x", side="bottom")
+        # Status bar — wrapped in a 1px top border so it visually detaches
+        # from the canvas above (proper toolbar/statusbar elevation).
+        self._status_outer = tk.Frame(self, bg="#E2E6F0")
+        self._status_outer.pack(fill="x", side="bottom")
+        tk.Frame(self._status_outer, bg="#E2E6F0", height=1).pack(fill="x")
+        self._status = tk.Frame(self._status_outer, bg="#F7F8FB", height=26)
+        self._status.pack(fill="x")
         self._status_label = tk.Label(
             self._status, text="",
-            bg="#1E1E28", fg="#666", font=("Segoe UI", 8)
+            bg="#F7F8FB", fg="#374151", font=("Segoe UI", 9)
         )
-        self._status_label.pack(side="left", padx=8)
+        self._status_label.pack(side="left", padx=12, pady=4)
 
     def _update_status(self):
         tool_keys = {"pen": "tool_pen", "highlighter": "tool_highlighter",
@@ -1179,14 +1296,14 @@ class EditorWindow(tk.Toplevel):
 
             plus_y = y - GAP // 2
             bid = self._canvas.create_text(
-                center_x, plus_y, text="＋", fill="#555",
+                center_x, plus_y, text="＋", fill="#94A3B8",
                 font=("Segoe UI", 16, "bold"), tags="plus_btn"
             )
             self._plus_buttons.append(bid)
             # Page number label
             num_id = self._canvas.create_text(
                 center_x, plus_y + 20, text=f"── {i + 1} ──",
-                fill="#555", font=("Segoe UI", 9), tags="page_label"
+                fill="#94A3B8", font=("Segoe UI", 9), tags="page_label"
             )
             self._page_number_labels.append(num_id)
             self._canvas.tag_bind(bid, "<ButtonPress-1>",
@@ -1367,8 +1484,8 @@ class EditorWindow(tk.Toplevel):
             return
         cx, cy = self._canvas_coords(event)
         page_idx = self._get_page_at(cy)
-        menu = tk.Menu(self._canvas, tearoff=0, bg="#2A2A40", fg="#CCC",
-                       activebackground="#4A4A6A", activeforeground="#FFF")
+        menu = tk.Menu(self._canvas, tearoff=0, bg="#FFFFFF", fg="#1A1A2E",
+                       activebackground="#3D5AFE", activeforeground="#FFFFFF")
         menu.add_command(
             label=f"{tr('menu_delete_page')} ({(page_idx or 0) + 1})",
             command=lambda: self._delete_page(page_idx)
@@ -1413,7 +1530,7 @@ class EditorWindow(tk.Toplevel):
         self._fullscreen = not self._fullscreen
         self.attributes('-fullscreen', self._fullscreen)
         if self._fullscreen:
-            self._status.pack_forget()
+            self._status_outer.pack_forget()
             self.config(menu="")
             for bid in self._plus_buttons:
                 self._canvas.itemconfigure(bid, state="hidden")
@@ -1424,7 +1541,7 @@ class EditorWindow(tk.Toplevel):
             self._fit_page_to_screen()
         else:
             self.config(menu=self._menubar)
-            self._status.pack(fill="x", side="bottom")
+            self._status_outer.pack(fill="x", side="bottom")
             for bid in self._plus_buttons:
                 self._canvas.itemconfigure(bid, state="normal")
             for lid in self._page_number_labels:
@@ -1468,53 +1585,83 @@ class EditorWindow(tk.Toplevel):
     ]
 
     def _new_file_dialog(self):
+        # International-quality dialog: cool-grey backdrop, white card-style
+        # buttons with soft borders, blue accent for hover. Matches the
+        # toolbar/settings palette so transitions feel cohesive.
         dialog = tk.Toplevel(self)
         dialog.title(tr("dlg_new_file_title"))
-        dialog.geometry("320x480")
-        dialog.configure(bg="#2A2A40")
+        dialog.geometry("360x560")
+        dialog.configure(bg="#F0F2F8")
         dialog.transient(self)
         dialog.grab_set()
 
-        tk.Label(dialog, text=tr("dlg_lbl_background"),
-                 bg="#2A2A40", fg="#CCC", font=("Segoe UI", 11, "bold")
-                 ).pack(pady=(10, 5))
+        # Inner content card — white panel on cool sidebar grey
+        content = tk.Frame(dialog, bg="#FFFFFF")
+        content.pack(fill="both", expand=True, padx=14, pady=14)
+
+        tk.Label(content, text=tr("dlg_lbl_background"),
+                 bg="#FFFFFF", fg="#0F1A3A", font=("Segoe UI", 11, "bold")
+                 ).pack(pady=(14, 8))
 
         bg_var = tk.StringVar(value="white")
-        bg_frame = tk.Frame(dialog, bg="#2A2A40")
-        bg_frame.pack(pady=5)
+        bg_frame = tk.Frame(content, bg="#FFFFFF")
+        bg_frame.pack(pady=(0, 6))
         for label, bg_type, preview_color in self.BG_TYPES:
-            f = tk.Frame(bg_frame, bg="#2A2A40")
-            f.pack(side="left", padx=4)
-            swatch = tk.Canvas(f, width=36, height=36, highlightthickness=2,
-                               highlightbackground="#555", bg=preview_color)
+            f = tk.Frame(bg_frame, bg="#FFFFFF")
+            f.pack(side="left", padx=6)
+            swatch = tk.Canvas(f, width=38, height=38, highlightthickness=2,
+                               highlightbackground="#CBD5E1", bg=preview_color)
             swatch.pack()
             rb = tk.Radiobutton(f, text=label, variable=bg_var, value=bg_type,
-                                bg="#2A2A40", fg="#CCC", selectcolor="#2A2A40",
-                                activebackground="#2A2A40", activeforeground="#FFF",
-                                font=("Segoe UI", 8))
-            rb.pack()
+                                bg="#FFFFFF", fg="#374151", selectcolor="#FFFFFF",
+                                activebackground="#FFFFFF",
+                                activeforeground="#3D5AFE",
+                                font=("Segoe UI", 9))
+            rb.pack(pady=(4, 0))
 
-        tk.Label(dialog, text=tr("dlg_lbl_page_size"),
-                 bg="#2A2A40", fg="#CCC", font=("Segoe UI", 11, "bold")
-                 ).pack(pady=(12, 5))
+        # Subtle divider between sections
+        tk.Frame(content, bg="#E2E6F0", height=1).pack(
+            fill="x", padx=24, pady=(14, 8))
+
+        tk.Label(content, text=tr("dlg_lbl_page_size"),
+                 bg="#FFFFFF", fg="#0F1A3A", font=("Segoe UI", 11, "bold")
+                 ).pack(pady=(2, 10))
+
+        # Preset buttons — soft cards with hover lift
+        def _mk_preset(parent, text, cmd):
+            btn = tk.Button(
+                parent, text=text,
+                bg="#F7F8FB", fg="#1A1A2E", font=("Segoe UI", 10),
+                relief="flat", bd=0,
+                activebackground="#3D5AFE", activeforeground="#FFFFFF",
+                width=30, pady=6, cursor="hand2", anchor="w",
+                command=cmd)
+            btn.pack(pady=2, padx=12, fill="x")
+            btn.bind("<Enter>", lambda e: btn.configure(
+                bg="#3D5AFE", fg="#FFFFFF"))
+            btn.bind("<Leave>", lambda e: btn.configure(
+                bg="#F7F8FB", fg="#1A1A2E"))
+            return btn
 
         for name, (w, h) in PAGE_PRESETS.items():
-            tk.Button(
-                dialog, text=f"{name}  ({w}×{h})",
-                bg="#3A3A55", fg="#CCC", font=("Segoe UI", 10),
-                relief="flat", bd=0, activebackground="#4A4A6A",
-                width=28,
-                command=lambda w=w, h=h, d=dialog: (
-                    self._create_new_file(w, h, bg_var.get(), d)
-                )
-            ).pack(pady=2)
+            _mk_preset(
+                content, f"  {name}      {w}×{h}",
+                lambda w=w, h=h, d=dialog: (
+                    self._create_new_file(w, h, bg_var.get(), d)))
 
-        tk.Button(
-            dialog, text=tr("dlg_btn_custom_size"),
-            bg="#3A3A55", fg="#CCC", font=("Segoe UI", 10),
-            relief="flat", bd=0, activebackground="#4A4A6A", width=28,
-            command=lambda: self._custom_size_dialog(dialog, bg_var.get())
-        ).pack(pady=(8, 2))
+        # Divider then custom-size button — visually a "more" affordance
+        tk.Frame(content, bg="#E2E6F0", height=1).pack(
+            fill="x", padx=24, pady=(10, 6))
+        custom = tk.Button(
+            content, text=tr("dlg_btn_custom_size"),
+            bg="#3D5AFE", fg="#FFFFFF", font=("Segoe UI", 10, "bold"),
+            relief="flat", bd=0,
+            activebackground="#5070FF", activeforeground="#FFFFFF",
+            width=30, pady=8, cursor="hand2",
+            command=lambda: self._custom_size_dialog(dialog, bg_var.get()))
+        custom.pack(pady=(4, 8), padx=12, fill="x")
+        custom.bind("<Enter>", lambda e: custom.configure(bg="#5070FF"))
+        custom.bind("<Leave>", lambda e: custom.configure(bg="#3D5AFE"))
 
     def _create_new_file(self, w, h, bg_type, dialog):
         dialog.destroy()
@@ -1630,10 +1777,13 @@ class EditorWindow(tk.Toplevel):
         total = len(doc)
         self._clear_all_pages()
         self.title(f"{tr('editor_title')} - {os.path.basename(path)} ({tr('loading')})")
-        # Progress label on canvas
+        # Progress label on canvas — small white pill, easier to read on the
+        # cool grey canvas backdrop than free-floating dim text.
         self._pdf_progress = tk.Label(
             self._canvas, text=tr("msg_loading_n", i=0, n=total),
-            bg=BG_COLOR, fg="#AAA", font=("Segoe UI", 14))
+            bg="#FFFFFF", fg="#1A1A2E", font=("Segoe UI", 12, "bold"),
+            padx=18, pady=8, relief="flat", bd=0,
+            highlightthickness=1, highlightbackground="#CBD5E1")
         self.update_idletasks()
         cx = max(self._canvas.winfo_width() // 2, 200)
         self._pdf_progress_win = self._canvas.create_window(
