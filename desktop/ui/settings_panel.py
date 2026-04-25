@@ -396,6 +396,94 @@ class SettingsPanel(ctk.CTkToplevel):
                              ["5", "10", "15", "30", "0"], ["5s", "10s", "15s", "30s", "\u221e"])
         # Note: Reading Speed lives in the TTS tab, not here.
 
+        # Keyboard-shortcut overlay
+        self._section(frame, tr("set_sec_kb_overlay"))
+        ctk.CTkLabel(frame, text=tr("set_help_kb_overlay"),
+                     font=(F, 10), text_color="#64748B",
+                     wraplength=560, justify="left"
+                     ).pack(anchor="w", padx=28, pady=(0, 4))
+        kb_card = self._card(frame)
+        # Toggle (auto-applies via apply_kb_overlay_setting)
+        self._toggle_row(kb_card, tr("set_lbl_kb_overlay"),
+                         "show_keyboard_shortcuts",
+                         on_change=getattr(self.app, 'apply_kb_overlay_setting', None))
+        self._divider(kb_card)
+        # Font size slider (integer, 10..36)
+        fs_row = ctk.CTkFrame(kb_card, fg_color="transparent")
+        fs_row.pack(fill="x", padx=16, pady=(6, 0))
+        ctk.CTkLabel(fs_row, text=tr("set_lbl_kb_font_size"),
+                     font=(F, 11), text_color="#374151").pack(side="left")
+        fs_val_lbl = ctk.CTkLabel(fs_row,
+                                   text=f"{int(self.s.get('kb_overlay_font_size', 18))} pt",
+                                   font=(F, 10), text_color="#2563EB", width=50)
+        fs_val_lbl.pack(side="right")
+        def _fs_cb(v):
+            iv = int(round(v))
+            self.s["kb_overlay_font_size"] = iv
+            fs_val_lbl.configure(text=f"{iv} pt")
+            self._persist()
+            cb = getattr(self.app, 'apply_kb_overlay_setting', None)
+            if cb: cb()
+        fs_slider = ctk.CTkSlider(kb_card, from_=10, to=36, number_of_steps=26,
+                                   command=_fs_cb, height=16,
+                                   fg_color="#E2E6F0", progress_color="#3D5AFE",
+                                   button_color="#3D5AFE", button_hover_color="#5070FF")
+        fs_slider.set(int(self.s.get("kb_overlay_font_size", 18)))
+        fs_slider.pack(fill="x", padx=16, pady=(2, 8))
+        # Font color (preset palette + custom picker)
+        ctk.CTkLabel(kb_card, text=tr("set_lbl_kb_font_color"),
+                     font=(F, 11), text_color="#374151").pack(
+            anchor="w", padx=16, pady=(8, 4))
+        clr_row = ctk.CTkFrame(kb_card, fg_color="transparent")
+        clr_row.pack(fill="x", padx=16, pady=(0, 12))
+        _PALETTE = ["#FFFFFF", "#FFE066", "#80E27E", "#5070FF",
+                    "#FF7B7B", "#C792EA", "#000000"]
+        clr_btns = {}
+        cur_color = str(self.s.get("kb_overlay_font_color", "#FFFFFF")).upper()
+        def _select_color(c):
+            self.s["kb_overlay_font_color"] = c
+            for cv, b in clr_btns.items():
+                b.configure(border_width=3 if cv == c else 1,
+                            border_color="#3D5AFE" if cv == c else "#CBD5E1")
+            self._persist()
+            cb = getattr(self.app, 'apply_kb_overlay_setting', None)
+            if cb: cb()
+        for c in _PALETTE:
+            is_active = (c.upper() == cur_color)
+            b = ctk.CTkButton(
+                clr_row, text="", width=32, height=32,
+                fg_color=c, hover_color=c,
+                border_width=3 if is_active else 1,
+                border_color="#3D5AFE" if is_active else "#CBD5E1",
+                corner_radius=6,
+                command=lambda v=c: _select_color(v))
+            b.pack(side="left", padx=3)
+            clr_btns[c] = b
+        # Custom color picker button
+        def _pick_custom_color():
+            try:
+                from tkinter import colorchooser
+                rgb, hexv = colorchooser.askcolor(
+                    color=self.s.get("kb_overlay_font_color", "#FFFFFF"),
+                    title=tr("set_lbl_kb_font_color"))
+                if hexv:
+                    hexv = hexv.upper()
+                    self.s["kb_overlay_font_color"] = hexv
+                    # Deselect palette swatches
+                    for cv, b in clr_btns.items():
+                        b.configure(border_width=1, border_color="#CBD5E1")
+                    self._persist()
+                    cb = getattr(self.app, 'apply_kb_overlay_setting', None)
+                    if cb: cb()
+            except Exception as e:
+                print(f"[settings] color picker failed: {e}")
+        ctk.CTkButton(clr_row, text="…", width=32, height=32,
+                      fg_color="#FFFFFF", hover_color="#F0F2F8",
+                      text_color="#374151", border_width=1,
+                      border_color="#CBD5E1", corner_radius=6,
+                      font=(F, 14, "bold"),
+                      command=_pick_custom_color).pack(side="left", padx=(8, 3))
+
         # Action buttons
         self._section(frame, tr("set_sec_actions"))
         act = ctk.CTkFrame(frame, fg_color="transparent")

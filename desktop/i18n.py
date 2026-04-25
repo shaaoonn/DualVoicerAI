@@ -193,6 +193,16 @@ _TRANSLATIONS = {
     "set_lbl_widget_size":  {"en": "Widget Size",       "bn": "উইজেট আকার"},
     "set_lbl_auto_timeout": {"en": "Auto Stop Timeout", "bn": "অটো স্টপ টাইমআউট"},
 
+    # Keyboard-shortcut overlay
+    "set_sec_kb_overlay":   {"en": "⌨️ Show Keyboard Shortcut",
+                             "bn": "⌨️ কিবোর্ড শর্টকাট দেখান"},
+    "set_lbl_kb_overlay":   {"en": "Show Keyboard Shortcut",
+                             "bn": "কিবোর্ড শর্টকাট দেখান"},
+    "set_help_kb_overlay":  {"en": "Display each key you press in a styled box at the bottom-right of the screen.",
+                             "bn": "যে কী চাপছেন সেগুলো কম্পিউটার স্ক্রিনের ডান-নিচ কোণে সুন্দর বক্সে দেখান।"},
+    "set_lbl_kb_font_size": {"en": "Font Size",         "bn": "ফন্ট আকার"},
+    "set_lbl_kb_font_color":{"en": "Font Color",        "bn": "ফন্ট রঙ"},
+
     "set_sec_actions":      {"en": "🛠️ Actions",        "bn": "🛠️ অ্যাকশন"},
     "set_btn_reset_engine": {"en": "⟳  Reset Engine",   "bn": "⟳  ইঞ্জিন রিসেট"},
     "set_btn_update":       {"en": "↑  Update (v{ver})","bn": "↑  আপডেট (v{ver})"},

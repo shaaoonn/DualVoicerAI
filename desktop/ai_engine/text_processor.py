@@ -4,6 +4,10 @@
   MODE A (Question)  -> text ends with '?' -> answer appended below
   MODE B (Continue)  -> text ends with trigger word -> continue the text
   MODE C (Command)   -> everything else -> replace with AI output
+
+The system prompt is structured so the user's own System Instruction and
+Knowledge Base are treated as MANDATORY rules — not soft hints. Format
+instructions come last so they cannot drown out the user's intent.
 """
 import re, asyncio
 from ai_engine.openrouter import complete
@@ -29,10 +33,79 @@ RICH_FORMAT_INSTRUCTION = _rich_format_instruction()
 PLAIN_FORMAT_INSTRUCTION = _plain_format_instruction()
 
 
+def build_system_message(system_instruction: str,
+                         knowledge_base: str,
+                         format_instruction: str) -> str:
+    """Compose a strict, layered system prompt.
+
+    Layer order (most authoritative first):
+      1. SYSTEM RULES from user (highest priority — MUST be obeyed)
+      2. KNOWLEDGE BASE (the ONLY source of truth when relevant)
+      3. FORMATTING (lowest priority — only governs output shape)
+
+    Each layer is fenced so the model cannot mistake user content for a
+    new instruction.
+    """
+    sys_clean = (system_instruction or "").strip()
+    kb_clean  = (knowledge_base or "").strip()
+    fmt_clean = (format_instruction or "").strip()
+
+    parts = []
+
+    # ── 1. Authoritative system rules ────────────────────────────────
+    if sys_clean:
+        parts.append(
+            "=== SYSTEM RULES (HIGHEST PRIORITY — MUST FOLLOW EXACTLY) ===\n"
+            f"{sys_clean}\n"
+            "=== END OF SYSTEM RULES ===\n"
+            "\n"
+            "These rules override every other instruction in this prompt. "
+            "Do NOT rephrase, ignore, or apologise for them. Apply them to "
+            "every response without exception."
+        )
+
+    # ── 2. Knowledge base (single source of truth) ───────────────────
+    if kb_clean:
+        parts.append(
+            "\n=== KNOWLEDGE BASE (USE THIS AS THE ONLY SOURCE OF TRUTH) ===\n"
+            f"{kb_clean}\n"
+            "=== END OF KNOWLEDGE BASE ===\n"
+            "\n"
+            "Rules for using the knowledge base:\n"
+            "1. When the user's question can be answered from the knowledge base, "
+            "answer ONLY from it. Do NOT invent facts not present here.\n"
+            "2. If the answer is partially in the knowledge base, use what is "
+            "there and clearly mark anything you add from general knowledge.\n"
+            "3. If the user explicitly asks something unrelated to the "
+            "knowledge base, you may answer normally but still respect the "
+            "SYSTEM RULES above.\n"
+            "4. Quote prices, names, course titles, contact info, and policy "
+            "wording EXACTLY as written in the knowledge base — never paraphrase."
+        )
+
+    # ── 3. Format guidance (lowest priority) ─────────────────────────
+    if fmt_clean:
+        parts.append(
+            "\n=== OUTPUT FORMAT (lowest priority) ===\n"
+            f"{fmt_clean}\n"
+            "=== END OF OUTPUT FORMAT ==="
+        )
+
+    if not parts:
+        return tr("ai_text_system_default")
+
+    return "\n".join(parts)
+
+
 class TextProcessor:
-    def __init__(self, system_instruction="", output_format="plain"):
-        self.system = system_instruction or tr("ai_text_system_default")
-        self.format = output_format
+    def __init__(self, system_instruction="", output_format="plain",
+                 knowledge_base=""):
+        # Keep the user's raw instruction so build_system_message can frame it.
+        self.system_instruction = system_instruction or tr("ai_text_system_default")
+        self.knowledge_base     = knowledge_base or ""
+        self.format             = output_format
+        # Backwards-compatible alias used by older code paths
+        self.system = self.system_instruction
 
     def _detect_mode(self, text):
         t = text.strip()
@@ -42,8 +115,11 @@ class TextProcessor:
         return "command"
 
     def _build_messages(self, text, mode):
-        fmt = PLAIN_FORMAT_INSTRUCTION if self.format == "plain" else RICH_FORMAT_INSTRUCTION
-        sys_msg = self.system + fmt
+        fmt = (PLAIN_FORMAT_INSTRUCTION if self.format == "plain"
+               else RICH_FORMAT_INSTRUCTION)
+        sys_msg = build_system_message(
+            self.system_instruction, self.knowledge_base, fmt
+        )
 
         if mode == "question":
             user = f"\u098f\u0987 \u09aa\u09cd\u09b0\u09b6\u09cd\u09a8\u09c7\u09b0 \u0989\u09a4\u09cd\u09a4\u09b0 \u09a6\u09be\u0993:\n\n{text}"

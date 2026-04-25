@@ -424,6 +424,9 @@ class VoiceTypingApp(ctk.CTk):
         except Exception:
             pass
 
+        # Keyboard-shortcut overlay (instantiated lazily; activated below)
+        self._kb_overlay = None
+
         # DEV_MODE bypass - simulate authenticated premium user
         if DEV_MODE:
             self.is_authenticated = True
@@ -545,6 +548,7 @@ class VoiceTypingApp(ctk.CTk):
         self.init_ui()
         self.apply_size_scaling()
         self.setup_hotkeys()
+        self.apply_kb_overlay_setting()
 
         # Pen tools slide-out panel state
         self._pen_tools_expanded = False
@@ -813,8 +817,39 @@ class VoiceTypingApp(ctk.CTk):
             keyboard.add_hotkey(SMART_PASTE_HOTKEY, lambda: self.after(0, self.smart_paste_flow))
             keyboard.add_hotkey('ctrl+shift+d', lambda: self.after(0, self.toggle_pen_mode))
             print("[HOTKEYS] Registered: alt+z/x/c, " + AI_HOTKEY + ", " + SMART_PASTE_HOTKEY + ", ctrl+shift+d (pen)")
+
+            # CRITICAL: re-arm the keyboard-overlay hook after unhook_all() above
+            try:
+                if getattr(self, "_kb_overlay", None) is not None:
+                    self._kb_overlay.reapply()
+            except Exception as e:
+                print(f"[KB-OVERLAY] reapply skipped: {e}")
         except Exception as e:
             print(f"[HOTKEY ERROR] {e}")
+
+    def apply_kb_overlay_setting(self):
+        """Enable / disable / reconfigure the keyboard-shortcut overlay
+        based on the current self.settings values. Safe to call repeatedly."""
+        try:
+            from keyboard_overlay import KeyboardOverlay
+        except Exception as e:
+            print(f"[KB-OVERLAY] import failed: {e}")
+            return
+        if self._kb_overlay is None:
+            try:
+                self._kb_overlay = KeyboardOverlay(self)
+            except Exception as e:
+                print(f"[KB-OVERLAY] init failed: {e}")
+                return
+        try:
+            self._kb_overlay.set_font_size(self.settings.get("kb_overlay_font_size", 18))
+            self._kb_overlay.set_font_color(self.settings.get("kb_overlay_font_color", "#FFFFFF"))
+            if self.settings.get("show_keyboard_shortcuts", False):
+                self._kb_overlay.enable()
+            else:
+                self._kb_overlay.disable()
+        except Exception as e:
+            print(f"[KB-OVERLAY] apply failed: {e}")
 
     def _set_no_activate(self):
         """Prevent this window from stealing focus when clicked.
@@ -1506,10 +1541,17 @@ class VoiceTypingApp(ctk.CTk):
         except tk.TclError:
             pass
 
-    def take_screenshot(self):
+    def take_screenshot(self, on_complete=None):
         """Trigger Windows Snipping Tool, save clipboard image for AI analysis.
         In pen mode: temporarily make overlay click-through so snip tool works,
-        and keep render window visible so drawings appear in screenshot."""
+        and keep render window visible so drawings appear in screenshot.
+
+        Args:
+            on_complete: Optional callable. Invoked on the Tk main thread when
+                         the snip session ends — whether the user captured an
+                         image OR cancelled and the 15s poll timed out. Used
+                         by the editor to restore its previous tool.
+        """
         if self.is_reading:
             self._pause_reader()
 
@@ -1520,6 +1562,13 @@ class VoiceTypingApp(ctk.CTk):
             if not self._pen_overlay.is_click_through:
                 pen_was_drawing = True
                 self._pen_overlay.set_click_through(True)
+
+        # Snapshot the previous screenshot so the polling loop can ignore
+        # stale clipboard data left over from a prior capture. Without this,
+        # a 2nd `take_screenshot()` call sees the OLD image still sitting in
+        # the clipboard and "captures" it instantly — firing on_complete
+        # before the user has even drawn the new selection.
+        prev_b64 = getattr(self, "_last_screenshot_b64", None)
 
         pyautogui.hotkey('win', 'shift', 's')
 
@@ -1541,7 +1590,12 @@ class VoiceTypingApp(ctk.CTk):
                         img.save(buf, format='PNG')
                         buf.seek(0)
                         b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-                        self._last_screenshot_b64 = f"data:image/png;base64,{b64}"
+                        new_data_url = f"data:image/png;base64,{b64}"
+                        # Skip the leftover image from the previous snip —
+                        # only accept a genuinely new clipboard image.
+                        if new_data_url == prev_b64:
+                            continue
+                        self._last_screenshot_b64 = new_data_url
                         self._last_screenshot_time = time.time()
                         print("[SCREENSHOT] Captured for AI analysis")
                         captured = True
@@ -1567,6 +1621,14 @@ class VoiceTypingApp(ctk.CTk):
                 self.after(0, lambda: self._pen_restore_after_screenshot())
 
             self._screenshot_pending = False
+
+            # Notify caller (e.g. editor) that snip session is over so it can
+            # restore its own state (active tool, cursor, etc.)
+            if on_complete is not None:
+                try:
+                    self.after(0, on_complete)
+                except Exception as e:
+                    print(f"[SCREENSHOT] on_complete failed: {e}")
 
         threading.Thread(target=_capture_after_snip, daemon=True).start()
 
@@ -1740,7 +1802,8 @@ class VoiceTypingApp(ctk.CTk):
 
             processor = TextProcessor(
                 self.settings.get("ai_system_prompt", ""),
-                self.settings.get("ai_output_format", "plain")
+                self.settings.get("ai_output_format", "plain"),
+                knowledge_base=self.settings.get("knowledge_base", ""),
             )
             try:
                 result = asyncio.run(processor.process(selected))
@@ -1776,7 +1839,12 @@ class VoiceTypingApp(ctk.CTk):
 
             try:
                 img_sys = self.settings.get("image_system_prompt", "")
-                result = asyncio.run(analyze_screenshot(screenshot_b64, system_prompt=img_sys))
+                kb      = self.settings.get("knowledge_base", "")
+                result = asyncio.run(analyze_screenshot(
+                    screenshot_b64,
+                    system_prompt=img_sys,
+                    knowledge_base=kb,
+                ))
                 if result and result.strip():
                     # Copy result to clipboard and paste
                     guard = ClipboardGuard()
