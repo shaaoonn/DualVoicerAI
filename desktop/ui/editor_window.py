@@ -877,6 +877,10 @@ class EditorWindow(tk.Toplevel):
 
     def _toggle_draw_tool(self, tool):
         """Toggle drawing tool - set active, update icons."""
+        # Screenshot lockout: while the camera is waiting for the user to
+        # finish a snip (or 30s timeout), all other tool buttons are inert.
+        if getattr(self, "_screenshot_lock", False):
+            return
         # Round 7: shape tools clicked twice fall back to pen instead of
         # select, so the user can keep drawing freehand without an extra
         # click on the pen icon. (Aligns with embedded toolbar behaviour.)
@@ -898,6 +902,9 @@ class EditorWindow(tk.Toplevel):
         self._update_status()
 
     def _tb_activate_eraser(self):
+        # Screenshot lockout — see _toggle_draw_tool.
+        if getattr(self, "_screenshot_lock", False):
+            return
         self._active_tool = "eraser"
         self.set_tool("eraser")
         self._tb_update_tool_icons()
@@ -1055,61 +1062,61 @@ class EditorWindow(tk.Toplevel):
     def _editor_take_screenshot(self):
         """Editor's camera button.
 
-        While a screenshot is being taken, the editor must NOT be in pen /
-        text / eraser / etc. mode — those tools intercept canvas drag events
-        and make the Windows snip drag-to-select unusable. So we:
+        While a screenshot is being taken, the editor LOCKS the toolbar:
+        every other tool button (pen, text, eraser, shapes, etc.) becomes
+        inert until either:
 
-          1. Remember the current tool.
-          2. Switch to 'select' (arrow cursor, no drawing).
+          - the user finishes the snip (image lands in clipboard), OR
+          - 30 seconds pass with no capture (auto-revert to previous tool).
+
+        Implementation:
+          1. Remember the current tool, set ``_screenshot_lock = True``.
+          2. Force the active tool to 'select' (arrow cursor, no drawing).
           3. Trigger the system snip via the main app.
-          4. Restore the previous tool when the snip ends.
+          4. Restore the previous tool & release the lock when the snip
+             ends — via on_complete OR the 30s hard fallback timer.
 
-        Restoration is guaranteed via THREE independent triggers (whichever
-        fires first wins, the rest are no-ops):
-
-          (a) ``on_complete`` from main app's polling thread — fires when an
-              image lands in the clipboard, OR after the 15-second poll
-              timeout if the user cancelled (Esc).
-          (b) A hard 18-second fallback ``after()`` timer on the editor
-              itself — guarantees recovery even if (a) somehow fails (lost
-              callback, main-app shutdown, etc.).
-          (c) A click on any other tool button — ``set_tool`` clears the
-              pending state because the user has explicitly chosen a tool.
-
-        This means a stuck "select" mode is no longer possible: the worst
-        case is an 18-second wait on cancel, but the user can always click
-        another tool to recover instantly.
+        Re-clicking the camera while already locked just refreshes the
+        timeout and re-fires the snip (in case the user cancelled with Esc
+        and wants another attempt) — without losing the original prev tool.
         """
-        # If the previous snip is still pending, restore IMMEDIATELY and
-        # then proceed with a fresh snip — never silently swallow the click.
-        if getattr(self, "_screenshot_prev_tool", None) is not None:
-            self._restore_after_screenshot(reason="re-click")
+        # Re-click while already locked: refresh the 30s timer & re-fire
+        # the snip without disturbing the saved prev tool.
+        if getattr(self, "_screenshot_lock", False):
+            self._reset_screenshot_timeout()
+            try:
+                self._app.take_screenshot(
+                    on_complete=lambda: self._restore_after_screenshot(reason="snip-done"))
+            except TypeError:
+                try:
+                    self._app.take_screenshot()
+                finally:
+                    self._restore_after_screenshot(reason="legacy-fallback")
+            return
 
+        # First entry into screenshot mode: snapshot tool & engage lock.
         prev_tool = self._active_tool
-        # Don't save 'select' as prev_tool — restoring to it is a no-op and
-        # would just hide a logic error if something went wrong upstream.
         self._screenshot_prev_tool = prev_tool
+        self._screenshot_lock = True
 
-        # Switch to mouse / select mode for the duration of the snip
+        # Force the active tool to 'select' for the duration of the snip.
+        # set_tool() is unguarded — only the toolbar callbacks are gated by
+        # _screenshot_lock — so this internal switch always succeeds.
         try:
             if prev_tool != "select":
+                self._active_tool = "select"
                 self.set_tool("select")
+                try:
+                    self._tb_update_tool_icons()
+                except Exception:
+                    pass
         except Exception as e:
             print(f"[EDITOR] tool switch before screenshot failed: {e}")
 
-        # Trigger (b): hard fallback timer. Cancel any previous timer first.
-        try:
-            if getattr(self, "_screenshot_restore_after_id", None):
-                self.after_cancel(self._screenshot_restore_after_id)
-        except Exception:
-            pass
-        try:
-            self._screenshot_restore_after_id = self.after(
-                18000, lambda: self._restore_after_screenshot(reason="timeout"))
-        except tk.TclError:
-            self._screenshot_restore_after_id = None
+        # 30-second hard fallback timer.
+        self._reset_screenshot_timeout()
 
-        # Trigger (a): on_complete from main app
+        # on_complete from main app's polling thread.
         def _on_snip_done():
             self._restore_after_screenshot(reason="snip-done")
 
@@ -1122,11 +1129,25 @@ class EditorWindow(tk.Toplevel):
             finally:
                 self._restore_after_screenshot(reason="legacy-fallback")
 
+    def _reset_screenshot_timeout(self):
+        """(Re)arm the 30-second hard-fallback restore timer."""
+        try:
+            if getattr(self, "_screenshot_restore_after_id", None):
+                self.after_cancel(self._screenshot_restore_after_id)
+        except Exception:
+            pass
+        try:
+            self._screenshot_restore_after_id = self.after(
+                30000, lambda: self._restore_after_screenshot(reason="timeout"))
+        except tk.TclError:
+            self._screenshot_restore_after_id = None
+
     def _restore_after_screenshot(self, reason: str = ""):
         """Idempotent tool restorer used by ``_editor_take_screenshot``.
 
         Safe to call multiple times — only the first call (per snip session)
-        does any work. ``reason`` is for diagnostic logging only.
+        does any work. Releases the screenshot lock so the toolbar becomes
+        active again. ``reason`` is for diagnostic logging only.
         """
         # Cancel the fallback timer no matter how we got here
         try:
@@ -1138,8 +1159,12 @@ class EditorWindow(tk.Toplevel):
 
         saved = getattr(self, "_screenshot_prev_tool", None)
         if saved is None:
-            return  # already restored — idempotent
+            # Already restored — but ensure lock is released defensively.
+            self._screenshot_lock = False
+            return
         self._screenshot_prev_tool = None
+        # Release the lock BEFORE any set_tool so toolbar restore is clean.
+        self._screenshot_lock = False
 
         # Editor may have been closed during the snip
         try:
@@ -1150,7 +1175,12 @@ class EditorWindow(tk.Toplevel):
 
         try:
             if saved != self._active_tool:
+                self._active_tool = saved
                 self.set_tool(saved)
+                try:
+                    self._tb_update_tool_icons()
+                except Exception:
+                    pass
         except Exception as e:
             print(f"[EDITOR] tool restore failed ({reason}): {e}")
 
