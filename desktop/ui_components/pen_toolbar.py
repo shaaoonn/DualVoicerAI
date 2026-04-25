@@ -289,6 +289,47 @@ class PenToolbar:
     ]
     SEPARATOR = tr("tb_separator")
 
+    # ── Hover-darken helpers ───────────────────────────
+    # Buttons darken slightly on mouse-over for tactile UX feedback.
+    # Reads the button's *current* bg dynamically so an active tool
+    # (BG_ACTIVE blue) and an idle tool (BG purple) both get a coherent
+    # darken without separate code paths.
+
+    @staticmethod
+    def _darken_color(hex_color, factor=0.82):
+        """Return a darker variant of a hex color. factor < 1.0 darkens."""
+        h = hex_color.lstrip("#")
+        if len(h) != 6:
+            return hex_color
+        try:
+            r = max(0, min(255, int(int(h[0:2], 16) * factor)))
+            g = max(0, min(255, int(int(h[2:4], 16) * factor)))
+            b = max(0, min(255, int(int(h[4:6], 16) * factor)))
+            return f"#{r:02X}{g:02X}{b:02X}"
+        except ValueError:
+            return hex_color
+
+    def _apply_hover_darken(self, btn):
+        """Bind <Enter>/<Leave> so the button's bg darkens slightly on hover.
+        Stores original bg on the widget so any later bg change (e.g. when
+        the active-tool highlight is moved by _update_tool_highlight) is
+        reflected next hover."""
+        def on_enter(e, b=btn):
+            try:
+                cur = b.cget("bg")
+                b._hover_orig_bg = cur
+                b.configure(bg=self._darken_color(cur))
+            except tk.TclError:
+                pass
+        def on_leave(e, b=btn):
+            try:
+                if hasattr(b, "_hover_orig_bg"):
+                    b.configure(bg=b._hover_orig_bg)
+            except tk.TclError:
+                pass
+        btn.bind("<Enter>", on_enter, add="+")
+        btn.bind("<Leave>", on_leave, add="+")
+
     def __init__(self, parent, overlay, app_ref, mode="standalone",
                  on_retract=None, scale=1.0):
         self._mode = mode
@@ -383,6 +424,7 @@ class PenToolbar:
             command=lambda: self._toggle_tool("pen")
         )
         self._btn_pen.pack(side="left", padx=1)
+        self._apply_hover_darken(self._btn_pen)
 
         self._btn_highlight = tk.Button(
             tools_frame, text=self.ICON_HIGHLIGHTER, bg=self.BG, fg="#E8E8F5",
@@ -391,6 +433,7 @@ class PenToolbar:
             command=lambda: self._toggle_tool("highlighter")
         )
         self._btn_highlight.pack(side="left", padx=1)
+        self._apply_hover_darken(self._btn_highlight)
 
         self._btn_eraser = tk.Button(
             tools_frame, text=self.ICON_ERASER, bg=self.BG, fg="#E8E8F5",
@@ -399,6 +442,7 @@ class PenToolbar:
             command=lambda: self._activate_eraser()
         )
         self._btn_eraser.pack(side="left", padx=1)
+        self._apply_hover_darken(self._btn_eraser)
 
         self._btn_text = tk.Button(
             tools_frame, text=self.ICON_TEXT, bg=self.BG, fg="#E8E8F5",
@@ -407,6 +451,7 @@ class PenToolbar:
             command=lambda: self._toggle_tool("text")
         )
         self._btn_text.pack(side="left", padx=1)
+        self._apply_hover_darken(self._btn_text)
 
         self._btn_handwrite = tk.Button(
             tools_frame, text=self.ICON_HANDWRITE, bg=self.BG, fg="#E8E8F5",
@@ -415,6 +460,7 @@ class PenToolbar:
             command=lambda: self._toggle_tool("handwrite")
         )
         self._btn_handwrite.pack(side="left", padx=1)
+        self._apply_hover_darken(self._btn_handwrite)
 
         # ── Hand + Zoom (editor mode only) ──
         self._btn_hand = None
@@ -426,6 +472,7 @@ class PenToolbar:
                 command=lambda: self._toggle_tool("pan")
             )
             self._btn_hand.pack(side="left", padx=1)
+            self._apply_hover_darken(self._btn_hand)
 
         # ── Zoom slider (editor mode only) ──
         if not getattr(self._overlay, '_supports_view_mode', True):
@@ -531,29 +578,32 @@ class PenToolbar:
 
         # ── Fullscreen (editor mode only) ──
         if not getattr(self._overlay, '_supports_view_mode', True):
-            tk.Button(
+            fs = tk.Button(
                 row, text="\u26f6", bg=self.BG, fg="#E8E8F5",
                 font=("Segoe UI", 12), relief="flat", bd=0,
                 activebackground=self.BG_HOVER,
-                command=self._toggle_fullscreen
-            ).pack(side="left", padx=1)
+                command=self._toggle_fullscreen)
+            fs.pack(side="left", padx=1)
+            self._apply_hover_darken(fs)
 
         # ── Editor (overlay mode only) ──
         if getattr(self._overlay, '_supports_view_mode', True):
-            tk.Button(
+            ed = tk.Button(
                 row, text="\U0001f4c4", bg=self.BG, fg="#E8E8F5",
                 font=("Segoe UI Emoji", 11), relief="flat", bd=0,
                 activebackground=self.BG_HOVER,
-                command=self._open_editor
-            ).pack(side="left", padx=1)
+                command=self._open_editor)
+            ed.pack(side="left", padx=1)
+            self._apply_hover_darken(ed)
 
-        # ── Close ──
-        tk.Button(
+        # ── Close (red — already eye-catching, darken-hover for tactile feel) ──
+        cl = tk.Button(
             row, text="\u2716", bg="#E53935", fg="#FFF",
             font=("Segoe UI", 10, "bold"), relief="flat", bd=0,
             width=2, activebackground="#FF5252",
-            command=self._close_pen
-        ).pack(side="left")
+            command=self._close_pen)
+        cl.pack(side="left")
+        self._apply_hover_darken(cl)
 
     # ── Embedded UI (3 rows - compact panel) ─────────
 
@@ -616,11 +666,16 @@ class PenToolbar:
             act_pady=max(1, int(2 * s)),
             act_pack_padx=max(1, int(2 * s)),
             # Fixed-shape tool buttons (round 6: arrow / circle / triangles /
-            # rect / hex). Six glyphs share row 2's middle gap, so the font is
-            # slightly smaller than the main tool icons to keep them packed
-            # tight without overflowing the panel.
-            shape_fz=max(8, int(11 * s)),
-            shape_padx=max(0, int(1 * s)),
+            # rect / hex). Bumped to fz=13 + padx=3 (round 8) so the row
+            # visually fills the slot beside the colour swatches — earlier
+            # sizing left a noticeable gap after the hex glyph.
+            shape_fz=max(9, int(13 * s)),
+            shape_padx=max(1, int(3 * s)),
+            # Inner padding specifically for shape buttons — slightly more
+            # breathing room than the generic btn_padx so each glyph reads
+            # as a clear hit target rather than a tight cluster.
+            shape_btn_padx=max(2, int(4 * s)),
+            shape_btn_pady=max(1, int(3 * s)),
             # Editor + close buttons (right-aligned)
             close_fz=max(9, int(10 * s)),
             close_padx=max(2, int(4 * s)),
@@ -682,6 +737,7 @@ class PenToolbar:
             command=lambda: self._toggle_tool("pen"), **_bcfg())
         self._btn_pen.pack(side="left", padx=(0, m["pack_padx"]))
         self._track(self._btn_pen, "icon_first", side="left")
+        self._apply_hover_darken(self._btn_pen)
 
         self._btn_highlight = tk.Button(
             row1, text=self.ICON_HIGHLIGHTER, bg=bg,
@@ -690,6 +746,7 @@ class PenToolbar:
             command=lambda: self._toggle_tool("highlighter"), **_bcfg())
         self._btn_highlight.pack(side="left", padx=m["pack_padx"])
         self._track(self._btn_highlight, "icon", side="left")
+        self._apply_hover_darken(self._btn_highlight)
 
         self._btn_eraser = tk.Button(
             row1, text=self.ICON_ERASER, bg=bg,
@@ -698,6 +755,7 @@ class PenToolbar:
             command=lambda: self._activate_eraser(), **_bcfg())
         self._btn_eraser.pack(side="left", padx=m["pack_padx"])
         self._track(self._btn_eraser, "icon", side="left")
+        self._apply_hover_darken(self._btn_eraser)
 
         # Separator
         sep1 = tk.Frame(row1, bg=sep_clr, width=1)
@@ -713,6 +771,7 @@ class PenToolbar:
             command=lambda: self._toggle_tool("text"), **_bcfg())
         self._btn_text.pack(side="left", padx=m["pack_padx"])
         self._track(self._btn_text, "text", side="left")
+        self._apply_hover_darken(self._btn_text)
 
         self._btn_handwrite = tk.Button(
             row1, text=self.ICON_HANDWRITE, bg=bg,
@@ -721,6 +780,7 @@ class PenToolbar:
             command=lambda: self._toggle_tool("handwrite"), **_bcfg())
         self._btn_handwrite.pack(side="left", padx=m["pack_padx"])
         self._track(self._btn_handwrite, "icon", side="left")
+        self._apply_hover_darken(self._btn_handwrite)
 
         self._btn_hand = None  # No pan in embedded mode
 
@@ -811,6 +871,7 @@ class PenToolbar:
             b.pack(side="left", padx=m["act_pack_padx"])
             self._action_btns.append(b)
             self._track(b, "act", side="left")
+            self._apply_hover_darken(b)
 
         # - Close button (row 1 far-right, accent) -
         self._btn_close = tk.Button(
@@ -858,14 +919,15 @@ class PenToolbar:
         ]
         for kind, glyph in SHAPE_DEFS:
             sb = tk.Button(
-                row2, text=glyph, bg=bg,
+                row2, text=glyph, bg=bg, fg="#E8E8F5", relief="flat", bd=0,
                 font=("Segoe UI Symbol", m["shape_fz"]),
+                padx=m["shape_btn_padx"], pady=m["shape_btn_pady"],
                 activebackground=self.BG_EMB_HOVER,
-                command=lambda k=kind: self._toggle_tool(f"shape_{k}"),
-                **_bcfg())  # _bcfg() already supplies fg, relief, bd, pad
+                command=lambda k=kind: self._toggle_tool(f"shape_{k}"))
             sb.pack(side="left", padx=m["shape_padx"])
             self._shape_btns[kind] = sb
             self._track(sb, "shape", side="left")
+            self._apply_hover_darken(sb)
 
         # ── RIGHT side: clear → editor → font-picker → font-size → colors
         # Pack in reverse so they appear left-to-right in the natural order.
@@ -879,6 +941,7 @@ class PenToolbar:
         self._btn_clear.pack(side="right", padx=(m["act_pack_padx"], 0))
         self._action_btns.append(self._btn_clear)
         self._track(self._btn_clear, "act_right", side="right")
+        self._apply_hover_darken(self._btn_clear)
 
         # - Editor button (right of font picker, before clear) -
         if getattr(self._overlay, '_supports_view_mode', True):
@@ -890,6 +953,7 @@ class PenToolbar:
                 command=self._open_editor)
             self._btn_editor.pack(side="right", padx=m["edit_pack_padx"])
             self._track(self._btn_editor, "edit", side="right")
+            self._apply_hover_darken(self._btn_editor)
 
         # - Font picker (right of font-size, before editor) -
         self._font_var = tk.StringVar(
@@ -944,20 +1008,22 @@ class PenToolbar:
     def _action_btn_emb(self, parent, text, command):
         """Action button for embedded panel."""
         bg = self.BG_EMB
-        tk.Button(
+        b = tk.Button(
             parent, text=text, bg=bg, fg="#E8E8F5",
             font=("Segoe UI", 10), relief="flat", bd=0,
-            activebackground=self.BG_EMB_HOVER, command=command
-        ).pack(side="left", padx=1)
+            activebackground=self.BG_EMB_HOVER, command=command)
+        b.pack(side="left", padx=1)
+        self._apply_hover_darken(b)
 
     # ── Common helpers ────────────────────────────────
 
     def _action_btn(self, parent, text, command, font_size=11):
-        tk.Button(
+        b = tk.Button(
             parent, text=text, bg=self.BG, fg="#E8E8F5",
             font=("Segoe UI", font_size), relief="flat", bd=0,
-            activebackground=self.BG_HOVER, command=command
-        ).pack(side="left", padx=1)
+            activebackground=self.BG_HOVER, command=command)
+        b.pack(side="left", padx=1)
+        self._apply_hover_darken(b)
 
     def get_root_widget(self):
         """Return actual widget - Toplevel (standalone) or Frame (embedded)."""
@@ -1039,7 +1105,8 @@ class PenToolbar:
                 elif kind == "shape":
                     widget.configure(
                         font=("Segoe UI Symbol", m["shape_fz"]),
-                        padx=m["btn_padx"], pady=m["btn_pady"])
+                        padx=m["shape_btn_padx"],
+                        pady=m["shape_btn_pady"])
                 elif kind == "step_btn":
                     widget.configure(
                         font=("Segoe UI Symbol",

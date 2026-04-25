@@ -463,7 +463,7 @@ class VoiceTypingApp(ctk.CTk):
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         _p = self.settings.get("size_preset", "medium")
-        base_w, base_h = VoiceTypingApp._calc_dims({"tiny":48,"small":56,"medium":72,"large":84,"xlarge":96}.get(_p, 72))
+        base_w, base_h = VoiceTypingApp._calc_dims({"mini":36,"tiny":48,"small":56,"medium":72,"large":84,"xlarge":96}.get(_p, 72))
         
         # Check saved position from settings
         saved_x = self.settings.get("window_x")
@@ -497,7 +497,7 @@ class VoiceTypingApp(ctk.CTk):
                 self.settings["window_y"] = None
         
         _preset = self.settings.get("size_preset", "medium")
-        _pw, _ph = VoiceTypingApp._calc_dims({"tiny":48,"small":56,"medium":72,"large":84,"xlarge":96}.get(_preset, 72))
+        _pw, _ph = VoiceTypingApp._calc_dims({"mini":36,"tiny":48,"small":56,"medium":72,"large":84,"xlarge":96}.get(_preset, 72))
         self.geometry(f"{_pw}x{_ph}+{self.start_x}+{self.start_y}")
 
         self.drag_start = {"x": 0, "y": 0, "root_x": 0, "root_y": 0}
@@ -845,7 +845,11 @@ class VoiceTypingApp(ctk.CTk):
         sc = btn_s / 72.0
         padx = max(6, int(8 * sc))
         gap = max(3, int(4 * sc))
-        tool_w = max(20, int(28 * sc)) + 4
+        # XXS (mini=36) uses a smaller width budget for the tool column so the
+        # widget stays narrower AND the tools visibly shrink vs XS (was 16 →
+        # too close to XS's 20). 14 gives a clear 30% width reduction.
+        tool_floor = 14 if btn_s < 48 else 20
+        tool_w = max(tool_floor, int(28 * sc)) + 4
         w = 2 * padx + 4 * btn_s + 4 * gap + tool_w
         h = btn_s + max(12, int(14 * sc))
         return w, h
@@ -955,26 +959,30 @@ class VoiceTypingApp(ctk.CTk):
         # Tool buttons frame
         self.tool_frame = tk.Frame(self.frame, bg=self.TOOLBAR_BG)
 
-        self.btn_pen = ctk.CTkButton(
-            self.tool_frame, text="\U0001f58a\ufe0f", width=30, height=26,
-            font=("Segoe UI Emoji", 13), fg_color=self.TOOLBAR_BG,
-            hover_color="#4A4A6A", corner_radius=4,
-            command=self.toggle_pen_mode)
-        self.btn_pen.pack(pady=1)
+        # 1x1 transparent pixel — paired with compound="center" forces
+        # tk.Button width/height to be interpreted as PIXELS (not text units).
+        # This is what lets the 3 tool buttons actually shrink at XXS (CTk's
+        # internal minimum of ~20px would otherwise overflow the canvas).
+        self._tool_pixel = tk.PhotoImage(width=1, height=1)
 
-        self.btn_screenshot = ctk.CTkButton(
-            self.tool_frame, text="\U0001f4f7", width=30, height=26,
-            font=("Segoe UI Emoji", 13), fg_color=self.TOOLBAR_BG,
-            hover_color="#4A4A6A", corner_radius=4,
-            command=self.take_screenshot)
-        self.btn_screenshot.pack(pady=1)
+        def _mk_tool(glyph, cmd):
+            b = tk.Button(
+                self.tool_frame, text=glyph, image=self._tool_pixel,
+                compound="center", width=30, height=26,
+                font=("Segoe UI Emoji", 13),
+                bg=self.TOOLBAR_BG, fg="white", relief="flat", bd=0,
+                # padx/pady default to 1 in tk.Button — internal padding
+                # would add 2px to actual rendered size, breaking the
+                # pixel-precise place() math at XXS. Force to 0.
+                padx=0, pady=0,
+                highlightthickness=0, activebackground="#4A4A6A",
+                activeforeground="white", cursor="hand2", command=cmd)
+            b.pack(pady=0)
+            return b
 
-        self.btn_settings = ctk.CTkButton(
-            self.tool_frame, text="\u2699\ufe0f", width=30, height=26,
-            font=("Segoe UI Emoji", 13), fg_color=self.TOOLBAR_BG,
-            hover_color="#4A4A6A", corner_radius=4,
-            command=self.open_settings_panel)
-        self.btn_settings.pack(pady=1)
+        self.btn_pen = _mk_tool("\U0001f58a\ufe0f", self.toggle_pen_mode)
+        self.btn_screenshot = _mk_tool("\U0001f4f7", self.take_screenshot)
+        self.btn_settings = _mk_tool("\u2699\ufe0f", self.open_settings_panel)
 
         self._apply_window_size()
 
@@ -1061,7 +1069,7 @@ class VoiceTypingApp(ctk.CTk):
         except Exception as e:
             return None
 
-    BTN_SIZES = {"tiny": 48, "small": 56, "medium": 72, "large": 84, "xlarge": 96}
+    BTN_SIZES = {"mini": 36, "tiny": 48, "small": 56, "medium": 72, "large": 84, "xlarge": 96}
 
     def _apply_window_size(self):
         """Apply size from preset - dynamic width, tight layout."""
@@ -1089,7 +1097,10 @@ class VoiceTypingApp(ctk.CTk):
         scale = btn_s / 72.0
         padx = max(6, int(8 * scale))
         gap = max(3, int(4 * scale))
-        tool_sz = max(20, int(28 * scale))
+        # Match _calc_dims: XXS gets a tighter floor (14) for visible size
+        # difference vs XS (20). tiny+ unchanged.
+        tool_floor = 14 if btn_s < 48 else 20
+        tool_sz = max(tool_floor, int(28 * scale))
         tool_w = tool_sz + 4
 
         # Scale spectrum buttons
@@ -1109,12 +1120,61 @@ class VoiceTypingApp(ctk.CTk):
             # XS/S sizes where the linear estimate slightly overshoots.
             self.after(60, self._refit_panel_to_toolbar)
 
-        # Scale tool buttons
-        tool_font = max(10, int(13 * scale))
-        for btn in [self.btn_pen, self.btn_screenshot, self.btn_settings]:
-            if hasattr(btn, 'configure'):
-                btn.configure(width=tool_sz, height=int(tool_sz * 0.85),
+        # Scale tool buttons. tk.Button + 1x1 image trick makes width/height
+        # exact pixels, so the 3-button stack can be precisely distributed.
+        # 0.80 ratio (was 0.85) makes them slightly more compact per request.
+        tool_font = max(9, int(13 * scale))
+        tool_h = int(tool_sz * 0.80)
+        # XXS: explicit overrides — tool_h=12 gives perfect 3-3-3-3 gap
+        # distribution in 48px canvas, and 8pt font fits inside the 12px
+        # button height (9pt overflows ~14px line-height → causes the
+        # adjacent-button visual overlap the user reported).
+        if btn_s < 48:
+            tool_h = 12
+            tool_font = 8
+        tool_buttons = [self.btn_pen, self.btn_screenshot, self.btn_settings]
+        for btn in tool_buttons:
+            try:
+                btn.configure(width=tool_sz, height=tool_h,
                               font=("Segoe UI Emoji", tool_font))
+            except tk.TclError:
+                pass
+
+        # Distribute the 3 tool buttons with EQUAL 4-way gaps inside the
+        # canvas-height tool_frame. With place() we get pixel-precise
+        # alignment (all 3 share one x), and gaps are computed so top,
+        # between-1, between-2, and bottom are as equal as integer pixels
+        # allow. Any 1-3 leftover pixels go symmetrically to outer gaps.
+        try:
+            self.tool_frame.config(width=tool_w, height=h)
+            self.tool_frame.pack_propagate(False)
+            free = h - 3 * tool_h
+            if free < 0:
+                free = 0
+            base = free // 4
+            extra = free - 4 * base
+            gaps = [base, base, base, base]
+            if extra >= 1: gaps[0] += 1   # top
+            if extra >= 2: gaps[3] += 1   # bottom (symmetric)
+            if extra >= 3: gaps[1] += 1   # one inner gap
+            btn_x = max(0, (tool_w - tool_sz) // 2)
+            # Per-glyph optical correction: 📷 has its visual mass concentrated
+            # at the bottom (the lens), so it appears slightly low even when
+            # the bounding box is mathematically centered. Nudge up 1-2 px to
+            # match the user's perception of a centered icon.
+            cam_nudge = -1 if tool_h <= 16 else -2
+            y = gaps[0]
+            for i, btn in enumerate(tool_buttons):
+                try:
+                    btn.pack_forget()
+                except tk.TclError:
+                    pass
+                # i==1 is the screenshot (camera) button
+                y_off = cam_nudge if i == 1 else 0
+                btn.place(x=btn_x, y=y + y_off, width=tool_sz, height=tool_h)
+                y += tool_h + gaps[i + 1]
+        except tk.TclError:
+            pass
 
         # Remove old widget placements
         self.frame.delete("widgets")

@@ -388,8 +388,8 @@ class SettingsPanel(ctk.CTkToplevel):
         self._slider_row(appear, tr("set_lbl_active_opacity"), "max_opacity",   0.3,  1.0, 14,
                          on_change=getattr(self.app, 'update_max_opacity', None))
         self._segmented_row(appear, tr("set_lbl_widget_size"), "size_preset",
-                             ["tiny", "small", "medium", "large", "xlarge"],
-                             ["XS", "S", "M", "L", "XL"],
+                             ["mini", "tiny", "small", "medium", "large", "xlarge"],
+                             ["XXS", "XS", "S", "M", "L", "XL"],
                              on_change=getattr(self.app, 'apply_size_preset', None))
         self._divider(appear)
         self._segmented_row(appear, tr("set_lbl_auto_timeout"), "auto_timeout",
