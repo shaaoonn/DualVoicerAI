@@ -592,6 +592,21 @@ class VoiceTypingApp(ctk.CTk):
                 print(f"[PREWARM] skipped: {e}")
         threading.Thread(target=_prewarm_openrouter, daemon=True).start()
 
+        # Pre-warm the audio subsystem (open mic for ~50ms then release).
+        # WASAPI init takes 500ms-1s on first open — doing it now saves
+        # that latency from the user's FIRST voice-button click.
+        def _prewarm_mic():
+            try:
+                # Wait briefly so settings + recognizer are fully ready
+                time.sleep(0.8)
+                with sr.Microphone() as _src:
+                    # Just opening + closing warms WASAPI / audio drivers.
+                    pass
+                print("[PREWARM] Audio subsystem ready")
+            except Exception as e:
+                print(f"[PREWARM] mic warmup skipped: {e}")
+        threading.Thread(target=_prewarm_mic, daemon=True).start()
+
         # Pen tools slide-out panel state
         self._pen_tools_expanded = False
         self._pen_anim_job = None 
@@ -3806,11 +3821,7 @@ class VoiceTypingApp(ctk.CTk):
                         # Determine leading space for this part
                         add_space = leading_space if i == 0 else True
                         to_type = (" " + part_stripped) if add_space else part_stripped
-                        try:
-                            keyboard.write(to_type, delay=0)
-                        except Exception:
-                            pyperclip.copy(to_type)
-                            pyautogui.hotkey('ctrl', 'v')
+                        self._inject_text_universally(to_type)
                     if i < len(parts) - 1:  # Press shift+enter between parts
                         keyboard.press_and_release('shift+enter')
                 return
@@ -3843,17 +3854,89 @@ class VoiceTypingApp(ctk.CTk):
                     # Normal case
                     to_type = cleaned_text
             
-            # Method 1: Direct keyboard typing (delay=0 for max speed)
+            # Universal injection — keyboard.write for ASCII (fast),
+            # clipboard paste for non-ASCII (works everywhere incl.
+            # Notepad, Photoshop, Illustrator, AE, Blender, 3ds Max).
+            self._inject_text_universally(to_type)
+        except Exception: pass
+
+    # Window class names of apps that DO NOT correctly handle
+    # `keyboard.write` Unicode SendInput for non-Latin scripts. We
+    # fall back to clipboard paste (Ctrl+V) for these apps. Other
+    # apps (Photoshop, After Effects, Illustrator, Blender, 3ds Max,
+    # browsers, MS Office, etc.) handle Unicode SendInput correctly
+    # AND in some cases (After Effects timeline) Ctrl+V triggers an
+    # unwanted "duplicate" action — so we MUST NOT use clipboard
+    # there.
+    _PASTE_REQUIRED_CLASSES = {
+        "Notepad",                 # Windows Notepad (legacy edit ctrl)
+        "Edit",                    # generic Win32 edit control
+    }
+
+    def _focused_window_class(self) -> str:
+        """Return the Win32 class name of the foreground window, or ''."""
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetForegroundWindow()
+            if not hwnd:
+                return ""
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, buf, 256)
+            return buf.value or ""
+        except Exception:
+            return ""
+
+    def _inject_text_universally(self, text):
+        """Inject `text` into the focused app reliably across Windows
+        apps including Notepad, Adobe Photoshop / Illustrator / After
+        Effects, Blender, 3ds Max, browsers, Office, etc.
+
+        Hybrid strategy keyed on the FOCUSED APP'S window class:
+          - Notepad / classic Edit ctrls → clipboard paste for ALL
+            text (English + Bengali both). Notepad's legacy Edit
+            control drops chars when keybd_event sequences arrive
+            faster than it can process — clipboard is the only
+            consistently reliable injection method there.
+          - Everything else (Photoshop, AE, Illustrator, Blender,
+            3ds Max, browsers, Office, …) → `keyboard.write`. Pro
+            apps handle Unicode SendInput fine, AND clipboard paste
+            (Ctrl+V) would cause unwanted side effects in some of
+            them (e.g. AE timeline duplicates layers on Ctrl+V).
+        """
+        if not text:
+            return
+
+        cls = self._focused_window_class()
+        needs_clipboard = cls in self._PASTE_REQUIRED_CLASSES
+
+        if not needs_clipboard:
+            # Default fast path — works for the vast majority of apps
             try:
-                keyboard.write(to_type, delay=0)
+                keyboard.write(text, delay=0)
                 return
             except Exception:
+                # Fall through to clipboard if keyboard.write fails
                 pass
 
-            # Method 2: Fallback to clipboard paste
-            pyperclip.copy(to_type)
+        # Clipboard paste (Notepad-class apps OR keyboard.write fallback)
+        try:
+            saved = ""
+            try:
+                saved = pyperclip.paste()
+            except Exception:
+                pass
+            pyperclip.copy(text)
+            time.sleep(0.005)
             pyautogui.hotkey('ctrl', 'v')
-        except Exception: pass
+            if saved:
+                def _restore_clip():
+                    try:
+                        pyperclip.copy(saved)
+                    except Exception:
+                        pass
+                threading.Timer(0.4, _restore_clip).start()
+        except Exception as e:
+            print(f"[TYPE] inject fallback failed: {e}")
 
     def handle_reader_click(self):
         from config import DEV_MODE
