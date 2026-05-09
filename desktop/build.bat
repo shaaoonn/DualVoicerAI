@@ -35,6 +35,7 @@ python -m PyInstaller --noconfirm --windowed --onefile ^
   --add-data "ui_components;ui_components" ^
   --add-data "ui;ui" ^
   --add-data "subscription;subscription" ^
+  --add-data "avro_engine;avro_engine" ^
   --add-data "fonts;fonts" ^
   --add-data ".env;." ^
   --add-data "*.wav;." ^
@@ -49,6 +50,7 @@ python -m PyInstaller --noconfirm --windowed --onefile ^
   --add-data "updater.py;." ^
   --add-data "config.py;." ^
   --collect-all customtkinter ^
+  --collect-all avro_engine ^
   --collect-all avro ^
   --collect-data PIL ^
   --collect-submodules pystray ^

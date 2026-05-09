@@ -38,12 +38,23 @@ try:
 except ImportError:        # pragma: no cover
     pyperclip = None       # type: ignore
 
-# Avro Phonetic engine (vendored Python port of OmicronLab's algorithm)
+# Avro Phonetic engine.
+#   1. Prefer the vendored OmicronLab rules (avro_engine package) for
+#      100% Avro-Keyboard-identical output and zero third-party
+#      maintenance risk.
+#   2. Fall back to the third-party `avro-py` library if the vendored
+#      data is missing for some reason (e.g. trimmed PyInstaller build).
+_avro_parse = None
 try:
-    import avro  # avro-py package — pip install avro-py
-    _HAS_AVRO = True
-except ImportError:        # pragma: no cover
-    _HAS_AVRO = False
+    from avro_engine import parse as _vendored_parse
+    _avro_parse = _vendored_parse
+except Exception:           # pragma: no cover
+    try:
+        import avro
+        _avro_parse = avro.parse
+    except ImportError:
+        _avro_parse = None
+_HAS_AVRO = _avro_parse is not None
 
 
 # Keys that mark a word boundary — flush the buffer & convert.
@@ -87,7 +98,8 @@ class BengaliInput:
     def enable(self) -> None:
         if self.enabled or keyboard is None or not _HAS_AVRO:
             if not _HAS_AVRO:
-                print("[BENGALI-INPUT] avro-py not installed — pip install avro-py")
+                print("[BENGALI-INPUT] avro engine unavailable — vendored "
+                      "avro_engine missing AND avro-py not installed")
             return
         try:
             self._hook = keyboard.hook(self._on_event)
@@ -240,9 +252,9 @@ class BengaliInput:
         if not _HAS_AVRO:
             return
         try:
-            new_bengali = avro.parse(self._buffer) if self._buffer else ""
+            new_bengali = _avro_parse(self._buffer) if self._buffer else ""
         except Exception as e:
-            print(f"[BENGALI-INPUT] avro.parse failed: {e}")
+            print(f"[BENGALI-INPUT] avro parse failed: {e}")
             return
 
         # Quick log only when render actually does work

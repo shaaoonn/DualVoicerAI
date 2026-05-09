@@ -1,0 +1,38 @@
+                          MOZILLA PUBLIC LICENSE
+                                Version 1.1
+
+                              ---------------
+
+The Avro Phonetic rules contained in this folder (avrophonetic.json)
+are the work of Mehdi Hasan Khan / OmicronLab and are released under
+the Mozilla Public License, Version 1.1 ("MPL"). The full text of
+the MPL is available at:
+
+  https://www.mozilla.org/en-US/MPL/1.1/
+
+KEY POINTS (this is a summary, not a substitute for the full license):
+
+1. The avrophonetic.json file in this folder is "Original Code" under
+   the MPL.
+
+2. You may use, modify, and redistribute the file. If you modify it,
+   you must make the modified version available under the MPL.
+
+3. You may combine the file with proprietary code (such as our
+   application) without that proprietary code becoming MPL-licensed —
+   the MPL is FILE-LEVEL copyleft, not viral.
+
+4. You must include this license notice and credit Mehdi Hasan Khan /
+   OmicronLab as the author of the rules.
+
+5. There is NO WARRANTY. The rules are provided "as is".
+
+CREDIT
+------
+Avro Phonetic algorithm and rules: Mehdi Hasan Khan, OmicronLab
+                                    https://www.omicronlab.com/
+
+The engine code (engine.py) in this folder is a clean-room
+re-implementation of the algorithm written for this project. It does
+NOT contain code from Avro Keyboard (Pascal) or OpenBangla Keyboard
+(GPL).
