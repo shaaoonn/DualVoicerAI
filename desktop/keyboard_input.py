@@ -1,25 +1,30 @@
 # keyboard_input.py
-"""Avro-style Bengali Phonetic Input Method.
-
-Wraps the official Avro Phonetic engine (avro-py, MIT-licensed Python
-port maintained by hitblast at https://github.com/hitblast/avro.py)
-so users get pixel-identical "amar nam Rahul" → "আমার নাম রাহুল"
-conversion in any Windows text field — no separate Avro/Bijoy install
-needed.
+"""Avro-style Bengali Phonetic Input Method (v3 — Win32 LL hook).
 
 Architecture:
-  - Single global keyboard hook via the `keyboard` library
-  - Buffers ASCII characters as the user types
-  - On a word boundary (space / Enter / punctuation), the buffer is
-    flushed: backspace the original Latin → paste the Bengali via
-    clipboard (clipboard is more reliable than synthesised key events
-    for non-Latin scripts on Windows).
+  - A real Windows WH_KEYBOARD_LL hook installed via ctypes
+    (`ll_hook.py`). The hook runs on its own thread with a message
+    loop and reliably suppresses individual key events at OS level —
+    the third-party `keyboard` package's add_hotkey(suppress=True)
+    is unreliable for plain letters and was the root cause of the
+    earlier "Latin leaks into the field" bugs.
+  - When Bengali Input is ON:
+      * Letter & digit keys → blocked + buffered
+      * Boundary keys (space / punctuation / Enter / Tab) → blocked,
+        we render the buffered word as Bengali and inject it +
+        the boundary character ourselves via SendInput Unicode.
+      * Backspace → if buffer non-empty, pop char + re-render;
+        if buffer empty, pass through (delete previous text).
+      * Modified keys (Ctrl/Alt+letter) → never blocked → user's
+        normal shortcuts (Ctrl+C, Ctrl+V, etc.) all work.
+  - SendInput uses KEYEVENTF_UNICODE so Bengali codepoints (incl.
+    conjuncts and vowel signs) are typed directly without needing
+    the focused app to have a Bengali keyboard layout selected.
+    Also uses dwExtraInfo = SELF_MARKER so our own events get
+    recognised + skipped by our hook.
 
-Toggle hotkey: F12 by default (configurable via the
-`bengali_input_toggle` keyboard shortcut in Settings → ⌨️ Shortcuts).
-
-Designed to coexist with `keyboard.unhook_all()` — call `reapply()`
-after any global unhook to re-arm the input hook.
+Toggle hotkey: F12 (configurable via Settings → ⌨️ Shortcuts).
+Avro engine: vendored OmicronLab rules in `avro_engine/`.
 """
 
 from __future__ import annotations
@@ -28,22 +33,7 @@ import threading
 import time
 from typing import Optional
 
-try:
-    import keyboard
-except ImportError:        # pragma: no cover
-    keyboard = None        # type: ignore
-
-try:
-    import pyperclip
-except ImportError:        # pragma: no cover
-    pyperclip = None       # type: ignore
-
-# Avro Phonetic engine.
-#   1. Prefer the vendored OmicronLab rules (avro_engine package) for
-#      100% Avro-Keyboard-identical output and zero third-party
-#      maintenance risk.
-#   2. Fall back to the third-party `avro-py` library if the vendored
-#      data is missing for some reason (e.g. trimmed PyInstaller build).
+# Avro Phonetic engine — prefer vendored OmicronLab rules
 _avro_parse = None
 try:
     from avro_engine import parse as _vendored_parse
@@ -56,71 +46,76 @@ except Exception:           # pragma: no cover
         _avro_parse = None
 _HAS_AVRO = _avro_parse is not None
 
-
-# Keys that mark a word boundary — flush the buffer & convert.
-# Backspace handled separately (pops one char from buffer).
-_WORD_BOUNDARY_KEYS = {
-    "space", "enter", "tab", "esc",
-    ".", ",", "?", "!", ";", ":", "/", "\\",
-    "(", ")", "[", "]", "{", "}",
-    '"', "'", "<", ">", "=", "+", "-", "*",
-    "|", "~", "`", "@", "#", "$", "%", "^", "&",
-}
+# LL hook + SendInput helpers
+try:
+    from ll_hook import (LLKeyboardHook, send_backspaces,
+                         send_unicode_string, vk_to_char,
+                         VK_BACK, VK_RETURN, VK_TAB, VK_SPACE,
+                         VK_ESCAPE, VK_SHIFT, VK_CONTROL, VK_MENU,
+                         VK_LWIN, VK_RWIN, VK_CAPITAL,
+                         _OEM_VK_TO_CHAR)
+    _HAS_LL_HOOK = True
+except Exception as e:      # pragma: no cover
+    print(f"[BENGALI-INPUT] ll_hook import failed: {e}")
+    _HAS_LL_HOOK = False
 
 
 class BengaliInput:
-    """Singleton-style Avro Phonetic input manager.
-
-    Real-time mode: every keystroke triggers a re-render of the current
-    word in Bengali — matches Avro's native typing experience where the
-    output updates as you type, not only after Space.
-    """
+    """Singleton Avro Phonetic input manager (LL-hook based)."""
 
     def __init__(self) -> None:
         self.enabled: bool = False
-        self._buffer: str = ""        # Latin chars typed for the current word
-        self._displayed: str = ""     # Bengali currently in the focused field
-                                       # (for the active word — reset on word
-                                       # boundary so each word renders fresh)
-        self._hook = None
+        # Latin chars buffered for the current word. NOT in the field —
+        # letter keys are blocked at the LL hook level.
+        self._buffer: str = ""
+        # Codepoints of the CURRENT word's rendered Bengali currently
+        # in the focused field. Reset to 0 on word boundary.
+        self._displayed_count: int = 0
         self._lock = threading.Lock()
-        self._restore_clipboard_timer: Optional[threading.Timer] = None
-        # ── Self-event consumption queue ──────────────────────────
-        # When _render_locked() synthesises backspaces + ctrl+v those
-        # echo back through our own hook. We track exactly what we sent
-        # so genuine user keystrokes during the render aren't swallowed.
-        # Format: list of (key_name, expiry_timestamp).
-        self._expected_self_keys: list = []
-        self._self_lock = threading.Lock()
+        self._ll_hook: Optional[LLKeyboardHook] = None
+        # ── Debounce ──────────────────────────────────────────────
+        self._render_timer: Optional[threading.Timer] = None
+        self._render_delay_s: float = 0.030
+        self._render_token: int = 0
 
     # ── Public API ────────────────────────────────────────────────
 
     def enable(self) -> None:
-        if self.enabled or keyboard is None or not _HAS_AVRO:
-            if not _HAS_AVRO:
-                print("[BENGALI-INPUT] avro engine unavailable — vendored "
-                      "avro_engine missing AND avro-py not installed")
+        if self.enabled:
             return
-        try:
-            self._hook = keyboard.hook(self._on_event)
-            self.enabled = True
-            print("[BENGALI-INPUT] ON (Avro Phonetic)")
-        except Exception as e:
-            print(f"[BENGALI-INPUT] enable failed: {e}")
+        if not _HAS_AVRO:
+            print("[BENGALI-INPUT] avro engine missing")
+            return
+        if not _HAS_LL_HOOK:
+            print("[BENGALI-INPUT] ll_hook module unavailable")
+            return
+        self._ll_hook = LLKeyboardHook(self._on_ll_key)
+        if not self._ll_hook.start():
+            print("[BENGALI-INPUT] LL hook failed to install")
+            self._ll_hook = None
+            return
+        self.enabled = True
+        print("[BENGALI-INPUT] ON (LL hook)")
 
     def disable(self) -> None:
         if not self.enabled:
             return
         self.enabled = False
-        if self._hook is not None and keyboard is not None:
+        if self._ll_hook is not None:
             try:
-                keyboard.unhook(self._hook)
+                self._ll_hook.stop()
             except Exception:
                 pass
-        self._hook = None
+            self._ll_hook = None
+        if self._render_timer is not None:
+            try:
+                self._render_timer.cancel()
+            except Exception:
+                pass
+            self._render_timer = None
         with self._lock:
             self._buffer = ""
-            self._displayed = ""
+            self._displayed_count = 0
         print("[BENGALI-INPUT] OFF")
 
     def toggle(self) -> None:
@@ -130,196 +125,169 @@ class BengaliInput:
             self.enable()
 
     def reapply(self) -> None:
-        """Re-register the global hook. Call after any code elsewhere
-        that does `keyboard.unhook_all()` so our input keeps working."""
-        if not self.enabled or keyboard is None:
-            return
-        try:
-            self._hook = keyboard.hook(self._on_event)
-        except Exception as e:
-            print(f"[BENGALI-INPUT] reapply failed: {e}")
+        """No-op for LL hook (it's independent of the keyboard library's
+        unhook_all). Kept for backwards compatibility with main.py."""
+        return
 
-    # ── Internal: hook callback ───────────────────────────────────
+    # ── LL hook callback (runs on hook thread — keep it FAST) ─────
 
-    def _on_event(self, event) -> None:
+    def _on_ll_key(self, vk: int, is_down: bool,
+                    has_shift: bool, has_ctrl: bool,
+                    has_alt: bool) -> bool:
+        """Returns True to suppress the event, False to let it through."""
         if not self.enabled:
-            return
-        # Only act on key-down — ignore key-up entirely.
-        if getattr(event, "event_type", "") != "down":
-            return
+            return False
+        if not is_down:
+            return False
+        # Modifier-held shortcuts (Ctrl+anything, Alt+anything) → user's
+        # normal app shortcuts → never intercept.
+        if has_ctrl or has_alt:
+            return False
+        # Pure modifier keys → pass through
+        if vk in (VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN,
+                   VK_RWIN, VK_CAPITAL):
+            return False
 
-        key = (getattr(event, "name", "") or "").lower()
-        if not key:
-            return
+        # ── Letters (a-z / A-Z) ───────────────────────────────────
+        if 0x41 <= vk <= 0x5A:
+            ch = chr(vk) if has_shift else chr(vk).lower()
+            with self._lock:
+                self._buffer += ch
+                self._schedule_render_locked()
+            return True  # block
 
-        # If this exact key is one of OUR synthesised echoes, eat it
-        # silently. Anything else is a real user keystroke.
-        if self._consume_self_event(key):
-            return
-
-        # Hotkey-style modifier combos (Ctrl+anything, Alt+anything,
-        # Win+anything) — don't interfere. Also clear the buffer so
-        # post-shortcut typing doesn't merge with pre-shortcut typing.
-        try:
-            if (keyboard.is_pressed("ctrl") or keyboard.is_pressed("alt")
-                    or keyboard.is_pressed("windows")):
+        # ── Digits (0-9) ──────────────────────────────────────────
+        if 0x30 <= vk <= 0x39:
+            if has_shift:
+                # Shift+digit = punctuation → boundary
+                ch = ')!@#$%^&*('[vk - 0x30]
                 with self._lock:
-                    self._buffer = ""
-                return
-        except Exception:
-            pass
+                    self._flush_for_boundary_locked(ch)
+                return True
+            ch = chr(vk)
+            with self._lock:
+                self._buffer += ch
+                self._schedule_render_locked()
+            return True
 
-        # Ignore function keys, navigation keys, modifier keys, etc.
-        if (key.startswith("f") and key[1:].isdigit()) or \
-                key in {"shift", "ctrl", "alt", "windows", "menu",
-                        "caps lock", "num lock", "scroll lock",
-                        "left", "right", "up", "down",
-                        "home", "end", "page up", "page down",
-                        "insert", "delete", "print screen", "pause"}:
-            return
-
-        with self._lock:
-            # Word boundary → reset state. The boundary key (space, dot,
-            # etc.) types naturally into the field — we don't intercept it.
-            # The previous word's Bengali is already on screen from the
-            # last real-time render.
-            if key in _WORD_BOUNDARY_KEYS:
-                self._buffer = ""
-                self._displayed = ""
-                return
-            # Backspace → pop one char from buffer + re-render. If the
-            # buffer is already empty, let the backspace pass through to
-            # delete previous content in the field naturally.
-            if key == "backspace":
+        # ── Backspace ─────────────────────────────────────────────
+        if vk == VK_BACK:
+            with self._lock:
                 if self._buffer:
                     self._buffer = self._buffer[:-1]
-                    # User's backspace already removed 1 char from field
-                    self._render_locked(field_chars=len(self._displayed) - 1)
-                return
-            # Letters / digits → buffer + re-render in real-time.
-            if len(key) == 1:
-                ch = key
-                try:
-                    if keyboard.is_pressed("shift") and ch.isalpha():
-                        ch = ch.upper()
-                except Exception:
-                    pass
-                self._buffer += ch
-                # User's keystroke just added 1 char to the field
-                self._render_locked(field_chars=len(self._displayed) + 1)
-                return
+                    self._schedule_render_locked()
+                    return True   # block — re-render handles the visual
+                # else: buffer empty, let backspace pass through to
+                # delete previous text in the field naturally
+            return False
 
-    # ── Internal: self-event tracking ─────────────────────────────
+        # ── Boundary: space / Enter / Tab ─────────────────────────
+        if vk == VK_SPACE:
+            with self._lock:
+                self._flush_for_boundary_locked(' ')
+            return True
+        if vk == VK_RETURN:
+            with self._lock:
+                self._flush_for_boundary_locked('\n')
+            return True
+        if vk == VK_TAB:
+            with self._lock:
+                self._flush_for_boundary_locked('\t')
+            return True
+        if vk == VK_ESCAPE:
+            # Esc: just reset state, don't inject anything
+            with self._lock:
+                self._cancel_timer_locked()
+                self._render_token += 1
+                if self._displayed_count > 0:
+                    send_backspaces(self._displayed_count)
+                self._buffer = ""
+                self._displayed_count = 0
+            return False  # let Esc through (closes dialogs etc.)
 
-    def _expect_self_event(self, key: str, count: int = 1,
-                            timeout: float = 0.6) -> None:
-        """Mark `count` future hook events for `key` as our own echoes.
-        Each entry expires after `timeout` seconds so a missing echo
-        doesn't permanently swallow the user's real keystrokes."""
-        expiry = time.time() + timeout
-        with self._self_lock:
-            for _ in range(count):
-                self._expected_self_keys.append((key, expiry))
+        # ── OEM punctuation (.,;:?![]\\` etc.) ────────────────────
+        if vk in _OEM_VK_TO_CHAR:
+            ch = vk_to_char(vk, has_shift)
+            if ch:
+                with self._lock:
+                    self._flush_for_boundary_locked(ch)
+                return True
+            return False
 
-    def _consume_self_event(self, key: str) -> bool:
-        """Returns True if `key` matches a pending self-event (and pops
-        it from the queue). Expired entries are reaped on every call."""
-        now = time.time()
-        with self._self_lock:
-            # Reap expired
-            self._expected_self_keys = [
-                (k, e) for k, e in self._expected_self_keys if e > now]
-            # Find first matching
-            for i, (k, _e) in enumerate(self._expected_self_keys):
-                if k == key:
-                    self._expected_self_keys.pop(i)
-                    return True
+        # Anything else (arrow keys, F-keys, etc.) → pass through
         return False
 
-    # ── Internal: real-time render ────────────────────────────────
+    # ── Boundary flush (immediate) ────────────────────────────────
 
-    def _render_locked(self, field_chars: int) -> None:
-        """Replace the last `field_chars` characters in the focused field
-        with the Bengali transliteration of the current buffer.
+    def _flush_for_boundary_locked(self, boundary_char: str) -> None:
+        """Render the buffered word as Bengali and inject it + the
+        boundary character. Called from the LL hook callback — already
+        in fast path, no event-queue race because we BLOCK the original
+        boundary and inject our own text via SendInput."""
+        self._cancel_timer_locked()
+        self._render_token += 1
 
-        `field_chars` = how many codepoints currently exist in the field
-        for the active word (BEFORE we clean up). E.g. after the user
-        types one more letter, that's `len(self._displayed) + 1`. After
-        the user backspaces one, that's `len(self._displayed) - 1`.
+        # Erase any mid-word render that was already on screen
+        if self._displayed_count > 0:
+            send_backspaces(self._displayed_count)
 
-        MUST be called with `self._lock` held.
-        """
-        if not _HAS_AVRO:
-            return
         try:
-            new_bengali = _avro_parse(self._buffer) if self._buffer else ""
+            bengali = _avro_parse(self._buffer) if self._buffer else ""
+        except Exception as e:
+            print(f"[BENGALI-INPUT] avro parse failed: {e}")
+            bengali = self._buffer  # fall back
+
+        text = bengali + boundary_char
+        print(f"[BENGALI-INPUT] flush buf='{self._buffer}' "
+              f"boundary={boundary_char!r} -> sending '{text}'")
+        if text:
+            send_unicode_string(text)
+
+        self._buffer = ""
+        self._displayed_count = 0
+
+    # ── Debounced mid-word render ─────────────────────────────────
+
+    def _cancel_timer_locked(self) -> None:
+        if self._render_timer is not None:
+            try:
+                self._render_timer.cancel()
+            except Exception:
+                pass
+            self._render_timer = None
+
+    def _schedule_render_locked(self) -> None:
+        self._cancel_timer_locked()
+        self._render_token += 1
+        token = self._render_token
+        self._render_timer = threading.Timer(
+            self._render_delay_s,
+            lambda t=token: self._do_render(t))
+        self._render_timer.daemon = True
+        self._render_timer.start()
+
+    def _do_render(self, token: int) -> None:
+        with self._lock:
+            if token != self._render_token:
+                return  # superseded
+            self._do_render_locked()
+
+    def _do_render_locked(self) -> None:
+        try:
+            bengali = _avro_parse(self._buffer) if self._buffer else ""
         except Exception as e:
             print(f"[BENGALI-INPUT] avro parse failed: {e}")
             return
-
-        # Quick log only when render actually does work
-        if self._buffer or self._displayed:
-            print(f"[BENGALI-INPUT] render buf='{self._buffer}' "
-                  f"prev='{self._displayed}' new='{new_bengali}' wipe={field_chars}")
-
-        wipe = max(0, field_chars)
-
-        # Pre-register every key we're about to synthesise so the hook
-        # doesn't re-process its own echoes. User keystrokes that arrive
-        # mid-render still pass through (they don't match expected keys).
-        self._expect_self_event("backspace", wipe)
-        if new_bengali:
-            self._expect_self_event("ctrl", 1)
-            self._expect_self_event("v", 1)
-
-        # Erase the current rendering (plus the just-typed user key, or
-        # minus the just-removed backspace target). Slightly longer
-        # inter-key gap (5ms) than the previous 2ms — fast typists were
-        # outrunning the OS, leaving a stray char behind. 5ms is still
-        # fast enough to feel real-time but reliably ordered.
-        for _ in range(wipe):
-            try:
-                keyboard.send("backspace")
-            except Exception:
-                pass
-            time.sleep(0.005)
-
-        # Paste the new Bengali via clipboard (more reliable than key
-        # synthesis for non-Latin scripts on Windows).
-        if new_bengali and pyperclip is not None:
-            saved_clipboard = ""
-            try:
-                saved_clipboard = pyperclip.paste()
-            except Exception:
-                pass
-            try:
-                pyperclip.copy(new_bengali)
-                # Give clipboard ownership a moment to settle before paste
-                time.sleep(0.012)
-                keyboard.press_and_release("ctrl+v")
-            except Exception as e:
-                print(f"[BENGALI-INPUT] paste failed: {e}")
-            else:
-                # Restore previous clipboard after the paste settles
-                if self._restore_clipboard_timer is not None:
-                    try:
-                        self._restore_clipboard_timer.cancel()
-                    except Exception:
-                        pass
-                if saved_clipboard:
-                    self._restore_clipboard_timer = threading.Timer(
-                        0.4, lambda s=saved_clipboard: _safe_clipboard_set(s))
-                    self._restore_clipboard_timer.daemon = True
-                    self._restore_clipboard_timer.start()
-
-        self._displayed = new_bengali
-
-
-def _safe_clipboard_set(text: str) -> None:
-    try:
-        pyperclip.copy(text)
-    except Exception:
-        pass
+        print(f"[BENGALI-INPUT] render buf='{self._buffer}' "
+              f"prev_count={self._displayed_count} -> '{bengali}' "
+              f"({len(bengali)} cp)")
+        # Erase the previously-rendered Bengali (if any) for this word
+        if self._displayed_count > 0:
+            send_backspaces(self._displayed_count)
+        # Inject the freshly-converted Bengali
+        if bengali:
+            send_unicode_string(bengali)
+        self._displayed_count = len(bengali)
 
 
 # ── Module-level singleton ────────────────────────────────────────
@@ -335,5 +303,4 @@ def get_instance() -> BengaliInput:
 
 
 def is_available() -> bool:
-    """True if the Avro engine + keyboard library are both importable."""
-    return _HAS_AVRO and keyboard is not None
+    return _HAS_AVRO and _HAS_LL_HOOK

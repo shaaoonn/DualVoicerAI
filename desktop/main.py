@@ -565,8 +565,12 @@ class VoiceTypingApp(ctk.CTk):
         self.apply_size_scaling()
         self.setup_hotkeys()
         self.apply_kb_overlay_setting()
-        # Restore Bengali Phonetic Input state from settings
-        self.apply_bengali_input_setting()
+        # Bengali Phonetic Input feature DISABLED in this version — the
+        # pure-Python LL-hook approach proved too brittle across Windows
+        # text fields. The supporting modules (keyboard_input.py,
+        # ll_hook.py, avro_engine/) remain in the tree for a future
+        # revival but no longer auto-activate.
+        # self.apply_bengali_input_setting()
 
         # Pre-warm the OpenRouter HTTP connection in the background so the
         # FIRST translation call doesn't pay the TLS-handshake tax (~1s).
@@ -1082,11 +1086,12 @@ class VoiceTypingApp(ctk.CTk):
             _reg("clear_all",
                  lambda: self.after(0, self._route_clear_all))
 
-            # Bengali Phonetic Input toggle (F12 by default).
-            # Calls toggle on the input manager — flips between English
-            # and Bengali typing in any focused Windows text field.
-            _reg("bengali_input_toggle",
-                 lambda: self.after(0, self._toggle_bengali_input))
+            # Bengali Phonetic Input toggle — DISABLED in this version.
+            # Re-enable by uncommenting once the LL hook integration is
+            # rebuilt against a more reliable substrate (e.g. Windows
+            # TSF instead of pure-Python hook).
+            # _reg("bengali_input_toggle",
+            #      lambda: self.after(0, self._toggle_bengali_input))
 
             print(f"[HOTKEYS] Registered: {', '.join(registered)}")
 

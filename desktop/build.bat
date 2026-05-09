@@ -45,6 +45,7 @@ python -m PyInstaller --noconfirm --windowed --onefile ^
   --add-data "i18n.py;." ^
   --add-data "keyboard_overlay.py;." ^
   --add-data "keyboard_input.py;." ^
+  --add-data "ll_hook.py;." ^
   --add-data "font_manager.py;." ^
   --add-data "remote_config.py;." ^
   --add-data "updater.py;." ^

@@ -601,8 +601,9 @@ class SettingsPanel(ctk.CTkToplevel):
         # ── Voice AI Mode (per button) ────────────────────────────────
         self._build_voice_ai_section(frame, lang_display, lang_codes)
 
-        # ── Bengali Phonetic Input (Avro-style) ───────────────────────
-        self._build_bengali_input_section(frame)
+        # Bengali Phonetic Input section removed in this version
+        # (feature dormant — see main.py comment).
+        # self._build_bengali_input_section(frame)
 
     def _build_voice_ai_section(self, parent, lang_display, lang_codes):
         """Render the per-button Voice AI mode section into the Language
@@ -894,7 +895,7 @@ class SettingsPanel(ctk.CTkToplevel):
                 ("voice_btn1",        tr("sc_voice_btn1")),
                 ("voice_btn2",        tr("sc_voice_btn2")),
                 ("take_screenshot",   tr("sc_take_screenshot")),
-                ("bengali_input_toggle", tr("sc_bengali_input_toggle")),
+                # bengali_input_toggle entry removed — feature dormant
             ]),
             (tr("set_sec_sc_tools"), [
                 ("tool_select",       tr("sc_tool_select")),
