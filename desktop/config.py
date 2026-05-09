@@ -40,6 +40,43 @@ SMART_PASTE_HOTKEY  = "ctrl+shift+v"
 DEFAULT_BTN1_HOTKEY = "ctrl+shift+b"
 DEFAULT_BTN2_HOTKEY = "ctrl+shift+e"
 
+# ════════════════════════════════════════════════════════
+# Editable keyboard shortcuts (user can override in Settings → Shortcuts)
+# Action IDs are stable; the values are pre-set defaults the user can edit.
+# ════════════════════════════════════════════════════════
+DEFAULT_KEYBOARD_SHORTCUTS = {
+    # Main app (global hotkeys via `keyboard` library)
+    "ai_assistant":      "ctrl+shift+a",
+    "smart_paste":       "ctrl+shift+v",
+    "voice_btn1":        "ctrl+shift+b",
+    "voice_btn2":        "ctrl+shift+e",
+    "take_screenshot":   "ctrl+shift+s",
+    # Tool switching — Ctrl+Alt+letter combos.
+    #
+    # WHY NOT plain Alt+letter? The Windows low-level keyboard hook used by
+    # the `keyboard` library cannot reliably suppress Alt+letter combos
+    # without admin privileges — the trigger letter often leaks through to
+    # whatever app is focused (e.g. Alt+P leaks "p" into Notepad). Adding
+    # Ctrl as a second modifier avoids menu-bar activation entirely and
+    # makes suppression reliable.
+    "tool_select":       "ctrl+alt+v",   # ⤢ cursor / move objects
+    "tool_pen":          "ctrl+alt+p",
+    "tool_highlighter":  "ctrl+alt+h",
+    "tool_eraser":       "ctrl+alt+e",
+    "tool_text":         "ctrl+alt+t",
+    "tool_handwrite":    "ctrl+alt+w",
+    "tool_arrow":        "ctrl+alt+a",   # ➤ draw arrow SHAPE (≠ select)
+    "clear_all":         "ctrl+shift+delete",   # 🗑 wipe canvas / overlay
+    # Editor — actions
+    "editor_undo":       "ctrl+z",
+    "editor_redo":       "ctrl+y",
+    "editor_save":       "ctrl+s",
+    "editor_screenshot": "ctrl+shift+c",
+    "editor_close":      "escape",
+    # Bengali Phonetic Input toggle (Avro-style)
+    "bengali_input_toggle": "f12",
+}
+
 # UI
 SPECTRUM_BTN_SIZE    = 76
 SPECTRUM_COLORS = {
@@ -75,4 +112,28 @@ NEW_SETTINGS_KEYS = {
     "show_keyboard_shortcuts": False,
     "kb_overlay_font_size":    18,
     "kb_overlay_font_color":   "#FFFFFF",
+    # Editable keyboard shortcuts (action_id -> hotkey string).
+    # Defaults pulled from DEFAULT_KEYBOARD_SHORTCUTS above.
+    "keyboard_shortcuts": dict(DEFAULT_KEYBOARD_SHORTCUTS),
+    # Per-shortcut enable/disable toggles (action_id -> bool).
+    # When False, the shortcut is NOT bound (editor) or NOT registered
+    # (main app). All default to True.
+    "keyboard_shortcuts_enabled": {k: True for k in DEFAULT_KEYBOARD_SHORTCUTS},
+    # ── Voice AI Mode (per button) ───────────────────────────────────
+    # When enabled per button, voice typing transcribes in the
+    # "translate_from" language then runs the result through Gemini
+    # before typing. If translate_from == button_lang → AI just cleans
+    # up the text (removes duplicates, fixes errors, adds punctuation).
+    # If translate_from != button_lang → AI translates AND cleans up.
+    #
+    # Old `translation_mode` master toggle is auto-migrated to per-button
+    # enables in main.py at startup.
+    "btn1_translate_enabled": False,
+    "btn2_translate_enabled": False,
+    "btn1_translate_from": "en-US",
+    "btn2_translate_from": "bn-BD",
+    # ── Bengali Phonetic Input (Avro-style, built-in) ────────────────
+    # When True: typing Latin characters in any Windows app produces
+    # Bengali (e.g. "ami" → "আমি"). Toggle via F12 (configurable).
+    "bengali_input_enabled": False,
 }

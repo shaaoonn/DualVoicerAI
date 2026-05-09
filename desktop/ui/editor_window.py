@@ -497,6 +497,8 @@ class EditorWindow(tk.Toplevel):
         self._zoom_level = 1.0
         self._base_scrollregion = (0, 0, 1920, 1120)
         self._selection_mgr = None
+        # Hotkey tracking for the global keyboard library (see _apply_shortcuts)
+        self._editor_hotkey_ids = []
 
         self._setup_window()
         self._build_menu()
@@ -517,6 +519,12 @@ class EditorWindow(tk.Toplevel):
         self.bind("<F11>", lambda e: self._toggle_fullscreen())
         self.bind("<Escape>", self._on_escape)
         self.bind("<Control-v>", lambda e: self._paste_from_clipboard())
+
+        # User-editable keyboard shortcuts (Settings → Shortcuts)
+        # Called LAST so it overrides any earlier bindings on the same key.
+        # We schedule via after() so all sub-builders (_build_menu, etc.) have
+        # completed and registered their default bindings first.
+        self.after(50, self._apply_shortcuts)
         # Track foreground state - used by voice typing in main.py to decide
         # whether to inject into the editor's text item or send to the OS-
         # active window. Default False so voice goes to the OS app the user
@@ -1184,6 +1192,264 @@ class EditorWindow(tk.Toplevel):
         except Exception as e:
             print(f"[EDITOR] tool restore failed ({reason}): {e}")
 
+    # ── Editable keyboard shortcuts (Settings → Shortcuts) ────────────
+
+    # Special keys that ARE allowed as single-key shortcuts (no modifier).
+    _ALLOWED_SOLO_KEYS = {
+        "escape", "esc", "tab", "return", "enter", "space", "backspace",
+        "delete", "del", "up", "down", "left", "right", "home", "end",
+        "pageup", "pagedown",
+        "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9",
+        "f10", "f11", "f12",
+    }
+
+    @classmethod
+    def _is_valid_hotkey(cls, hotkey: str) -> bool:
+        """A hotkey is valid if it has a modifier OR is in the allowed
+        solo-key set (Escape, F1–F12, etc.). Plain single letters are
+        rejected because they collide with text input."""
+        if not hotkey or not hotkey.strip():
+            return False
+        parts = [p.strip() for p in hotkey.lower().split("+") if p.strip()]
+        if not parts:
+            return False
+        if len(parts) >= 2:
+            # Has at least one modifier — treat as valid combo
+            return True
+        return parts[0] in cls._ALLOWED_SOLO_KEYS
+
+    @classmethod
+    def _hotkey_to_tk(cls, hotkey: str) -> str:
+        """Convert a 'ctrl+shift+a' style hotkey string into a Tk binding
+        sequence like '<Control-Shift-a>'. Returns '' if invalid (incl.
+        plain single letters)."""
+        if not cls._is_valid_hotkey(hotkey):
+            return ""
+        parts = [p.strip() for p in hotkey.lower().split("+") if p.strip()]
+        mods, key = parts[:-1], parts[-1]
+        mod_map = {
+            "ctrl": "Control", "control": "Control",
+            "shift": "Shift", "alt": "Alt",
+            "meta": "Meta", "win": "Super", "super": "Super", "cmd": "Meta",
+        }
+        key_map = {
+            "escape": "Escape", "esc": "Escape",
+            "tab": "Tab", "return": "Return", "enter": "Return",
+            "space": "space", "backspace": "BackSpace",
+            "delete": "Delete", "del": "Delete",
+            "up": "Up", "down": "Down", "left": "Left", "right": "Right",
+            "home": "Home", "end": "End",
+            "pageup": "Prior", "pagedown": "Next",
+            "f1": "F1", "f2": "F2", "f3": "F3", "f4": "F4", "f5": "F5",
+            "f6": "F6", "f7": "F7", "f8": "F8", "f9": "F9",
+            "f10": "F10", "f11": "F11", "f12": "F12",
+        }
+        tk_mods = [mod_map.get(m, m.capitalize()) for m in mods]
+        tk_key  = key_map.get(key, key)
+        inner = "-".join(tk_mods + [tk_key])
+        return f"<{inner}>"
+
+    def _apply_shortcuts(self):
+        """Register every editor-relevant keyboard shortcut from settings.
+
+        Uses the global ``keyboard`` library (not Tk binds) because Tk's
+        ``<Alt-letter>`` bindings collide with menu mnemonics — the menu
+        bar swallows the event before our binding can fire. Each callback
+        is gated by an "editor is foreground" check so the shortcut only
+        fires when the editor window is actually active.
+
+        Re-runnable: tears down previous registrations first. Tool
+        shortcuts are skipped while a text element is being edited so
+        keystrokes flow into the text instead of switching tools. Invalid
+        (single-letter) saved values are silently migrated to the
+        DEFAULT_KEYBOARD_SHORTCUTS values.
+        """
+        try:
+            from config import DEFAULT_KEYBOARD_SHORTCUTS as _DEFAULTS
+        except Exception:
+            _DEFAULTS = {}
+
+        try:
+            settings = self._app.settings or {}
+        except Exception:
+            settings = {}
+        sc = settings.get("keyboard_shortcuts")
+        if not isinstance(sc, dict):
+            sc = {}
+            settings["keyboard_shortcuts"] = sc
+        enabled = settings.get("keyboard_shortcuts_enabled")
+        if not isinstance(enabled, dict):
+            enabled = {}
+            settings["keyboard_shortcuts_enabled"] = enabled
+
+        # Migrate invalid / missing entries → defaults. Persist if migrated.
+        migrated = False
+        for action_id, default_val in _DEFAULTS.items():
+            cur = sc.get(action_id, "")
+            if not self._is_valid_hotkey(cur):
+                sc[action_id] = default_val
+                migrated = True
+            # Default any missing toggle to enabled
+            if action_id not in enabled:
+                enabled[action_id] = True
+                migrated = True
+        if migrated:
+            try:
+                self._app.save_settings()
+            except Exception:
+                pass
+
+        def _hk(action_id: str) -> str:
+            if not enabled.get(action_id, True):
+                return ""
+            v = sc.get(action_id, "")
+            return v if self._is_valid_hotkey(v) else _DEFAULTS.get(action_id, "")
+
+        # Tear down any previously registered editor hotkeys before re-arming
+        self._teardown_editor_hotkeys()
+
+        try:
+            import keyboard as _kb
+        except Exception as ex:
+            print(f"[EDITOR] keyboard lib unavailable: {ex}")
+            return
+
+        self._editor_hotkey_ids = []
+
+        def _gated(callback, _label=""):
+            """Wrap callback so it only runs while the editor still exists,
+            and dispatches to the Tk main thread via after(). The editor
+            shortcuts are GLOBAL — they fire regardless of which window has
+            focus, as long as the editor is open."""
+            def _fire():
+                try:
+                    if not self.winfo_exists():
+                        return
+                except tk.TclError:
+                    return
+                # Debug log — proves the keyboard library hook actually fired
+                print(f"[EDITOR] hotkey FIRED: {_label}")
+                try:
+                    self.after(0, callback)
+                except Exception:
+                    pass
+            return _fire
+
+        def _register(action_id: str, callback):
+            hk = _hk(action_id)
+            if not hk:
+                return
+            try:
+                # suppress=True prevents Windows / other apps from also seeing
+                # the key event. Critical for Alt+letter combos which would
+                # otherwise activate menu bars in the focused app.
+                hid = _kb.add_hotkey(hk, _gated(callback, _label=action_id),
+                                     suppress=True)
+                self._editor_hotkey_ids.append(hid)
+                print(f"[EDITOR] hotkey ON: {action_id} = {hk}")
+            except Exception as ex:
+                print(f"[EDITOR] hotkey reg failed {action_id} ({hk}): {ex}")
+
+        # NOTE: Tool shortcuts (tool_select / tool_pen / tool_highlighter /
+        # tool_eraser / tool_text / tool_handwrite / tool_arrow) are handled
+        # CENTRALLY in main.py's setup_hotkeys → _route_tool_shortcut. That
+        # router dispatches to whichever surface is active (Pen Mode overlay
+        # OR Editor window), so a single set of shortcuts works in both
+        # contexts. Registering them here would conflict.
+        #
+        # Editor-specific ACTION shortcuts (undo/redo/save/screenshot/close)
+        # are still registered here because they only make sense when the
+        # editor is open.
+
+        # Actions — gated so they only fire when editor is the focused window
+        # (so Ctrl+Z in Notepad doesn't trigger our undo).
+        def _focus_gated(callback):
+            def _wrapped():
+                try:
+                    if not self.winfo_exists():
+                        return
+                    if not getattr(self, "_has_foreground", False):
+                        return
+                except tk.TclError:
+                    return
+                try:
+                    self.after(0, callback)
+                except Exception:
+                    pass
+            return _wrapped
+
+        for action_id, cb in [
+            ("editor_undo",       self.undo),
+            ("editor_redo",       self.redo),
+            ("editor_save",       self._save),
+            ("editor_screenshot", self._editor_take_screenshot),
+            ("editor_close",      self._close_editor_action),
+        ]:
+            hk = _hk(action_id)
+            if not hk:
+                continue
+            try:
+                hid = _kb.add_hotkey(hk, _focus_gated(cb))
+                self._editor_hotkey_ids.append(hid)
+                print(f"[EDITOR] action ON: {action_id} = {hk}")
+            except Exception as ex:
+                print(f"[EDITOR] action reg failed {action_id} ({hk}): {ex}")
+
+        if self._editor_hotkey_ids:
+            print(f"[EDITOR] registered {len(self._editor_hotkey_ids)} hotkeys")
+
+    def _teardown_editor_hotkeys(self):
+        """Unregister all editor hotkeys (called on re-apply or close)."""
+        try:
+            import keyboard as _kb
+        except Exception:
+            return
+        for hid in getattr(self, "_editor_hotkey_ids", []):
+            try:
+                _kb.remove_hotkey(hid)
+            except Exception:
+                pass
+        self._editor_hotkey_ids = []
+
+    def _tool_shortcut(self, tool_name: str):
+        """Tool-letter shortcut handler — defers to editor toolbar logic."""
+        # Don't switch tools while user is typing in a text element.
+        if self._pages:
+            try:
+                engine = self._pages[self._active_page_idx].engine
+                if getattr(engine, "_text_active", False):
+                    return  # let keystroke fall through to text input
+            except Exception:
+                pass
+        # Don't switch tools during screenshot lockout either.
+        if getattr(self, "_screenshot_lock", False):
+            return "break"
+        # Eraser uses a slightly different toolbar path
+        if tool_name == "eraser":
+            self._tb_activate_eraser()
+        else:
+            self._toggle_draw_tool(tool_name)
+        return "break"
+
+    def _close_editor_action(self):
+        """Smart close: exit fullscreen → cancel text → close window."""
+        if self._fullscreen:
+            self._toggle_fullscreen()
+            return
+        if self._pages:
+            try:
+                engine = self._pages[self._active_page_idx].engine
+                if getattr(engine, "_text_active", False):
+                    engine.on_escape()
+                    return
+            except Exception:
+                pass
+        # Nothing else to handle — close the editor window.
+        try:
+            self._on_close_window()
+        except Exception:
+            self.destroy()
+
     def set_color(self, color: str):
         for page in self._pages:
             page.engine.set_color(color)
@@ -1352,6 +1618,7 @@ class EditorWindow(tk.Toplevel):
         self._canvas.bind("<Key>", self._on_key)
         self._canvas.bind("<Control-z>", lambda e: self.undo())
         self._canvas.bind("<Control-y>", lambda e: self.redo())
+        self._canvas.bind("<Control-Delete>", lambda e: self.clear_all())
         self._canvas.bind("<MouseWheel>", self._on_mousewheel)
         self._canvas.bind("<ButtonPress-3>", self._on_canvas_right_click)
 
@@ -2358,6 +2625,12 @@ class EditorWindow(tk.Toplevel):
             self._autosave_job = None
         # Save session
         self._save_session()
+        # Tear down keyboard library hotkeys so they don't sit registered
+        # while the editor is hidden (re-applied on next open).
+        try:
+            self._teardown_editor_hotkeys()
+        except Exception:
+            pass
         # Hide window (don't destroy)
         self.withdraw()
         # Restore main widget

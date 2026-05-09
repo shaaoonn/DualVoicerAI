@@ -7,7 +7,8 @@ Call: SettingsPanel(parent=app, app_ref=self)
 import customtkinter as ctk
 import webbrowser
 from config import (APP_NAME, APP_VERSION, SETTINGS_WINDOW_SIZE,
-                    SETTINGS_MIN_SIZE, AI_MODELS, BACKEND_BASE)
+                    SETTINGS_MIN_SIZE, AI_MODELS, BACKEND_BASE,
+                    DEFAULT_KEYBOARD_SHORTCUTS)
 from ui_components.language_data import GOOGLE_STT_LANGUAGES
 from i18n import tr, get_ui_font
 
@@ -60,6 +61,7 @@ class SettingsPanel(ctk.CTkToplevel):
             (tr("set_nav_language"),     "language"),
             (tr("set_nav_ai"),           "ai"),
             (tr("set_nav_tts"),          "tts"),
+            (tr("set_nav_shortcuts"),    "shortcuts"),
             (tr("set_nav_subscription"), "subscription"),
             (tr("set_nav_about"),        "about"),
         ]
@@ -98,6 +100,7 @@ class SettingsPanel(ctk.CTkToplevel):
         self._build_language_tab()
         self._build_ai_tab()
         self._build_tts_tab()
+        self._build_shortcuts_tab()
         self._build_subscription_tab()
         self._build_about_tab()
 
@@ -546,6 +549,11 @@ class SettingsPanel(ctk.CTkToplevel):
         lang_display = [f"{name}  ({code})" for name, code in GOOGLE_STT_LANGUAGES]
         lang_codes   = [code for _, code in GOOGLE_STT_LANGUAGES]
 
+        # Track per-button typing-language code so the Voice AI section
+        # below can display "Typing: <lang>" dynamically when user picks a
+        # new typing language up here.
+        self._btn_lang_callbacks = {"btn1_lang": [], "btn2_lang": []}
+
         for btn_key, btn_label, default in [
             ("btn1_lang", tr("set_lbl_btn1"), "bn-BD"),
             ("btn2_lang", tr("set_lbl_btn2"), "en-US"),
@@ -557,9 +565,23 @@ class SettingsPanel(ctk.CTkToplevel):
             cur_disp = lang_display[lang_codes.index(cur)] if cur in lang_codes else lang_display[0]
             var = ctk.StringVar(value=cur_disp)
             def _on_lang_change(v, k=btn_key):
-                self.s[k] = (lang_codes[lang_display.index(v)]
-                             if v in lang_display else lang_codes[0])
+                new_code = (lang_codes[lang_display.index(v)]
+                            if v in lang_display else lang_codes[0])
+                self.s[k] = new_code
                 self._persist()
+                # Refresh app's translation state in case this button is
+                # currently active (so the new typing-language takes effect)
+                try:
+                    if hasattr(self.app, "_refresh_translation_state"):
+                        self.app._refresh_translation_state()
+                except Exception:
+                    pass
+                # Notify any subscribers (e.g. Voice AI Mode card titles)
+                for cb in self._btn_lang_callbacks.get(k, []):
+                    try:
+                        cb(new_code)
+                    except Exception:
+                        pass
             ctk.CTkComboBox(c, variable=var, values=lang_display, width=540,
                             font=(F, 11),
                             fg_color="#FFFFFF", border_color="#CBD5E1",
@@ -574,7 +596,158 @@ class SettingsPanel(ctk.CTkToplevel):
         ctk.CTkLabel(frame,
                      text=tr("set_lang_change_note"),
                      font=(F, 10), text_color="#64748B").pack(
-            anchor="w", padx=28, pady=(8, 20))
+            anchor="w", padx=28, pady=(8, 4))
+
+        # ── Voice AI Mode (per button) ────────────────────────────────
+        self._build_voice_ai_section(frame, lang_display, lang_codes)
+
+        # ── Bengali Phonetic Input (Avro-style) ───────────────────────
+        self._build_bengali_input_section(frame)
+
+    def _build_voice_ai_section(self, parent, lang_display, lang_codes):
+        """Render the per-button Voice AI mode section into the Language
+        tab. Each button gets its own switch + Speak-in dropdown. The
+        card title updates live when the button's typing-language is
+        changed in the section above."""
+        self._section(parent, tr("set_sec_voice_ai"))
+        ctk.CTkLabel(parent, text=tr("set_help_voice_ai"),
+                     font=(F, 10), text_color="#64748B",
+                     justify="left", wraplength=560).pack(
+            anchor="w", padx=28, pady=(0, 8))
+
+        def _refresh_in_app():
+            try:
+                if hasattr(self.app, "_refresh_translation_state"):
+                    self.app._refresh_translation_state()
+            except Exception as ex:
+                print(f"[settings] refresh voice-ai state failed: {ex}")
+
+        for (typing_key, enable_key, from_key, title_tmpl, default_typing,
+             default_from) in [
+            ("btn1_lang", "btn1_translate_enabled", "btn1_translate_from",
+             "set_lbl_btn1_card", "bn-BD", "en-US"),
+            ("btn2_lang", "btn2_translate_enabled", "btn2_translate_from",
+             "set_lbl_btn2_card", "en-US", "bn-BD"),
+        ]:
+            c = self._card(parent)
+            cur_typing = self.s.get(typing_key, default_typing)
+            title_lbl = ctk.CTkLabel(
+                c, text=tr(title_tmpl, lang=cur_typing),
+                text_color="#1A1A2E", font=(F, 12, "bold"))
+            title_lbl.pack(anchor="w", padx=16, pady=(12, 4))
+
+            # Subscribe to typing-language changes so the title updates live
+            def _on_typing_change(new_code, lbl=title_lbl, tmpl=title_tmpl):
+                try:
+                    lbl.configure(text=tr(tmpl, lang=new_code))
+                except Exception:
+                    pass
+            self._btn_lang_callbacks.setdefault(typing_key, []).append(
+                _on_typing_change)
+
+            # Enable switch row
+            sw_row = ctk.CTkFrame(c, fg_color="transparent")
+            sw_row.pack(fill="x", padx=16, pady=4)
+            ctk.CTkLabel(sw_row, text=tr("set_lbl_enable_ai"),
+                         font=(F, 11), text_color="#1A1A2E").pack(side="left")
+            en_var = ctk.BooleanVar(value=self.s.get(enable_key, False))
+
+            # Forward declare dropdown_row so toggle can show/hide it
+            dropdown_row = ctk.CTkFrame(c, fg_color="transparent")
+
+            def _on_toggle(k=enable_key, v=en_var, dd=dropdown_row):
+                self.s[k] = v.get()
+                self._persist()
+                _refresh_in_app()
+                if v.get():
+                    dd.pack(fill="x", padx=16, pady=(2, 12))
+                else:
+                    dd.pack_forget()
+
+            ctk.CTkSwitch(sw_row, variable=en_var, text="",
+                          command=_on_toggle, width=44,
+                          progress_color="#3D5AFE",
+                          button_color="#FFFFFF",
+                          button_hover_color="#F0F2F8",
+                          fg_color="#CBD5E1").pack(side="right")
+
+            # Speak-in dropdown row (hidden when switch off)
+            ctk.CTkLabel(dropdown_row, text=tr("set_lbl_speak_in"),
+                         font=(F, 11), text_color="#374151").pack(side="left")
+            cur_from = self.s.get(from_key, default_from)
+            cur_from_disp = (lang_display[lang_codes.index(cur_from)]
+                             if cur_from in lang_codes else lang_display[0])
+            from_var = ctk.StringVar(value=cur_from_disp)
+
+            def _on_from_change(v, k=from_key):
+                new_code = (lang_codes[lang_display.index(v)]
+                            if v in lang_display else lang_codes[0])
+                self.s[k] = new_code
+                self._persist()
+                _refresh_in_app()
+
+            ctk.CTkComboBox(dropdown_row, variable=from_var,
+                            values=lang_display, width=380,
+                            font=(F, 11),
+                            fg_color="#FFFFFF", border_color="#CBD5E1",
+                            border_width=1, text_color="#1A1A2E",
+                            button_color="#3D5AFE", button_hover_color="#5070FF",
+                            dropdown_fg_color="#FFFFFF",
+                            dropdown_text_color="#1A1A2E",
+                            dropdown_hover_color="#F0F2F8",
+                            command=_on_from_change
+                            ).pack(side="right")
+
+            # Initial visibility based on switch state
+            if en_var.get():
+                dropdown_row.pack(fill="x", padx=16, pady=(2, 12))
+
+    def _build_bengali_input_section(self, parent):
+        """Built-in Avro-style Bengali Phonetic Input — typing 'amar nam'
+        in any Windows app produces 'আমার নাম'. No separate Avro/Bijoy
+        install needed."""
+        self._section(parent, tr("set_sec_bn_input"))
+        ctk.CTkLabel(parent, text=tr("set_help_bn_input"),
+                     font=(F, 10), text_color="#64748B",
+                     justify="left", wraplength=560).pack(
+            anchor="w", padx=28, pady=(0, 8))
+
+        c = self._card(parent)
+
+        # Enable switch
+        sw_row = ctk.CTkFrame(c, fg_color="transparent")
+        sw_row.pack(fill="x", padx=16, pady=(12, 6))
+        ctk.CTkLabel(sw_row, text=tr("set_lbl_bn_enable"),
+                     font=(F, 12), text_color="#1A1A2E").pack(side="left")
+        en_var = ctk.BooleanVar(
+            value=self.s.get("bengali_input_enabled", False))
+
+        def _on_toggle():
+            self.s["bengali_input_enabled"] = en_var.get()
+            self._persist()
+            try:
+                if hasattr(self.app, "apply_bengali_input_setting"):
+                    self.app.apply_bengali_input_setting()
+            except Exception as ex:
+                print(f"[settings] bengali input apply failed: {ex}")
+
+        ctk.CTkSwitch(sw_row, variable=en_var, text="",
+                      command=_on_toggle, width=44,
+                      progress_color="#3D5AFE",
+                      button_color="#FFFFFF",
+                      button_hover_color="#F0F2F8",
+                      fg_color="#CBD5E1").pack(side="right")
+
+        # Hotkey display (read-only — actual editing is in Shortcuts tab)
+        hk_row = ctk.CTkFrame(c, fg_color="transparent")
+        hk_row.pack(fill="x", padx=16, pady=(2, 12))
+        ctk.CTkLabel(hk_row, text=tr("set_lbl_bn_hotkey"),
+                     font=(F, 11), text_color="#374151").pack(side="left")
+        cur_hk = (self.s.get("keyboard_shortcuts", {}) or {}).get(
+            "bengali_input_toggle", "f12")
+        ctk.CTkLabel(hk_row, text=cur_hk.upper(),
+                     font=(F, 11, "bold"),
+                     text_color="#3D5AFE").pack(side="right")
 
     # -- TAB: AI ---------------------------------------------------
     def _build_ai_tab(self):
@@ -701,6 +874,282 @@ class SettingsPanel(ctk.CTkToplevel):
         c2 = self._card(frame)
         self._segmented_row(c2, tr("set_lbl_reading_speed"), "reading_speed",
                              ["1.0", "1.5", "2.0", "2.5"], ["1x", "1.5x", "2x", "2.5x"])
+
+    # -- TAB: Shortcuts --------------------------------------------
+    def _build_shortcuts_tab(self):
+        frame = self._scroll_frame(self.content_area)
+        self._tab_frames["shortcuts"] = frame
+
+        # Help text at the top
+        ctk.CTkLabel(frame, text=tr("set_sc_help"),
+                     font=(F, 11), text_color="#64748B",
+                     justify="left", wraplength=560).pack(
+            anchor="w", padx=28, pady=(20, 4))
+
+        # Three groups of shortcuts (matches DEFAULT_KEYBOARD_SHORTCUTS order)
+        groups = [
+            (tr("set_sec_sc_main"), [
+                ("ai_assistant",      tr("sc_ai_assistant")),
+                ("smart_paste",       tr("sc_smart_paste")),
+                ("voice_btn1",        tr("sc_voice_btn1")),
+                ("voice_btn2",        tr("sc_voice_btn2")),
+                ("take_screenshot",   tr("sc_take_screenshot")),
+                ("bengali_input_toggle", tr("sc_bengali_input_toggle")),
+            ]),
+            (tr("set_sec_sc_tools"), [
+                ("tool_select",       tr("sc_tool_select")),
+                ("tool_pen",          tr("sc_tool_pen")),
+                ("tool_highlighter",  tr("sc_tool_highlighter")),
+                ("tool_eraser",       tr("sc_tool_eraser")),
+                ("tool_text",         tr("sc_tool_text")),
+                ("tool_handwrite",    tr("sc_tool_handwrite")),
+                ("tool_arrow",        tr("sc_tool_arrow")),
+            ]),
+            (tr("set_sec_sc_actions"), [
+                ("clear_all",         tr("sc_clear_all")),
+                ("editor_undo",       tr("sc_editor_undo")),
+                ("editor_redo",       tr("sc_editor_redo")),
+                ("editor_save",       tr("sc_editor_save")),
+                ("editor_screenshot", tr("sc_editor_screenshot")),
+                ("editor_close",      tr("sc_editor_close")),
+            ]),
+        ]
+
+        # Live store of Entry widgets so the Reset button can update them
+        self._sc_entries: dict = {}
+
+        # Make sure settings has the dict (could be missing on old configs)
+        if not isinstance(self.s.get("keyboard_shortcuts"), dict):
+            self.s["keyboard_shortcuts"] = dict(DEFAULT_KEYBOARD_SHORTCUTS)
+
+        for section_title, items in groups:
+            self._section(frame, section_title)
+            c = self._card(frame)
+            for action_id, label in items:
+                self._sc_entries[action_id] = self._shortcut_row(
+                    c, label, action_id)
+
+        # Reset to defaults button
+        btn_row = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_row.pack(fill="x", padx=28, pady=(16, 22))
+        ctk.CTkButton(btn_row, text=tr("set_sc_reset"), height=34,
+                      fg_color="#E2E6F0", hover_color="#D4D8E0",
+                      text_color="#1A1A2E", font=(F, 11, "bold"),
+                      corner_radius=8,
+                      command=self._reset_shortcuts).pack(side="left")
+
+    # Special keys that ARE allowed as single-key shortcuts.
+    _ALLOWED_SOLO_KEYS = {
+        "escape", "esc", "tab", "return", "enter", "space", "backspace",
+        "delete", "del", "up", "down", "left", "right", "home", "end",
+        "pageup", "pagedown",
+        "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9",
+        "f10", "f11", "f12",
+    }
+
+    @classmethod
+    def _is_valid_shortcut(cls, hotkey: str) -> bool:
+        """Reject single-letter shortcuts (must include modifier or be a
+        whitelisted solo key)."""
+        if not hotkey or not hotkey.strip():
+            return False
+        parts = [p.strip() for p in hotkey.lower().split("+") if p.strip()]
+        if not parts:
+            return False
+        if len(parts) >= 2:
+            return True
+        return parts[0] in cls._ALLOWED_SOLO_KEYS
+
+    def _shortcut_row(self, parent, label: str, action_id: str):
+        """Single shortcut row: enable-switch + label + click-to-capture Entry."""
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", padx=18, pady=6)
+
+        # Per-shortcut enable toggle (left side)
+        enabled_dict = self.s.setdefault("keyboard_shortcuts_enabled", {})
+        enabled_var = ctk.BooleanVar(value=enabled_dict.get(action_id, True))
+
+        lbl = ctk.CTkLabel(row, text=label,
+                           font=(F, 12), text_color="#1A1A2E")
+        current = self.s.get("keyboard_shortcuts", {}).get(
+            action_id, DEFAULT_KEYBOARD_SHORTCUTS.get(action_id, ""))
+        entry = ctk.CTkEntry(row, width=200, height=30,
+                             font=(F, 11),
+                             fg_color="#FFFFFF", text_color="#1A1A2E",
+                             border_color="#CBD5E1", border_width=1,
+                             placeholder_text=tr("set_sc_capture_hint"))
+        entry.insert(0, current)
+
+        # Capture state per row (closure-shared)
+        capture = {"active": False, "committed": False, "old": current}
+
+        def _save_value(new_val):
+            sc = self.s.setdefault("keyboard_shortcuts",
+                                   dict(DEFAULT_KEYBOARD_SHORTCUTS))
+            sc[action_id] = new_val
+            self._persist()
+            # Re-register main app hotkeys + editor hotkeys live
+            try:
+                if hasattr(self.app, "setup_hotkeys"):
+                    self.app.setup_hotkeys()
+                ew = getattr(self.app, "_editor_win", None)
+                if ew is not None and ew.winfo_exists() and \
+                        hasattr(ew, "_apply_shortcuts"):
+                    ew.after(0, ew._apply_shortcuts)
+            except Exception as ex:
+                print(f"[settings] hotkey re-register failed: {ex}")
+
+        def _flash(color, ms=800):
+            try:
+                entry.configure(border_color=color)
+                self.after(ms, lambda: entry.configure(
+                    border_color="#3D5AFE" if capture["active"] else "#CBD5E1"))
+            except Exception:
+                pass
+
+        def _show_prompt():
+            try:
+                entry.configure(text_color="#3D5AFE",
+                                fg_color="#EEF2FF",
+                                border_color="#3D5AFE")
+                entry.delete(0, "end")
+                entry.insert(0, tr("set_sc_capturing"))
+            except Exception:
+                pass
+
+        def _restore_visuals(value):
+            try:
+                entry.configure(text_color="#1A1A2E",
+                                fg_color="#FFFFFF",
+                                border_color="#CBD5E1")
+                entry.delete(0, "end")
+                entry.insert(0, value)
+            except Exception:
+                pass
+
+        def _exit_capture(committed: bool, value: str):
+            capture["active"] = False
+            capture["committed"] = True   # don't process further keys
+            _restore_visuals(value)
+            if committed:
+                _save_value(value)
+                _flash("#22C55E")
+
+        def _enter_capture(_e=None):
+            if not enabled_var.get():
+                return
+            if capture["active"]:
+                return
+            capture["active"] = True
+            capture["committed"] = False
+            capture["old"] = entry.get()
+            _show_prompt()
+            try:
+                entry.focus_set()
+            except Exception:
+                pass
+
+        def _on_keypress(event):
+            if not capture["active"] or capture["committed"]:
+                return None
+            keysym = (event.keysym or "").lower()
+            # Cancel on Escape
+            if keysym == "escape":
+                _exit_capture(committed=False, value=capture["old"])
+                return "break"
+            # Wait for non-modifier key
+            if keysym in ("control_l", "control_r", "shift_l", "shift_r",
+                          "alt_l", "alt_r", "win_l", "win_r",
+                          "super_l", "super_r", "meta_l", "meta_r"):
+                return "break"
+            # Decode modifier mask (Tk on Windows: shift=0x1, ctrl=0x4, alt=0x20000)
+            st = event.state or 0
+            mods = []
+            if st & 0x0004: mods.append("ctrl")
+            if st & 0x20000: mods.append("alt")
+            if st & 0x0001: mods.append("shift")
+            # Normalize key name
+            key_norm = {"return": "enter", "kp_enter": "enter",
+                        "prior": "pageup", "next": "pagedown"}
+            key = key_norm.get(keysym, keysym)
+            hotkey = "+".join(mods + [key])
+            # Validate (rejects single letters)
+            if not self._is_valid_shortcut(hotkey):
+                # Show rejection, then revert to capture prompt
+                try:
+                    entry.delete(0, "end")
+                    entry.insert(0, hotkey + "  X")
+                    entry.configure(text_color="#E53935",
+                                    border_color="#E53935")
+                    self.after(900, lambda: _show_prompt() if capture["active"] else None)
+                except Exception:
+                    pass
+                return "break"
+            _exit_capture(committed=True, value=hotkey)
+            return "break"
+
+        def _on_focus_out(_e=None):
+            if capture["active"] and not capture["committed"]:
+                _exit_capture(committed=False, value=capture["old"])
+
+        def _apply_enabled_visuals():
+            on = enabled_var.get()
+            try:
+                if on:
+                    lbl.configure(text_color="#1A1A2E")
+                    entry.configure(state="normal", text_color="#1A1A2E",
+                                    fg_color="#FFFFFF",
+                                    border_color="#CBD5E1")
+                else:
+                    lbl.configure(text_color="#94A3B8")
+                    entry.configure(state="disabled", text_color="#94A3B8",
+                                    fg_color="#F1F5F9",
+                                    border_color="#E2E8F0")
+            except Exception:
+                pass
+
+        def _on_toggle():
+            enabled_dict[action_id] = enabled_var.get()
+            _apply_enabled_visuals()
+            self._persist()
+            try:
+                if hasattr(self.app, "setup_hotkeys"):
+                    self.app.setup_hotkeys()
+                ew = getattr(self.app, "_editor_win", None)
+                if ew is not None and ew.winfo_exists() and \
+                        hasattr(ew, "_apply_shortcuts"):
+                    ew.after(0, ew._apply_shortcuts)
+            except Exception as ex:
+                print(f"[settings] hotkey re-register failed: {ex}")
+
+        switch = ctk.CTkSwitch(row, variable=enabled_var, text="",
+                               command=_on_toggle, width=44,
+                               progress_color="#3D5AFE",
+                               button_color="#FFFFFF",
+                               button_hover_color="#F0F2F8",
+                               fg_color="#CBD5E1")
+        switch.pack(side="left", padx=(0, 10))
+        lbl.pack(side="left")
+        entry.pack(side="right")
+
+        # Click anywhere on the entry → enter capture mode
+        entry.bind("<Button-1>", _enter_capture)
+        entry.bind("<KeyPress>", _on_keypress)
+        entry.bind("<FocusOut>", _on_focus_out)
+
+        _apply_enabled_visuals()
+        return entry
+
+    def _reset_shortcuts(self):
+        """Restore every shortcut to its DEFAULT_KEYBOARD_SHORTCUTS value."""
+        self.s["keyboard_shortcuts"] = dict(DEFAULT_KEYBOARD_SHORTCUTS)
+        for action_id, entry in self._sc_entries.items():
+            try:
+                entry.delete(0, "end")
+                entry.insert(0, DEFAULT_KEYBOARD_SHORTCUTS.get(action_id, ""))
+            except Exception:
+                pass
+        self._persist()
 
     # -- TAB: Subscription -----------------------------------------
     def _build_subscription_tab(self):

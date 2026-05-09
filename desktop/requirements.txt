@@ -15,6 +15,7 @@ aiohttp>=3.9.0
 python-dotenv>=1.0.0
 fast-langdetect>=1.0.0
 markdown2>=2.5.0
+avro-py>=2024.6.0          # Bengali Phonetic Input (Avro-style)
 
 # Phase 3 (add when needed)
 # google-auth-oauthlib>=1.2.0

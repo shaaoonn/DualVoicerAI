@@ -511,6 +511,28 @@ class DrawingEngine:
         if event.keysym in ('VoidSymbol', '??'):
             return
 
+        # ── Modifier detection ────────────────────────────
+        # event.state bitmask: Shift=0x1, Ctrl=0x4, Alt=0x8
+        has_ctrl = bool(event.state & 0x4)
+        has_alt  = bool(event.state & 0x8)
+
+        # ── Ctrl shortcuts within text editing ────────────
+        if has_ctrl and not has_alt:
+            sym = event.keysym.lower()
+            if sym == 'a':  # Ctrl+A → select all text
+                if self._text_buffer:
+                    self._text_sel_start = 0
+                    self._text_sel_end = len(self._text_buffer)
+                    self._text_cursor_idx = len(self._text_buffer)
+                    self._update_text_display()
+                return
+            # Let Ctrl+C/V/X/Z/Y pass through — handled elsewhere
+            return
+
+        # ── Alt shortcuts → ignore entirely ───────────────
+        if has_alt:
+            return
+
         if event.keysym == "Return":
             if self._has_text_selection():
                 self._delete_text_selection()
@@ -540,16 +562,34 @@ class DrawingEngine:
                 self._update_text_display()
             return
         if event.keysym == "Left":
-            self._clear_text_selection()
-            if self._text_cursor_idx > 0:
-                self._text_cursor_idx -= 1
+            if event.state & 0x1:  # Shift+Left → extend selection
+                if self._text_sel_start is None:
+                    self._text_sel_start = self._text_cursor_idx
+                    self._text_sel_end = self._text_cursor_idx
+                if self._text_cursor_idx > 0:
+                    self._text_cursor_idx -= 1
+                    self._text_sel_end = self._text_cursor_idx
                 self._update_text_display()
+            else:
+                self._clear_text_selection()
+                if self._text_cursor_idx > 0:
+                    self._text_cursor_idx -= 1
+                    self._update_text_display()
             return
         if event.keysym == "Right":
-            self._clear_text_selection()
-            if self._text_cursor_idx < len(self._text_buffer):
-                self._text_cursor_idx += 1
+            if event.state & 0x1:  # Shift+Right → extend selection
+                if self._text_sel_start is None:
+                    self._text_sel_start = self._text_cursor_idx
+                    self._text_sel_end = self._text_cursor_idx
+                if self._text_cursor_idx < len(self._text_buffer):
+                    self._text_cursor_idx += 1
+                    self._text_sel_end = self._text_cursor_idx
                 self._update_text_display()
+            else:
+                self._clear_text_selection()
+                if self._text_cursor_idx < len(self._text_buffer):
+                    self._text_cursor_idx += 1
+                    self._update_text_display()
             return
         if event.keysym == "Home":
             self._text_cursor_idx = 0

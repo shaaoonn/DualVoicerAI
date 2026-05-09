@@ -265,6 +265,7 @@ class PenOverlay:
         self._input_canvas.bind("<ButtonRelease-1>", self._engine.on_mouse_up)
         self._input_win.bind("<Control-z>", lambda e: self._engine.undo())
         self._input_win.bind("<Control-y>", lambda e: self._engine.redo())
+        self._input_win.bind("<Control-Delete>", lambda e: self._engine.clear_all())
         self._input_win.bind("<Escape>", lambda e: self._on_escape())
         def _on_key(event):
             self._engine.on_key(event)
