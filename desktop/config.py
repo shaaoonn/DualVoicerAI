@@ -132,6 +132,19 @@ NEW_SETTINGS_KEYS = {
     "btn2_translate_enabled": False,
     "btn1_translate_from": "en-US",
     "btn2_translate_from": "bn-BD",
+    # ── User-facing voice mode picker (drives the dropdown arrows
+    # below the BN/EN buttons). Values: "normal" | "ai_translate" |
+    # "ai_polish". The boolean keys above are kept in sync as derived
+    # state so existing _refresh_translation_state() keeps working.
+    "btn1_voice_mode": "normal",
+    "btn2_voice_mode": "normal",
+    # ── TTS source mode (drives the dropdown under the SND button).
+    # Values: "auto" | "btn1" | "btn2". When non-auto, tts_auto_detect
+    # is set False and tts_voice is set from the chosen button's lang.
+    "tts_source_mode": "auto",
+    # ── AI chat popup (under the AI button arrow) — restores last
+    # prompt the user typed so they can iterate on a request.
+    "ai_popup_last_prompt": "",
     # ── Bengali Phonetic Input (Avro-style, built-in) ────────────────
     # When True: typing Latin characters in any Windows app produces
     # Bengali (e.g. "ami" → "আমি"). Toggle via F12 (configurable).

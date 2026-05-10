@@ -80,6 +80,7 @@ import keyboard
 import winreg
 import tempfile
 import requests
+import tkinter as tk
 from tkinter import messagebox
 import datetime
 import json
@@ -1171,6 +1172,67 @@ class VoiceTypingApp(ctk.CTk):
         except Exception as e:
             print(f"[FOCUS] Failed to set NOACTIVATE: {e}")
 
+    def _force_foreground(self, hwnd) -> bool:
+        """Reliable SetForegroundWindow that bypasses Windows'
+        anti-focus-stealing rule by attaching this thread's input queue
+        to the target window's thread. Used by the AI drawer when
+        handing focus back to the previously-active app so type_text
+        lands in the right window. Returns True on success."""
+        if not hwnd:
+            return False
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            cur_thread = kernel32.GetCurrentThreadId()
+            target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+            if not target_thread:
+                return False
+            attached = False
+            if target_thread != cur_thread:
+                attached = bool(user32.AttachThreadInput(
+                    cur_thread, target_thread, True))
+            try:
+                user32.BringWindowToTop(hwnd)
+                ok = bool(user32.SetForegroundWindow(hwnd))
+            finally:
+                if attached:
+                    user32.AttachThreadInput(
+                        cur_thread, target_thread, False)
+            return ok
+        except Exception as e:
+            print(f"[FOCUS] _force_foreground failed: {e}")
+            return False
+
+    def _toggle_no_activate(self, on: bool) -> bool:
+        """Flip the WS_EX_NOACTIVATE bit on this Toplevel and re-apply the
+        frame so the change takes effect immediately. Used by AI drawer
+        to temporarily allow keyboard focus on its textbox while open,
+        then restore the no-steal-focus behaviour on close."""
+        try:
+            import ctypes
+            GWL_EXSTYLE       = -20
+            WS_EX_NOACTIVATE  = 0x08000000
+            SWP_NOMOVE        = 0x0002
+            SWP_NOSIZE        = 0x0001
+            SWP_NOZORDER      = 0x0004
+            SWP_FRAMECHANGED  = 0x0020
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetParent(self.winfo_id())
+            style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            new_style = (style | WS_EX_NOACTIVATE) if on \
+                else (style & ~WS_EX_NOACTIVATE)
+            if new_style != style:
+                user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+                user32.SetWindowPos(
+                    hwnd, 0, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER
+                    | SWP_FRAMECHANGED)
+            return True
+        except Exception as e:
+            print(f"[FOCUS] toggle NOACTIVATE failed: {e}")
+            return False
+
     # Toolbar gradient color (approx middle of gradient - used for button corners)
     TOOLBAR_BG = "#302D5E"
 
@@ -1186,8 +1248,26 @@ class VoiceTypingApp(ctk.CTk):
         tool_floor = 14 if btn_s < 48 else 20
         tool_w = max(tool_floor, int(28 * sc)) + 4
         w = 2 * padx + 4 * btn_s + 4 * gap + tool_w
-        h = btn_s + max(12, int(14 * sc))
+        # Reserve extra height below the buttons for the dropdown ▼ arrows
+        # (BN / EN / SND / AI). Skipped at the smallest preset where the
+        # arrow would render too tiny to read.
+        arrow_h, arrow_gap = VoiceTypingApp._calc_arrow_dims(btn_s)
+        base_h = btn_s + max(12, int(14 * sc))
+        h = base_h + arrow_h + arrow_gap if arrow_h else base_h
         return w, h
+
+    @staticmethod
+    def _calc_arrow_dims(btn_s):
+        """Return (arrow_height, arrow_gap) reserved below the buttons.
+        Returns (0, 0) when the preset is too small for a legible arrow.
+        Tightened further per user request — these are just toggles for
+        the drawer, they shouldn't visually compete with the buttons."""
+        sc = btn_s / 72.0
+        arrow_h = max(5, int(6 * sc))
+        arrow_gap = max(2, int(2 * sc))
+        if arrow_h < 5:
+            return 0, 0
+        return arrow_h, arrow_gap
 
     @staticmethod
     def _calc_tools_panel_w(btn_s):
@@ -1245,8 +1325,26 @@ class VoiceTypingApp(ctk.CTk):
         from config import SPECTRUM_BTN_SIZE, SPECTRUM_COLORS
 
         # Main container - holds canvas (left) + pen panel (right)
-        self._main_container = tk.Frame(self, bg="#22214B")
-        self._main_container.pack(fill="both", expand=True)
+        # Vertical wrapper so we can place a slide-out drawer BELOW the
+        # main toolbar row (used by the BN/EN/SND/AI ▼ arrows).
+        self._root_vbox = tk.Frame(self, bg="#22214B")
+        self._root_vbox.pack(fill="both", expand=True)
+
+        self._main_container = tk.Frame(self._root_vbox, bg="#22214B")
+        self._main_container.pack(side="top", fill="x")
+
+        # Drawer host — sibling of _main_container, packed BELOW it.
+        # Always present; content is added/removed when a drawer opens.
+        self._drawer_host = tk.Frame(self._root_vbox, bg="#22214B",
+                                       highlightthickness=0)
+        self._drawer_host.pack(side="top", fill="x")
+        # Children are placed via .place() (zero natural size). Lock the
+        # frame so pack does NOT collapse it — height is driven manually
+        # via configure(height=N) when a drawer opens / closes.
+        self._drawer_host.pack_propagate(False)
+        self._drawer_host.configure(height=0)
+        self._drawer_active_kind = None     # "bn"/"en"/"snd"/"ai" or None
+        self._drawer_widget = None          # current drawer Frame
 
         # Panel container for embedded pen tools (LEFT side, initially hidden)
         self._panel_container = tk.Frame(
@@ -1284,7 +1382,27 @@ class VoiceTypingApp(ctk.CTk):
 
         self.btn_ai = SpectrumButton(self.frame, size=btn_size, label="AI",
             colors=SPECTRUM_COLORS, toolbar_bg=self.TOOLBAR_BG,
-            command=self.ai_trigger_flow if hasattr(self, 'ai_trigger_flow') else None)
+            command=self._ai_button_send)
+
+        # Dropdown ▼ arrows under each main button. Live as Canvas-
+        # embedded widgets that get placed by _apply_window_size.
+        # Hidden during drag, auto-resize per size_preset.
+        from ui_components.dropdown_arrow import DropdownArrow
+        self.arrow_bn = DropdownArrow(
+            self.frame, command=self._open_bn_dropdown,
+            toolbar_bg=self.TOOLBAR_BG)
+        self.arrow_en = DropdownArrow(
+            self.frame, command=self._open_en_dropdown,
+            toolbar_bg=self.TOOLBAR_BG)
+        self.arrow_read = DropdownArrow(
+            self.frame, command=self._open_read_dropdown,
+            toolbar_bg=self.TOOLBAR_BG)
+        self.arrow_ai = DropdownArrow(
+            self.frame, command=self._open_ai_dropdown,
+            toolbar_bg=self.TOOLBAR_BG)
+        self._arrows = [self.arrow_bn, self.arrow_en,
+                        self.arrow_read, self.arrow_ai]
+        self._active_dropdown = None
 
         # Apply label visibility from settings
         if not self.settings.get("show_labels", True):
@@ -1427,7 +1545,9 @@ class VoiceTypingApp(ctk.CTk):
             wx, wy = self.winfo_x(), self.winfo_y()
         except Exception:
             wx, wy = 0, 0
-        self.geometry(f"{total_w}x{h}+{wx}+{wy}")
+        # Add drawer height if a slide-out is currently open
+        drawer_h = self._current_drawer_height()
+        self.geometry(f"{total_w}x{h + drawer_h}+{wx}+{wy}")
 
         scale = btn_s / 72.0
         padx = max(6, int(8 * scale))
@@ -1517,18 +1637,59 @@ class VoiceTypingApp(ctk.CTk):
         # Render gradient background (only canvas area, not panel)
         self._render_toolbar_bg(base_w, h)
 
-        # Place buttons on canvas - tight layout
-        cy = h // 2
+        # Place buttons on canvas - tight layout. When dropdown arrows
+        # are enabled we shift the button row UP so the arrows fit
+        # below; the tool frame stays centred to `cy_tools`.
+        arrow_h, arrow_gap = self._calc_arrow_dims(btn_s)
+        if arrow_h:
+            # Buttons up by half the arrow zone — arrows occupy the
+            # bottom band, tool frame stays centred to mid-height.
+            cy_buttons = (h - arrow_h - arrow_gap) // 2
+        else:
+            cy_buttons = h // 2
+        cy_tools = h // 2
         x = padx + btn_s // 2
 
         btns = [self.btn_bn, self.btn_en, self.btn_read, self.btn_ai]
+        button_xs = []
         for btn in btns:
-            self.frame.create_window(x, cy, window=btn, tags="widgets")
+            self.frame.create_window(x, cy_buttons, window=btn, tags="widgets")
+            button_xs.append(x)
             x += btn_s + gap
+
+        # Stash button x-centres + widget metrics so drawer code can
+        # align its slide-out panel under the right button.
+        self._btn_x_centres = list(button_xs)
+        self._btn_size = btn_s
+        self._toolbar_base_w = base_w
+        self._toolbar_base_h = h
+        # Re-position the active drawer (if one is open) so it stays
+        # under the same button after a layout change.
+        try:
+            if getattr(self, "_drawer_active_kind", None):
+                self._reposition_drawer()
+        except Exception:
+            pass
+
+        # Place dropdown ▼ arrows directly below each button (if enabled
+        # at this preset). Both `widgets` and `dropdown_arrows` tags so
+        # the existing delete("widgets") cleans them up on relayout
+        # AND a separate `dropdown_arrows` tag exists for drag hide/show.
+        arrows = list(getattr(self, "_arrows", []))
+        if arrow_h and arrows and len(arrows) == len(button_xs):
+            arrow_y = cy_buttons + btn_s // 2 + arrow_gap + arrow_h // 2
+            for arrow, x_center in zip(arrows, button_xs):
+                try:
+                    arrow.resize(width=btn_s, height=arrow_h)
+                except Exception:
+                    pass
+                self.frame.create_window(
+                    x_center, arrow_y, window=arrow,
+                    tags=("widgets", "dropdown_arrows"))
 
         # Tool frame - tight: right after last button's edge
         tool_cx = x - btn_s // 2 + tool_w // 2
-        self.frame.create_window(tool_cx, cy,
+        self.frame.create_window(tool_cx, cy_tools,
                                  window=self.tool_frame, tags="widgets")
 
     def update_button_labels(self):
@@ -1558,6 +1719,9 @@ class VoiceTypingApp(ctk.CTk):
         """Called from settings panel when size changes."""
         if preset:
             self.settings["size_preset"] = preset
+        # Any open dropdown was anchored to the OLD button layout — close
+        # it so it doesn't float in stale coordinates after relayout.
+        self._close_active_dropdown()
         self._apply_window_size()
         self.save_settings()
 
@@ -1909,6 +2073,15 @@ class VoiceTypingApp(ctk.CTk):
 
                         # Show AI button glow (10s countdown)
                         self.after(0, self._start_screenshot_glow)
+
+                        # If the AI drawer is currently open, push the
+                        # screenshot straight into its image slot so
+                        # the user can immediately add a prompt and
+                        # hit Send. If the drawer is closed it'll be
+                        # picked up next time the user opens it (see
+                        # _toggle_ai_drawer's pending_image_b64 path).
+                        self.after(0, self._push_screenshot_to_drawer,
+                                   new_data_url)
 
                         # Save to folder if configured
                         save_dir = self.settings.get("screenshot_save_dir", "").strip()
@@ -3123,16 +3296,20 @@ class VoiceTypingApp(ctk.CTk):
         dx = event.x_root - self.drag_start["x"]
         dy = event.y_root - self.drag_start["y"]
         threshold = 5
-        
+
         if not self.drag_started and (abs(dx) > threshold or abs(dy) > threshold):
             self.drag_started = True
             self.is_dragging = True
-        
+            # Hide dropdown arrows + dismiss any open dropdown so they
+            # don't float in the wrong place during/after the drag.
+            self._hide_arrows_for_drag()
+            self._close_active_dropdown()
+
         if self.is_dragging:
             x = self.drag_start["root_x"] + dx
             y = self.drag_start["root_y"] + dy
             self.geometry(f"+{x}+{y}")
-    
+
     def _on_bg_release(self, event):
         """Save position after dragging the toolbar background."""
         if self.is_dragging:
@@ -3143,6 +3320,43 @@ class VoiceTypingApp(ctk.CTk):
             except Exception:
                 pass
         self.is_dragging = False
+        self._show_arrows()
+
+    # ── Dropdown arrow visibility + active-popup management ─────
+
+    def _hide_arrows_for_drag(self):
+        try:
+            self.frame.itemconfigure("dropdown_arrows", state="hidden")
+        except Exception:
+            pass
+
+    def _show_arrows(self):
+        try:
+            self.frame.itemconfigure("dropdown_arrows", state="normal")
+        except Exception:
+            pass
+
+    def _close_active_dropdown(self):
+        # Close any embedded slide-out drawer (BN/EN/SND/AI)
+        try:
+            if getattr(self, "_drawer_widget", None) is not None:
+                self._close_drawer()
+        except Exception:
+            pass
+        # Legacy floating-popup cleanup (kept for safety)
+        p = getattr(self, "_active_dropdown", None)
+        if p is None:
+            return
+        try:
+            if hasattr(p, "winfo_exists") and p.winfo_exists():
+                p.destroy()
+        except Exception:
+            pass
+        self._active_dropdown = None
+        # Reset any active-arrow highlight
+        for a in getattr(self, "_arrows", []) or []:
+            try: a.set_active(False)
+            except Exception: pass
 
     def on_release(self, event, cmd):
         # SAVE POSITION after dragging
@@ -3156,7 +3370,8 @@ class VoiceTypingApp(ctk.CTk):
                 print(f"[POSITION] Saved new position: ({new_x}, {new_y})")
             except Exception as e:
                 print(f"[WARNING] Failed to save position: {e}")
-        
+            self._show_arrows()
+
         # Only trigger command if not dragging
         if not self.is_dragging:
             cmd()
@@ -3332,6 +3547,41 @@ class VoiceTypingApp(ctk.CTk):
                 except Exception:
                     pass
                 print("[MIGRATE] translation_mode → per-button enables")
+            # Also infer the new picker-mode keys from existing booleans
+            # so the dropdown UI shows the correct current selection.
+            for idx in (1, 2):
+                key = f"btn{idx}_voice_mode"
+                if key not in self.settings:
+                    enabled = self.settings.get(f"btn{idx}_translate_enabled", False)
+                    own_lang = self.settings.get(
+                        f"btn{idx}_lang", "bn-BD" if idx == 1 else "en-US")
+                    src_lang = self.settings.get(
+                        f"btn{idx}_translate_from",
+                        "en-US" if idx == 1 else "bn-BD")
+                    if not enabled:
+                        self.settings[key] = "normal"
+                    elif src_lang == own_lang:
+                        self.settings[key] = "ai_polish"
+                    else:
+                        self.settings[key] = "ai_translate"
+            # TTS source mode inference
+            if "tts_source_mode" not in self.settings:
+                if self.settings.get("tts_auto_detect", True):
+                    self.settings["tts_source_mode"] = "auto"
+                else:
+                    voice = (self.settings.get("tts_voice") or "").lower()
+                    btn1 = self.settings.get("btn1_lang", "bn-BD").split("-")[0].lower()
+                    btn2 = self.settings.get("btn2_lang", "en-US").split("-")[0].lower()
+                    if voice.startswith(btn1):
+                        self.settings["tts_source_mode"] = "btn1"
+                    elif voice.startswith(btn2):
+                        self.settings["tts_source_mode"] = "btn2"
+                    else:
+                        self.settings["tts_source_mode"] = "auto"
+            try:
+                self.save_settings()
+            except Exception:
+                pass
             self._voice_ai_migrated = True
 
         if not getattr(self, "active_lang", None):
@@ -3938,6 +4188,420 @@ class VoiceTypingApp(ctk.CTk):
         except Exception as e:
             print(f"[TYPE] inject fallback failed: {e}")
 
+    # ─────── Dropdown arrow handlers (BN / EN / SND / AI) ──────────
+
+    @staticmethod
+    def _lang_display(code: str) -> str:
+        """Return a human-readable name for a BCP-47 language code,
+        falling back to the code itself if unknown."""
+        try:
+            from ui_components.language_data import GOOGLE_STT_LANGUAGES
+            for name, c in GOOGLE_STT_LANGUAGES:
+                if c == code:
+                    return name
+        except Exception:
+            pass
+        return code
+
+    # ── Drawer click handlers (called by DropdownArrow widgets) ────
+
+    def _open_bn_dropdown(self):
+        self._toggle_voice_drawer(btn_idx=1)
+
+    def _open_en_dropdown(self):
+        self._toggle_voice_drawer(btn_idx=2)
+
+    def _open_read_dropdown(self):
+        self._toggle_tts_drawer()
+
+    def _open_ai_dropdown(self):
+        self._toggle_ai_drawer()
+
+    def _push_screenshot_to_drawer(self, b64_url: str):
+        """Push a freshly-captured screenshot into the AI drawer's
+        image slot if the drawer is currently open."""
+        drawer = getattr(self, "_drawer_widget", None)
+        if (self._drawer_active_kind == "ai"
+                and drawer is not None
+                and hasattr(drawer, "set_image_from_b64")):
+            try:
+                drawer.set_image_from_b64(b64_url, label="Screenshot")
+            except Exception as e:
+                print(f"[SCREENSHOT] push to drawer failed: {e}")
+
+    def _ai_button_send(self):
+        """Main AI button click — equivalent to the Send (➤) button
+        inside the drawer, NOT a "open drawer" trigger.
+
+        Behavior:
+          • drawer open  → trigger the drawer's send (uses its
+            already-captured selection + prompt textbox + image).
+          • drawer closed → fall back to the standalone selection-AI
+            flow that existed before the drawer was added (Ctrl+C
+            grab → AI process → paste).
+        """
+        drawer = getattr(self, "_drawer_widget", None)
+        if (self._drawer_active_kind == "ai"
+                and drawer is not None
+                and not getattr(drawer, "_busy", False)):
+            try:
+                drawer._on_send()
+            except Exception as e:
+                print(f"[AI BTN] drawer send failed: {e}")
+            return
+        # Drawer not open (or busy) — original flow.
+        try:
+            self.ai_trigger_flow()
+        except Exception as e:
+            print(f"[AI BTN] ai_trigger_flow failed: {e}")
+
+    def _apply_voice_mode(self, btn_idx: int, mode: str):
+        """Sync derived state when user picks a voice-mode row."""
+        own_lang = self.settings.get(
+            f"btn{btn_idx}_lang", "bn-BD" if btn_idx == 1 else "en-US")
+        other_lang = self.settings.get(
+            f"btn{3 - btn_idx}_lang",
+            "en-US" if btn_idx == 1 else "bn-BD")
+        self.settings[f"btn{btn_idx}_voice_mode"] = mode
+        if mode == "normal":
+            self.settings[f"btn{btn_idx}_translate_enabled"] = False
+        elif mode == "ai_polish":
+            self.settings[f"btn{btn_idx}_translate_enabled"] = True
+            self.settings[f"btn{btn_idx}_translate_from"]    = own_lang
+        elif mode == "ai_translate":
+            self.settings[f"btn{btn_idx}_translate_enabled"] = True
+            self.settings[f"btn{btn_idx}_translate_from"]    = other_lang
+        try: self.save_settings()
+        except Exception as e: print(f"[VOICE-MODE] save failed: {e}")
+        try: self._refresh_translation_state()
+        except Exception as e: print(f"[VOICE-MODE] refresh failed: {e}")
+        print(f"[VOICE-MODE] btn{btn_idx} = {mode}")
+
+    def _apply_tts_mode(self, mode: str):
+        """Sync derived state when user picks a TTS source row."""
+        try:
+            from ai_engine.tts_detector import LANG_TO_VOICE, DEFAULT_VOICE
+        except Exception:
+            LANG_TO_VOICE, DEFAULT_VOICE = {}, "en-US-JennyNeural"
+
+        def _voice_for(lang: str) -> str:
+            prefix = (lang or "").split("-")[0].lower()
+            return LANG_TO_VOICE.get(prefix, DEFAULT_VOICE)
+
+        self.settings["tts_source_mode"] = mode
+        if mode == "auto":
+            self.settings["tts_auto_detect"] = True
+        elif mode == "btn1":
+            self.settings["tts_auto_detect"] = False
+            self.settings["tts_voice"] = _voice_for(
+                self.settings.get("btn1_lang", "bn-BD"))
+        elif mode == "btn2":
+            self.settings["tts_auto_detect"] = False
+            self.settings["tts_voice"] = _voice_for(
+                self.settings.get("btn2_lang", "en-US"))
+        try: self.save_settings()
+        except Exception as e: print(f"[TTS-MODE] save failed: {e}")
+        print(f"[TTS-MODE] {mode} -> voice={self.settings.get('tts_voice')}")
+
+    # ─── Embedded drawer system ────────────────────────────────────
+
+    # Drawer palette — matches widget toolbar
+    _DRAWER_BG       = "#22214B"
+    _DRAWER_HEADER   = "#2E305E"
+    _DRAWER_ROW_BG   = "#2A2A55"
+    _DRAWER_ROW_HV   = "#3A3870"
+    _DRAWER_ACTIVE   = "#FFD700"   # gold accent (matches widget label)
+    _DRAWER_TEXT     = "#F0F2F8"
+    _DRAWER_MUTED    = "#9BA3C7"
+    _DRAWER_BORDER   = "#404778"
+
+    def _current_drawer_height(self) -> int:
+        """Pixel height the drawer is currently consuming (0 if closed)."""
+        if self._drawer_widget is None:
+            return 0
+        try:
+            return self._drawer_widget.winfo_reqheight()
+        except Exception:
+            return 0
+
+    def _close_drawer(self):
+        """Tear down any open drawer + restore Toplevel size."""
+        if self._drawer_widget is None:
+            return
+        was_ai = (self._drawer_active_kind == "ai")
+        # Reset arrow active highlight
+        for arrow in (getattr(self, "_arrows", []) or []):
+            try: arrow.set_active(False)
+            except Exception: pass
+        try:
+            self._drawer_widget.destroy()
+        except Exception:
+            pass
+        self._drawer_widget = None
+        self._drawer_active_kind = None
+        # Re-pack drawer host with zero height
+        try:
+            self._drawer_host.configure(height=0)
+        except Exception:
+            pass
+        # Restore Toplevel geometry to base size
+        self._restore_geometry_no_drawer()
+
+        # AI drawer borrowed keyboard focus by stripping
+        # WS_EX_NOACTIVATE — put it back so subsequent toolbar
+        # clicks no longer steal focus from the user's foreground app,
+        # and hand foreground back to whatever window they were using
+        # before opening the drawer. Use the AttachThreadInput helper
+        # so SetForegroundWindow isn't blocked by Windows' anti-focus-
+        # stealing guard.
+        if was_ai:
+            self._toggle_no_activate(True)
+            prev = getattr(self, "_ai_prev_foreground", None)
+            if prev and not self._force_foreground(prev):
+                try:
+                    import pyautogui
+                    pyautogui.hotkey("alt", "tab")
+                except Exception as e:
+                    print(f"[AI-DRAWER] alt+tab fallback failed: {e}")
+            self._ai_prev_foreground = None
+
+    def _restore_geometry_no_drawer(self):
+        try:
+            wx, wy = self.winfo_x(), self.winfo_y()
+        except Exception:
+            return
+        try:
+            cur_w = self.winfo_width()
+            base_h = getattr(self, "_toolbar_base_h", None)
+            if base_h is None:
+                return
+            self.geometry(f"{cur_w}x{base_h}+{wx}+{wy}")
+        except Exception:
+            pass
+
+    def _grow_geometry_for_drawer(self, drawer_h: int):
+        try:
+            wx, wy = self.winfo_x(), self.winfo_y()
+            cur_w = self.winfo_width()
+            base_h = getattr(self, "_toolbar_base_h", None)
+            if base_h is None:
+                return
+            self.geometry(f"{cur_w}x{base_h + drawer_h}+{wx}+{wy}")
+        except Exception:
+            pass
+
+    def _set_arrow_active(self, kind: str):
+        """Highlight the arrow whose drawer is open; reset others."""
+        mapping = {"bn": getattr(self, "arrow_bn", None),
+                   "en": getattr(self, "arrow_en", None),
+                   "snd": getattr(self, "arrow_read", None),
+                   "ai": getattr(self, "arrow_ai", None)}
+        for k, a in mapping.items():
+            if a is None: continue
+            try: a.set_active(k == kind)
+            except Exception: pass
+
+    def _reposition_drawer(self):
+        """Re-place the active drawer at the right X after a layout change."""
+        if self._drawer_widget is None:
+            return
+        kind = self._drawer_active_kind
+        try:
+            if kind in ("bn", "en", "snd"):
+                idx = {"bn": 0, "en": 1, "snd": 2}[kind]
+                xs = getattr(self, "_btn_x_centres", []) or []
+                if idx < len(xs):
+                    btn_s = getattr(self, "_btn_size", 72)
+                    x = xs[idx] - btn_s // 2
+                    self._drawer_widget.place(
+                        x=x, y=0, width=btn_s)
+            elif kind == "ai":
+                w = getattr(self, "_toolbar_base_w", None)
+                if w:
+                    self._drawer_widget.place(x=0, y=0, width=w)
+            self._grow_geometry_for_drawer(
+                self._drawer_widget.winfo_reqheight())
+        except Exception:
+            pass
+
+    # ── Voice-mode drawer (BN / EN) ────────────────────────────────
+
+    def _toggle_voice_drawer(self, btn_idx: int):
+        kind = "bn" if btn_idx == 1 else "en"
+        if self._drawer_active_kind == kind:
+            self._close_drawer()
+            return
+        self._close_drawer()
+
+        own_lang   = self.settings.get(
+            f"btn{btn_idx}_lang", "bn-BD" if btn_idx == 1 else "en-US")
+        other_lang = self.settings.get(
+            f"btn{3 - btn_idx}_lang",
+            "en-US" if btn_idx == 1 else "bn-BD")
+        own_label   = self._lang_display(own_lang).split()[0]
+        other_label = self._lang_display(other_lang).split()[0]
+        rows = [
+            ("ai_translate", f"🌐 Translate → {own_label}"),
+            ("ai_polish",    f"✨ Polish in {own_label}"),
+            ("normal",       f"📝 Normal {own_label}"),
+        ]
+        cur = self.settings.get(f"btn{btn_idx}_voice_mode", "normal")
+
+        btn_s = getattr(self, "_btn_size", 72)
+        xs = getattr(self, "_btn_x_centres", []) or []
+        if not xs:
+            return
+        x_left = xs[0 if btn_idx == 1 else 1] - btn_s // 2
+
+        self._build_compact_drawer(
+            kind=kind, x=x_left, width=btn_s, rows=rows, current=cur,
+            on_select=lambda v, i=btn_idx: (self._apply_voice_mode(i, v),
+                                            self._close_drawer()))
+
+    # ── TTS drawer (SND) ───────────────────────────────────────────
+
+    def _toggle_tts_drawer(self):
+        if self._drawer_active_kind == "snd":
+            self._close_drawer()
+            return
+        self._close_drawer()
+
+        btn1_lang = self.settings.get("btn1_lang", "bn-BD")
+        btn2_lang = self.settings.get("btn2_lang", "en-US")
+        rows = [("btn1",
+                  f"🔊 {self._lang_display(btn1_lang).split()[0]}")]
+        if btn2_lang != btn1_lang:
+            rows.append(("btn2",
+                         f"🔊 {self._lang_display(btn2_lang).split()[0]}"))
+        rows.append(("auto", "🎯 Auto-detect"))
+        cur = self.settings.get("tts_source_mode", "auto")
+
+        btn_s = getattr(self, "_btn_size", 72)
+        xs = getattr(self, "_btn_x_centres", []) or []
+        if len(xs) < 3:
+            return
+        x_left = xs[2] - btn_s // 2
+
+        self._build_compact_drawer(
+            kind="snd", x=x_left, width=btn_s, rows=rows, current=cur,
+            on_select=lambda v: (self._apply_tts_mode(v),
+                                  self._close_drawer()))
+
+    def _build_compact_drawer(self, kind: str, x: int, width: int,
+                                rows, current: str, on_select):
+        """Stack of dark buttons, anchored under one toolbar button."""
+        # Cleanup any previous content in drawer host
+        for c in self._drawer_host.winfo_children():
+            try: c.destroy()
+            except Exception: pass
+
+        drawer = tk.Frame(self._drawer_host, bg=self._DRAWER_BG,
+                           highlightthickness=1,
+                           highlightbackground=self._DRAWER_BORDER,
+                           highlightcolor=self._DRAWER_BORDER)
+        # Place at correct X within the drawer host (which spans full
+        # widget width). y=0 because drawer_host sits below toolbar.
+        drawer.place(x=x, y=0, width=width)
+
+        for value, label in rows:
+            is_cur = (value == current)
+            btn = tk.Button(
+                drawer, text=label,
+                # Shrunk to 0.75× (was 9pt) per user request — voice
+                # and TTS drawer rows feel less crowded at 7pt.
+                font=("Segoe UI", 7, "bold" if is_cur else "normal"),
+                bg=self._DRAWER_ROW_BG if not is_cur else self._DRAWER_HEADER,
+                fg=self._DRAWER_ACTIVE if is_cur else self._DRAWER_TEXT,
+                activebackground=self._DRAWER_ROW_HV,
+                activeforeground=self._DRAWER_TEXT,
+                relief="flat", bd=0, cursor="hand2",
+                command=lambda v=value: on_select(v))
+            btn.pack(fill="x", padx=2, pady=1, ipady=3)
+            # Hover effect
+            def _enter(_e, b=btn, c=is_cur):
+                if not c: b.configure(bg=self._DRAWER_ROW_HV)
+            def _leave(_e, b=btn, c=is_cur):
+                if not c: b.configure(bg=self._DRAWER_ROW_BG)
+            btn.bind("<Enter>", _enter)
+            btn.bind("<Leave>", _leave)
+
+        # Force geometry update so winfo_reqheight returns real value
+        drawer.update_idletasks()
+        self._drawer_host.configure(height=drawer.winfo_reqheight())
+
+        self._drawer_widget = drawer
+        self._drawer_active_kind = kind
+        self._set_arrow_active(kind)
+        self._grow_geometry_for_drawer(drawer.winfo_reqheight())
+
+    # ── AI drawer (full-width compact bar) ─────────────────────────
+
+    def _toggle_ai_drawer(self):
+        if self._drawer_active_kind == "ai":
+            self._close_drawer()
+            return
+        self._close_drawer()
+
+        # Step 1 — capture user state BEFORE we steal focus.
+        # The widget normally has WS_EX_NOACTIVATE so clicking the ▼
+        # arrow did NOT switch foreground away from the user's app.
+        # We therefore have one safe moment to:
+        #   (a) note which window the user was working in, so we can
+        #       SetForegroundWindow back to it before typing the result.
+        #   (b) Ctrl+C any text they had selected, so the drawer can
+        #       send it to the AI alongside the prompt + image.
+        prev_hwnd = None
+        try:
+            import ctypes
+            prev_hwnd = ctypes.windll.user32.GetForegroundWindow()
+        except Exception:
+            pass
+        captured_selection = ""
+        try:
+            from ai_engine.clipboard_guard import ClipboardGuard
+            captured_selection = (
+                ClipboardGuard().get_selected_text() or "").strip()
+        except Exception as e:
+            print(f"[AI-DRAWER] selection capture failed: {e}")
+        self._ai_prev_foreground = prev_hwnd
+
+        for c in self._drawer_host.winfo_children():
+            try: c.destroy()
+            except Exception: pass
+
+        from ui.ai_drawer import AIDrawer
+        full_w = getattr(self, "_toolbar_base_w", self.winfo_width())
+        # Hand the drawer any unconsumed screenshot so it appears as
+        # an attached image right when the user opens it.
+        pending_screenshot = getattr(self, "_last_screenshot_b64", None)
+        drawer = AIDrawer(
+            self._drawer_host, app=self, width=full_w,
+            captured_selection=captured_selection,
+            previous_foreground_hwnd=prev_hwnd,
+            pending_image_b64=pending_screenshot)
+        drawer.place(x=0, y=0, width=full_w)
+        drawer.update_idletasks()
+        self._drawer_host.configure(height=drawer.winfo_reqheight())
+
+        self._drawer_widget = drawer
+        self._drawer_active_kind = "ai"
+        self._set_arrow_active("ai")
+        self._grow_geometry_for_drawer(drawer.winfo_reqheight())
+
+        # Step 2 — strip NOACTIVATE so the textbox can take keyboard
+        # focus, then promote the widget Toplevel to foreground and
+        # focus the entry.
+        if self._toggle_no_activate(False):
+            try:
+                import ctypes
+                hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+            except Exception as e:
+                print(f"[AI-DRAWER] SetForegroundWindow failed: {e}")
+            self.after(60, drawer.focus_entry)
+
+    # ───────────────────────────────────────────────────────────────
+
     def handle_reader_click(self):
         from config import DEV_MODE
         if not DEV_MODE and not self.is_authenticated:
@@ -4057,6 +4721,43 @@ class VoiceTypingApp(ctk.CTk):
         """PRODUCER: Splits text and generates individual audio chunks with retry"""
         try:
             full_text = self.current_text
+
+            # ── SND drawer "in btn1/btn2 lang" mode: AI-translate the
+            # selected text into the chosen language BEFORE TTS, so e.g.
+            # an English/Chinese/Spanish selection can be heard in
+            # Bengali. "auto" mode skips this and falls back to the
+            # existing language-detect TTS path below.
+            #
+            # NOTE: stream_audio_chunks runs inside asyncio.run() (a
+            # FRESH event loop in the TTS thread). The aiohttp session
+            # used by complete() is a singleton bound to the persistent
+            # executor loop in openrouter.py — calling complete() from
+            # this fresh loop crashes with "Timeout context manager
+            # should be used inside a task". So we dispatch the SYNC
+            # wrapper through asyncio.to_thread, which calls
+            # run_on_executor() → bridges back to the executor loop
+            # that owns the session. No event-loop conflict.
+            tts_mode = self.settings.get("tts_source_mode", "auto")
+            if tts_mode in ("btn1", "btn2") and full_text.strip():
+                target_lang = self.settings.get(
+                    f"{tts_mode}_lang",
+                    "bn-BD" if tts_mode == "btn1" else "en-US")
+                try:
+                    from ai_engine.translator import translate_to_target_sync
+                    translated = await asyncio.to_thread(
+                        translate_to_target_sync, full_text, target_lang)
+                    if translated and translated.strip():
+                        full_text = translated
+                        self.current_text = translated
+                        print(f"[TTS-AI] {tts_mode} → {target_lang}: "
+                              f"{translated[:80].replace(chr(10), ' ')}…")
+                    else:
+                        print("[TTS-AI] empty translation — using "
+                              "original text")
+                except Exception as e:
+                    print(f"[TTS-AI] translate failed ({e}) — using "
+                          "original text")
+
             chunks = re.split(r'([.?!;:\n|।])', full_text)
 
             # Reconstruct sentences (attach delimiter to previous text)
@@ -4243,7 +4944,10 @@ class VoiceTypingApp(ctk.CTk):
             self.tray_icon.run()
         except Exception: pass
 
-    def withdraw_to_tray(self): 
+    def withdraw_to_tray(self):
+        # Tear down any open dropdown so its CTkToplevel doesn't linger
+        # while the main window is hidden.
+        self._close_active_dropdown()
         self.withdraw()
 
     def show_from_tray(self,i,m): 
