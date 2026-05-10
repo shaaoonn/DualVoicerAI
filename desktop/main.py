@@ -1335,7 +1335,13 @@ class VoiceTypingApp(ctk.CTk):
 
         # Drawer host — sibling of _main_container, packed BELOW it.
         # Always present; content is added/removed when a drawer opens.
-        self._drawer_host = tk.Frame(self._root_vbox, bg="#22214B",
+        # bg = the Toplevel's transparent magic color (set in __init__
+        # via wm_attributes("-transparentcolor", "#010101")) so the
+        # area around a narrow BN/EN/SND drawer is click-through and
+        # the wallpaper shows through. Without this the host renders
+        # as a dark strip beside the drawer that doesn't belong.
+        self._drawer_host = tk.Frame(self._root_vbox,
+                                       bg=self.transparent_color,
                                        highlightthickness=0)
         self._drawer_host.pack(side="top", fill="x")
         # Children are placed via .place() (zero natural size). Lock the
@@ -4413,8 +4419,12 @@ class VoiceTypingApp(ctk.CTk):
                 if idx < len(xs):
                     btn_s = getattr(self, "_btn_size", 72)
                     x = xs[idx] - btn_s // 2
-                    self._drawer_widget.place(
-                        x=x, y=0, width=btn_s)
+                    # Preserve the width chosen at open-time so the
+                    # row labels still fit after the layout change.
+                    cur_w = self._drawer_widget.winfo_width()
+                    if cur_w <= 1:    # not yet rendered → fallback
+                        cur_w = btn_s
+                    self._drawer_widget.place(x=x, y=0, width=cur_w)
             elif kind == "ai":
                 w = getattr(self, "_toolbar_base_w", None)
                 if w:
@@ -4452,9 +4462,12 @@ class VoiceTypingApp(ctk.CTk):
         if not xs:
             return
         x_left = xs[0 if btn_idx == 1 else 1] - btn_s // 2
+        # Auto-size to fit the longest label — single button width
+        # truncates labels like "🌐 Translate → বাংলা".
+        drawer_w = self._calc_compact_drawer_width(rows, btn_s, x_left)
 
         self._build_compact_drawer(
-            kind=kind, x=x_left, width=btn_s, rows=rows, current=cur,
+            kind=kind, x=x_left, width=drawer_w, rows=rows, current=cur,
             on_select=lambda v, i=btn_idx: (self._apply_voice_mode(i, v),
                                             self._close_drawer()))
 
@@ -4481,11 +4494,40 @@ class VoiceTypingApp(ctk.CTk):
         if len(xs) < 3:
             return
         x_left = xs[2] - btn_s // 2
+        # Auto-size to fit the longest label.
+        drawer_w = self._calc_compact_drawer_width(rows, btn_s, x_left)
 
         self._build_compact_drawer(
-            kind="snd", x=x_left, width=btn_s, rows=rows, current=cur,
+            kind="snd", x=x_left, width=drawer_w, rows=rows, current=cur,
             on_select=lambda v: (self._apply_tts_mode(v),
                                   self._close_drawer()))
+
+    def _calc_compact_drawer_width(self, rows, btn_s: int,
+                                     x_left: int) -> int:
+        """Pick the smallest drawer width that fully shows every row's
+        label. Anchored at x_left, may extend rightward up to (but not
+        past) the widget's right edge. Always at least one button wide.
+
+        rows: iterable of (value, label) tuples.
+        Uses the same font (Segoe UI 7pt) the rows are rendered in."""
+        try:
+            import tkinter.font as tkfont
+            f = tkfont.Font(family="Segoe UI", size=7)
+            max_text = 0
+            for _v, label in rows:
+                w = f.measure(label)
+                if w > max_text:
+                    max_text = w
+            # Padding: button text ipady=3 + button border + frame margin
+            needed_w = max_text + 24
+            # Cap at widget right edge so we don't overflow.
+            toolbar_w = (getattr(self, "_toolbar_base_w", 0)
+                          or self.winfo_width() or 480)
+            max_avail = max(btn_s, toolbar_w - x_left - 4)
+            return max(btn_s, min(needed_w, max_avail))
+        except Exception as e:
+            print(f"[DRAWER-WIDTH] calc failed: {e}")
+            return btn_s
 
     def _build_compact_drawer(self, kind: str, x: int, width: int,
                                 rows, current: str, on_select):
