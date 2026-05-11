@@ -355,11 +355,12 @@ class DrawingEngine:
             )
             self._current_stroke.canvas_ids.append(line_id)
 
-        # Shape hold detection - 3s timer resets on movement
+        # Shape hold detection - 1s timer resets on movement
+        # (was 3s — user request: faster shape snap on hold).
         self._last_move_pos = (x, y)
         self._cancel_shape_hold()
         if len(pts) > 5:
-            self._shape_hold_job = self._parent.after(3000, self._try_snap_shape)
+            self._shape_hold_job = self._parent.after(1000, self._try_snap_shape)
 
     def on_mouse_up(self, event):
         self._cancel_shape_hold()
@@ -465,6 +466,13 @@ class DrawingEngine:
             # (cancelled in on_mouse_down when new stroke starts)
             if self._hw_debounce_job:
                 self._parent.after_cancel(self._hw_debounce_job)
+            # Restored to original 700ms (bn) / 500ms (other). The
+            # earlier "halve to 400/300" experiment caused mid-character
+            # fragmentation because Bengali multi-stroke conjuncts
+            # (জ্ঞ, ক্ষ, যুক্তাক্ষর) and matras have natural inter-stroke
+            # pauses around 300-500ms even at normal writing speed —
+            # 400ms wasn't enough margin to bundle them into one
+            # recognition call.
             debounce_ms = 700 if self._hw_lang == "bn" else 500
             self._hw_debounce_job = self._parent.after(
                 debounce_ms, self._recognize_handwriting
@@ -498,6 +506,34 @@ class DrawingEngine:
         self._update_text_display()
 
     def on_key(self, event):
+        # Handwrite + overlay mode: text is rendered as an image (no
+        # in-place create_text edit), so _text_active is False and the
+        # normal text-edit keyboard path below never fires. We still
+        # want Enter to start a new line on the active handwriting,
+        # so handle it specially here BEFORE the early return.
+        if (self._tool == "handwrite"
+                and self._overlay_mode
+                and self._hw_active_text is not None
+                and self._hw_active_text in self._strokes
+                and event.keysym == "Return"):
+            try:
+                bbox = self._canvas.bbox(
+                    self._hw_active_text.canvas_ids[0])
+                if not bbox:
+                    return
+                x0, y0 = bbox[0], bbox[1]
+                new_text = self._hw_active_text.text + "\n"
+                for cid in self._hw_active_text.canvas_ids:
+                    self._canvas.delete(cid)
+                new_id = self._make_hw_text_canvas_item(
+                    new_text, x0, y0, self._hw_active_text.color)
+                self._hw_active_text.canvas_ids = [new_id]
+                self._hw_active_text.text = new_text
+                self._hw_pre_context = new_text
+            except tk.TclError:
+                pass
+            return
+
         if not self._text_active:
             return
 
@@ -1470,6 +1506,257 @@ class DrawingEngine:
             pre_context=self._hw_pre_context,
         )
 
+    # ── Overlay-mode text rendering (no AA fringe) ────────────────
+    # Tk's create_text on a Canvas with bg = the magic transparent
+    # color leaves dirty halos around every glyph — Windows ClearType
+    # subpixel-renders the AA edges blended with the dark magic key,
+    # but those AA pixels don't exactly match the key so they aren't
+    # clipped. Result: dark fringes around handwritten Bengali text
+    # on the pen overlay (the editor uses a solid white bg so it's
+    # fine there). Workaround: render with PIL using a hard alpha
+    # threshold — pixels are either fully opaque text color or
+    # exactly the magic key (and therefore clipped). Edges look a
+    # touch jaggier than ClearType but no halos at all.
+
+    def _render_text_to_photo(self, text, font_family, font_size, color):
+        """Render `text` to a Tk PhotoImage with binary alpha, suitable
+        for placing on the pen-overlay's color-key transparent canvas.
+
+        Uses Win32 GDI (which routes complex scripts through Uniscribe
+        — Bengali, Arabic, etc. all shape correctly with conjuncts and
+        matras). PIL's freetype lacks libraqm in our build so Bengali
+        comes out as broken disconnected glyphs; GDI sidesteps that.
+
+        Returns (photoimage, width, height) or (None, 0, 0) on failure.
+        Caller MUST keep a reference to the PhotoImage (e.g. by
+        appending to self._tk_text_images) — Tk garbage-collects
+        unreferenced images and the canvas item then renders blank."""
+        try:
+            from PIL import Image, ImageTk
+
+            # Parse "#RRGGBB" → tuple
+            try:
+                r = int(color[1:3], 16)
+                g = int(color[3:5], 16)
+                b = int(color[5:7], 16)
+            except Exception:
+                r, g, b = 0, 0, 0
+
+            # Render BLACK on WHITE via GDI — gives clean, properly-
+            # shaped text (Bengali conjuncts, matras, ligatures all
+            # form correctly via Uniscribe). We recolor afterwards.
+            gdi_img = self._render_text_via_gdi(
+                text, font_family, font_size)
+            if gdi_img is None:
+                return None, 0, 0
+
+            w, h = gdi_img.size
+
+            # Build a binary mask from the GDI render: dark pixels
+            # belong to the text, near-white pixels belong to the bg.
+            # Threshold at mid-gray so AA gradient pixels get
+            # decisively classified one way or the other — no halfway
+            # alpha values means no AA fringe on the layered window.
+            gray = gdi_img.convert("L")
+            mask = gray.point(lambda v: 255 if v < 160 else 0)
+
+            text_layer = Image.new("RGB", (w, h), (r, g, b))
+            # TRANS_COLOR = #010101 in the overlay window — pixels of
+            # exactly this RGB are made transparent by Windows.
+            bg_layer = Image.new("RGB", (w, h), (1, 1, 1))
+            result = Image.composite(text_layer, bg_layer, mask)
+
+            photo = ImageTk.PhotoImage(result)
+            return photo, w, h
+        except Exception as e:
+            print(f"[HW-IMAGE] render failed: {e}")
+            return None, 0, 0
+
+    @staticmethod
+    def _render_text_via_gdi(text, font_family, font_size):
+        """Render `text` as black-on-white using Win32 GDI/DrawTextW.
+        Returns a PIL RGB Image, or None on failure.
+
+        DrawTextW invokes Uniscribe internally for complex scripts,
+        which handles Bengali conjunct formation, matra positioning,
+        Arabic shaping, etc. correctly. Pillow's freetype-only path
+        cannot do this without libraqm, which our install lacks."""
+        try:
+            import ctypes
+            from ctypes import wintypes, byref, c_void_p, c_int, c_uint
+            from PIL import Image
+
+            gdi32 = ctypes.windll.gdi32
+            user32 = ctypes.windll.user32
+
+            # Function signatures we need with non-default types
+            gdi32.CreateFontW.argtypes = [
+                c_int, c_int, c_int, c_int, c_int,
+                c_uint, c_uint, c_uint, c_uint, c_uint,
+                c_uint, c_uint, c_uint, ctypes.c_wchar_p]
+            gdi32.CreateFontW.restype = c_void_p
+            gdi32.CreateDIBSection.argtypes = [
+                c_void_p, c_void_p, c_uint,
+                ctypes.POINTER(c_void_p), c_void_p, c_uint]
+            gdi32.CreateDIBSection.restype = c_void_p
+            gdi32.SelectObject.argtypes = [c_void_p, c_void_p]
+            gdi32.SelectObject.restype = c_void_p
+            gdi32.DeleteObject.argtypes = [c_void_p]
+            gdi32.CreateCompatibleDC.argtypes = [c_void_p]
+            gdi32.CreateCompatibleDC.restype = c_void_p
+            gdi32.DeleteDC.argtypes = [c_void_p]
+            gdi32.SetTextColor.argtypes = [c_void_p, c_uint]
+            gdi32.SetBkMode.argtypes = [c_void_p, c_int]
+            gdi32.GetStockObject.argtypes = [c_int]
+            gdi32.GetStockObject.restype = c_void_p
+            user32.FillRect.argtypes = [
+                c_void_p, ctypes.POINTER(wintypes.RECT), c_void_p]
+            user32.GetDC.argtypes = [c_void_p]
+            user32.GetDC.restype = c_void_p
+            user32.ReleaseDC.argtypes = [c_void_p, c_void_p]
+            user32.DrawTextW.argtypes = [
+                c_void_p, ctypes.c_wchar_p, c_int,
+                ctypes.POINTER(wintypes.RECT), c_uint]
+
+            # Constants
+            FW_NORMAL              = 400
+            DEFAULT_CHARSET        = 1
+            OUT_TT_ONLY_PRECIS     = 7
+            CLIP_DEFAULT_PRECIS    = 0
+            ANTIALIASED_QUALITY    = 4
+            DEFAULT_PITCH          = 0
+            DT_NOPREFIX            = 0x0800
+            DT_NOCLIP              = 0x0100
+            DT_CALCRECT            = 0x0400
+            BI_RGB                 = 0
+            DIB_RGB_COLORS         = 0
+            WHITE_BRUSH            = 0
+            TRANSPARENT_BKMODE     = 1
+
+            class BITMAPINFOHEADER(ctypes.Structure):
+                _fields_ = [
+                    ("biSize",          ctypes.c_uint32),
+                    ("biWidth",         ctypes.c_int32),
+                    ("biHeight",        ctypes.c_int32),
+                    ("biPlanes",        ctypes.c_uint16),
+                    ("biBitCount",      ctypes.c_uint16),
+                    ("biCompression",   ctypes.c_uint32),
+                    ("biSizeImage",     ctypes.c_uint32),
+                    ("biXPelsPerMeter", ctypes.c_int32),
+                    ("biYPelsPerMeter", ctypes.c_int32),
+                    ("biClrUsed",       ctypes.c_uint32),
+                    ("biClrImportant",  ctypes.c_uint32),
+                ]
+
+            hdc_screen = user32.GetDC(0)
+            if not hdc_screen:
+                return None
+            hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
+            hfont = None
+            hbm = None
+            old_font = None
+            old_bm = None
+            try:
+                # Logical font. Negative height = character cell height
+                # (more intuitive for "size in pixels").
+                hfont = gdi32.CreateFontW(
+                    -int(font_size), 0, 0, 0,
+                    FW_NORMAL, 0, 0, 0,
+                    DEFAULT_CHARSET, OUT_TT_ONLY_PRECIS,
+                    CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+                    DEFAULT_PITCH, font_family or "Segoe UI")
+                if not hfont:
+                    return None
+                old_font = gdi32.SelectObject(hdc_mem, hfont)
+
+                # Measure text via DT_CALCRECT
+                rect = wintypes.RECT(0, 0, 0, 0)
+                user32.DrawTextW(
+                    hdc_mem, text, len(text), byref(rect),
+                    DT_CALCRECT | DT_NOPREFIX | DT_NOCLIP)
+                pad = 4
+                w = max(1, rect.right + pad * 2)
+                h = max(1, rect.bottom + pad * 2)
+
+                # 32-bit top-down DIB section
+                bmi = BITMAPINFOHEADER()
+                bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+                bmi.biWidth = w
+                bmi.biHeight = -h        # negative ⇒ top-down origin
+                bmi.biPlanes = 1
+                bmi.biBitCount = 32
+                bmi.biCompression = BI_RGB
+
+                bits_ptr = c_void_p()
+                hbm = gdi32.CreateDIBSection(
+                    hdc_mem, byref(bmi), DIB_RGB_COLORS,
+                    byref(bits_ptr), None, 0)
+                if not hbm or not bits_ptr.value:
+                    return None
+                old_bm = gdi32.SelectObject(hdc_mem, hbm)
+
+                # Fill with white
+                white = gdi32.GetStockObject(WHITE_BRUSH)
+                full = wintypes.RECT(0, 0, w, h)
+                user32.FillRect(hdc_mem, byref(full), white)
+
+                # Black text, transparent background
+                gdi32.SetTextColor(hdc_mem, 0x000000)
+                gdi32.SetBkMode(hdc_mem, TRANSPARENT_BKMODE)
+
+                draw_rect = wintypes.RECT(pad, pad, w, h)
+                user32.DrawTextW(
+                    hdc_mem, text, len(text), byref(draw_rect),
+                    DT_NOPREFIX | DT_NOCLIP)
+
+                # Force any pending GDI ops to land in the bitmap
+                gdi32.GdiFlush()
+
+                # Pull pixel bytes out of the DIB
+                size = w * h * 4
+                buf = (ctypes.c_ubyte * size).from_address(
+                    bits_ptr.value)
+                raw = bytes(buf)
+                # DIB layout is BGRX (4 bytes per pixel, alpha unused)
+                img = Image.frombytes(
+                    "RGB", (w, h), raw, "raw", "BGRX", 0, 1)
+                return img
+            finally:
+                if old_bm is not None:
+                    gdi32.SelectObject(hdc_mem, old_bm)
+                if hbm is not None:
+                    gdi32.DeleteObject(hbm)
+                if old_font is not None:
+                    gdi32.SelectObject(hdc_mem, old_font)
+                if hfont is not None:
+                    gdi32.DeleteObject(hfont)
+                gdi32.DeleteDC(hdc_mem)
+                user32.ReleaseDC(0, hdc_screen)
+        except Exception as e:
+            print(f"[HW-GDI] render failed: {e}")
+            return None
+
+    def _make_hw_text_canvas_item(self, text, x, y, color):
+        """Place a handwriting-text canvas item at (x, y), choosing
+        between binary-image rendering (overlay mode → no AA fringe)
+        and Tk's create_text (editor mode → smooth AA on white bg).
+
+        Returns the canvas item id."""
+        if self._overlay_mode:
+            scaled_size = max(12, int(self._hw_font_size *
+                                       self._display_scale))
+            photo, iw, ih = self._render_text_to_photo(
+                text, self._hw_font, scaled_size, color)
+            if photo is not None:
+                self._tk_text_images.append(photo)
+                return self._canvas.create_image(
+                    x, y, image=photo, anchor="nw", tags="stroke")
+            # PIL failure → fall through to create_text fallback
+        dfont = self._display_font(self._hw_font, self._hw_font_size)
+        return self._canvas.create_text(
+            x, y, text=text, anchor="nw",
+            fill=color, font=dfont, tags="stroke")
+
     def _on_hw_result(self, text):
         """API result - delete drawn strokes, place/append text, show cursor."""
         if not text:
@@ -1532,24 +1819,38 @@ class DrawingEngine:
                 if abs(hw_center_y - active_cy) < 120:
                     sep = "" if text.startswith(" ") else " "
                     new_text = self._hw_active_text.text + sep + text
-                    try:
-                        self._canvas.itemconfig(
-                            self._hw_active_text.canvas_ids[0], text=new_text
-                        )
-                    except tk.TclError:
-                        pass
+                    if self._overlay_mode:
+                        # Image-rendered handwrite text — can't
+                        # itemconfig text=, so re-render the whole
+                        # image at the same position.
+                        try:
+                            x0, y0 = bbox[0], bbox[1]
+                            for cid in self._hw_active_text.canvas_ids:
+                                self._canvas.delete(cid)
+                            new_id = self._make_hw_text_canvas_item(
+                                new_text, x0, y0, self._hw_active_text.color)
+                            self._hw_active_text.canvas_ids = [new_id]
+                        except tk.TclError:
+                            pass
+                    else:
+                        try:
+                            self._canvas.itemconfig(
+                                self._hw_active_text.canvas_ids[0],
+                                text=new_text)
+                        except tk.TclError:
+                            pass
                     self._hw_active_text.text = new_text
                     self._hw_pre_context = new_text
-                    # Enter edit mode with cursor at end
-                    self._edit_existing_text(self._hw_active_text)
+                    if not self._overlay_mode:
+                        # In-place text editing only makes sense for
+                        # the create_text path. Image strokes can't be
+                        # cursor-edited; user re-handwrites instead.
+                        self._edit_existing_text(self._hw_active_text)
                     return
 
         # New text block at the handwriting position
-        dfont = self._display_font(self._hw_font, self._hw_font_size)
-        text_id = self._canvas.create_text(
-            hw_min_x, hw_min_y, text=text, anchor="nw",
-            fill=self._pen_color, font=dfont, tags="stroke",
-        )
+        text_id = self._make_hw_text_canvas_item(
+            text, hw_min_x, hw_min_y, self._pen_color)
 
         stroke = Stroke(
             points=[(hw_min_x, hw_min_y)],
@@ -1565,8 +1866,9 @@ class DrawingEngine:
         self._strokes.append(stroke)
         self._hw_active_text = stroke
         self._hw_pre_context = text
-        # Enter edit mode with cursor at end
-        self._edit_existing_text(stroke)
+        if not self._overlay_mode:
+            # Enter edit mode with cursor at end (create_text only).
+            self._edit_existing_text(stroke)
 
     def _reset_hw(self):
         """Reset handwriting state. Called on tool switch, clear, cleanup."""

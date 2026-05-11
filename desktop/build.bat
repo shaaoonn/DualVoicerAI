@@ -50,9 +50,9 @@ python -m PyInstaller --noconfirm --windowed --onefile ^
   --add-data "remote_config.py;." ^
   --add-data "updater.py;." ^
   --add-data "config.py;." ^
+  --additional-hooks-dir . ^
   --collect-all customtkinter ^
   --collect-all avro_engine ^
-  --collect-all avro ^
   --collect-data PIL ^
   --collect-submodules pystray ^
   --collect-submodules keyboard ^

@@ -149,6 +149,22 @@ def get_font_for_language(lang_code: str) -> str:
     return "Playpen Sans"  # fallback
 
 
+def get_font_path_by_family(family_name: str) -> str:
+    """Return the absolute TTF path for a registered handwriting font
+    family, or empty string if unknown. Used by drawing_engine to load
+    the font into PIL/freetype for binary-alpha text rendering on the
+    pen overlay (Tk's create_text leaves AA halos on transparent
+    overlays — PIL lets us render with a hard alpha threshold)."""
+    if not family_name:
+        return ""
+    for family, ttf_filename in LANG_FONTS.values():
+        if family == family_name:
+            path = os.path.join(FONTS_DIR, ttf_filename)
+            if os.path.exists(path):
+                return path
+    return ""
+
+
 def get_all_hw_fonts() -> list:
     """Return list of all available handwriting font family names
     (deduplicated, for font selector dropdown)."""

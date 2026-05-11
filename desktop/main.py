@@ -1860,10 +1860,47 @@ class VoiceTypingApp(ctk.CTk):
         # Position stays fixed - panel grows rightward
         wx, wy = self.winfo_x(), self.winfo_y()
 
-        # Off-screen: shift left only if needed
-        screen_w = self.winfo_screenwidth()
-        if wx + target_w > screen_w:
-            wx = max(0, screen_w - target_w)
+        # Off-screen check — use the bounds of the monitor the widget
+        # is CURRENTLY on, not winfo_screenwidth() (which only returns
+        # the primary monitor's width on Windows). Without this the
+        # widget would teleport to the primary monitor whenever the
+        # user opened pen mode while it was on a secondary monitor.
+        try:
+            import ctypes
+            from ctypes import wintypes, byref
+
+            class _PT(ctypes.Structure):
+                _fields_ = [("x", wintypes.LONG),
+                             ("y", wintypes.LONG)]
+
+            class _RECT(ctypes.Structure):
+                _fields_ = [("left",   wintypes.LONG),
+                             ("top",    wintypes.LONG),
+                             ("right",  wintypes.LONG),
+                             ("bottom", wintypes.LONG)]
+
+            class _MI(ctypes.Structure):
+                _fields_ = [("cbSize",    wintypes.DWORD),
+                             ("rcMonitor", _RECT),
+                             ("rcWork",    _RECT),
+                             ("dwFlags",   wintypes.DWORD)]
+
+            MONITOR_DEFAULTTONEAREST = 2
+            user32 = ctypes.windll.user32
+            hmon = user32.MonitorFromPoint(
+                _PT(wx, wy), MONITOR_DEFAULTTONEAREST)
+            mi = _MI()
+            mi.cbSize = ctypes.sizeof(_MI)
+            user32.GetMonitorInfoW(hmon, byref(mi))
+            mon_left  = mi.rcMonitor.left
+            mon_right = mi.rcMonitor.right
+        except Exception:
+            # Fallback — single-monitor behaviour. Better than crashing.
+            mon_left = 0
+            mon_right = self.winfo_screenwidth()
+
+        if wx + target_w > mon_right:
+            wx = max(mon_left, mon_right - target_w)
 
         # Place pen toolbar frame (already child of _panel_container)
         tools_frame = self._pen_toolbar.get_root_widget()

@@ -266,7 +266,14 @@ class PenToolbar:
     # Dark 3D theme — standalone toolbar (matches main widget TOOLBAR_BG=#302D5E).
     # Keeping a consistent purple-navy aesthetic across widget + tool panel.
     BG = "#302D5E"
-    BG_ACTIVE = "#4D6AFF"   # bright blue accent — high contrast on dark bg
+    # Active tool: a MUCH DARKER pocket than the normal bg so the
+    # active button looks visibly recessed / pressed-in. We tried
+    # bright gold first but emoji glyphs (✏️🖍) carry their own
+    # yellow colors and blended into the gold bg. Keeping the icon
+    # color untouched and just dimming the bg behind it preserves
+    # icon recognisability while still showing selection clearly.
+    BG_ACTIVE = "#15142B"
+    FG_ACTIVE = "#E8E8F5"   # same light tone as idle — icons unchanged
     BG_HOVER = "#3F3C7A"    # slightly lighter than BG for hover lift
 
     ICON_PEN = "\u270f\ufe0f"
@@ -609,7 +616,11 @@ class PenToolbar:
 
     # Background colors for embedded panel — light theme
     BG_EMB = "#302D5E"          # matches main widget gradient middle tone
-    BG_EMB_ACTIVE = "#4D6AFF"   # bright blue active highlight
+    # Active tool: MUCH DARKER pocket so the selected button looks
+    # recessed / pressed-in. Emojis keep their native colors so we
+    # need a contrasting bg, NOT a contrasting fg.
+    BG_EMB_ACTIVE = "#15142B"
+    FG_EMB_ACTIVE = "#E8E8F5"   # same light tone as idle — icons unchanged
     BG_EMB_HOVER = "#3F3C7A"    # subtle lift for hover
 
     @staticmethod
@@ -1267,52 +1278,73 @@ class PenToolbar:
         # Use appropriate colors for embedded vs standalone
         if self._mode == "embedded":
             bg_on, bg_off = self.BG_EMB_ACTIVE, self.BG_EMB
+            fg_on = self.FG_EMB_ACTIVE
             fsz = 10
         else:
             bg_on, bg_off = self.BG_ACTIVE, self.BG
+            fg_on = self.FG_ACTIVE
             fsz = 11
+        fg_off = "#E8E8F5"   # original idle text color (matches _bcfg)
+
+        def _btn_state(btn, is_active, **extra):
+            """Apply both bg AND fg so the active state reads even on
+            text-glyph buttons like 'T'.
+
+            CRITICAL: also update btn._hover_orig_bg if it exists so the
+            hover-darken Leave handler doesn't revert us to the OLD bg.
+            Without this sync, every <Leave> over an active tool button
+            would silently overwrite the active darker bg with the
+            previous idle bg — making the selection invisible."""
+            new_bg = bg_on if is_active else bg_off
+            new_fg = fg_on if is_active else fg_off
+            try:
+                btn.configure(bg=new_bg, fg=new_fg, **extra)
+                # Hover-darken stores the bg-at-enter in _hover_orig_bg;
+                # if we don't update it, Leave will undo our change.
+                if hasattr(btn, "_hover_orig_bg"):
+                    btn._hover_orig_bg = new_bg
+            except Exception:
+                pass
 
         if self._draw_mode or is_select:
             active = self._active_tool
             pen_icon = self.ICON_MOUSE if active in ("pen", "select") else self.ICON_PEN
             hl_icon = self.ICON_MOUSE if active == "highlighter" else self.ICON_HIGHLIGHTER
             er_icon = self.ICON_MOUSE if active == "eraser" else self.ICON_ERASER
-            self._btn_pen.configure(text=pen_icon,
-                bg=bg_on if active in ("pen", "select") else bg_off)
-            self._btn_highlight.configure(text=hl_icon,
-                bg=bg_on if active == "highlighter" else bg_off)
-            self._btn_eraser.configure(text=er_icon,
-                bg=bg_on if active == "eraser" else bg_off)
+            _btn_state(self._btn_pen, active in ("pen", "select"),
+                        text=pen_icon)
+            _btn_state(self._btn_highlight, active == "highlighter",
+                        text=hl_icon)
+            _btn_state(self._btn_eraser, active == "eraser", text=er_icon)
             txt_icon = self.ICON_MOUSE if active == "text" else self.ICON_TEXT
             txt_font = ("Segoe UI Emoji", fsz) if active == "text" else ("Segoe UI", fsz, "bold")
-            self._btn_text.configure(text=txt_icon, font=txt_font,
-                bg=bg_on if active == "text" else bg_off)
+            _btn_state(self._btn_text, active == "text",
+                        text=txt_icon, font=txt_font)
             hw_icon = self.ICON_MOUSE if active == "handwrite" else self.ICON_HANDWRITE
-            self._btn_handwrite.configure(text=hw_icon,
-                font=("Segoe UI Emoji", fsz),
-                bg=bg_on if active == "handwrite" else bg_off)
+            _btn_state(self._btn_handwrite, active == "handwrite",
+                        text=hw_icon, font=("Segoe UI Emoji", fsz))
             if self._btn_hand:
-                self._btn_hand.configure(
-                    bg=bg_on if active == "pan" else bg_off)
+                _btn_state(self._btn_hand, active == "pan")
         else:
-            self._btn_pen.configure(text=self.ICON_PEN, bg=bg_off)
-            self._btn_highlight.configure(text=self.ICON_HIGHLIGHTER, bg=bg_off)
-            self._btn_eraser.configure(text=self.ICON_ERASER, bg=bg_off)
-            self._btn_text.configure(text=self.ICON_TEXT,
-                font=("Segoe UI", fsz, "bold"), bg=bg_off)
-            self._btn_handwrite.configure(text=self.ICON_HANDWRITE, bg=bg_off)
+            _btn_state(self._btn_pen, False, text=self.ICON_PEN)
+            _btn_state(self._btn_highlight, False,
+                        text=self.ICON_HIGHLIGHTER)
+            _btn_state(self._btn_eraser, False, text=self.ICON_ERASER)
+            _btn_state(self._btn_text, False, text=self.ICON_TEXT,
+                        font=("Segoe UI", fsz, "bold"))
+            _btn_state(self._btn_handwrite, False,
+                        text=self.ICON_HANDWRITE)
             if self._btn_hand:
-                self._btn_hand.configure(bg=bg_off)
+                _btn_state(self._btn_hand, False)
 
         # Shape buttons (round 6): highlight whichever shape is active.
         # In view mode all shape buttons revert to inactive bg.
         if hasattr(self, '_shape_btns') and self._shape_btns:
             for kind, btn in self._shape_btns.items():
                 want_tool = "shape_" + kind
-                if (self._draw_mode and self._active_tool == want_tool):
-                    btn.configure(bg=bg_on)
-                else:
-                    btn.configure(bg=bg_off)
+                is_active = (self._draw_mode and
+                             self._active_tool == want_tool)
+                _btn_state(btn, is_active)
 
     def sync_draw_mode(self):
         self._draw_mode = True
