@@ -16,17 +16,31 @@ if sys.platform == 'win32':
         try: sys.stderr.reconfigure(encoding='utf-8', errors='replace')
         except Exception: pass
 
-# DPI AWARENESS: Must be set BEFORE any tkinter import for crisp rendering on high-DPI displays
-if sys.platform == 'win32':
-    try:
-        import ctypes
-        # Per-monitor DPI awareness V2 (Windows 10+)
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)
-    except (AttributeError, OSError):
-        try:
-            ctypes.windll.user32.SetProcessDPIAware()  # Fallback Win 7/8
-        except (AttributeError, OSError):
-            pass
+# DPI AWARENESS — intentionally DISABLED.
+#
+# We previously set Per-Monitor DPI Awareness V2 here so high-DPI
+# displays (4K/2K/Retina) would render text crisply. The trouble:
+# CTk's set_widget_scaling() is applied ONCE at startup based on the
+# primary monitor's scale factor. On a multi-DPI system (e.g. a 4K
+# laptop screen + a 1080p secondary monitor) the widget appears at
+# the WRONG size on whichever monitor doesn't match the primary,
+# AND the settings panel / pen toolbar / drawer geometry — all
+# computed in raw pixels — gets mismatched against CTk's pre-scaled
+# widgets. Result: completely broken UI on the 4K laptop while the
+# 1080p dev machine looks fine.
+#
+# The clean cross-DPI fix is to LET WINDOWS BITMAP-SCALE the entire
+# app. Without a SetProcessDpiAwareness call (and without a manifest
+# declaring awareness), the OS treats us as "DPI Unaware" and scales
+# the rendered window uniformly to match each monitor's DPI. Text is
+# slightly softer on 4K than native rendering, but the LAYOUT is
+# pixel-identical across every machine — which matters far more for
+# a deployable widget app.
+#
+# If we ever want crisp 4K text back, the proper path is to make
+# every geometry calculation (btn_size, drawer width, panel size,
+# Toplevel geometry strings) multiply by GetDpiForWindow(hwnd) at
+# draw time — a bigger refactor than just toggling awareness.
 
 # 1. ডামি ক্লাস যা সব আউটপুট 'গিলে' ফেলবে
 class NullWriter:
@@ -208,30 +222,16 @@ def silent_restart(app_instance=None):
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
-# CustomTkinter widget scaling for crisp text on high-DPI displays.
-# After enabling per-monitor DPI awareness above, the OS reports the *real*
-# DPI to tk - but ctk renders widgets at logical (1.0x) size by default,
-# so on a 1.5x or 2.0x display text looks tiny and aliased. Match ctk's
-# scaling factor to the OS scale so the panel renders crisply.
-if sys.platform == 'win32':
-    try:
-        import ctypes
-        # GetScaleFactorForDevice returns the scale percent (e.g. 150 for 1.5x).
-        # Falls back gracefully on older Windows.
-        try:
-            scale_pct = ctypes.windll.shcore.GetScaleFactorForDevice(0)
-            dpi_scale = max(1.0, scale_pct / 100.0)
-        except (AttributeError, OSError):
-            # Fallback: GetDeviceCaps LOGPIXELSX (88) → DPI; baseline = 96
-            hdc = ctypes.windll.user32.GetDC(0)
-            dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)
-            ctypes.windll.user32.ReleaseDC(0, hdc)
-            dpi_scale = max(1.0, dpi / 96.0)
-        ctk.set_widget_scaling(dpi_scale)
-        ctk.set_window_scaling(dpi_scale)
-        print(f"[DPI] Scale factor: {dpi_scale:.2f}x")
-    except Exception as e:
-        print(f"[DPI] Scaling setup failed: {e}")
+# CTk scaling locked to 1.0 to pair with the disabled DPI awareness
+# above. Windows handles all per-display scaling via bitmap zoom; CTk
+# renders widgets at their logical (1.0x) size so the layout matches
+# our hardcoded geometry calculations. Without this lock, CTk's
+# auto-scaling would still query the primary monitor's DPI and bloat
+# the settings panel on high-DPI machines while the rest of the
+# widget stayed at 1.0x — exactly the breakage we're working around.
+ctk.set_widget_scaling(1.0)
+ctk.set_window_scaling(1.0)
+print("[DPI] App is DPI-Unaware — Windows bitmap-scales; CTk locked at 1.0x")
 
 
 class BackgroundUpdateManager:
