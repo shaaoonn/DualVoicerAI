@@ -816,9 +816,12 @@ class VoiceTypingApp(ctk.CTk):
             exe_path = sys.executable
             # Only enact if running as compiled EXE
             if getattr(sys, 'frozen', False):
+                # Wrap in quotes so paths containing spaces are handled correctly
+                # by Windows startup (without quotes, spaces split into arguments)
+                quoted_path = f'"{exe_path}"'
                 key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_ALL_ACCESS)
                 try:
-                    winreg.SetValueEx(key, "DualVoicer", 0, winreg.REG_SZ, exe_path)
+                    winreg.SetValueEx(key, "DualVoicer", 0, winreg.REG_SZ, quoted_path)
                 except OSError:
                     pass
                 finally:

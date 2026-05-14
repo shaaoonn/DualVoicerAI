@@ -31,6 +31,7 @@ python -m PyInstaller --noconfirm --windowed --onefile ^
   --clean ^
   --name "VoiceAIPro" ^
   --icon "DualVoicerLogo.ico" ^
+  --manifest "VoiceAIPro.manifest" ^
   --add-data "ai_engine;ai_engine" ^
   --add-data "ui_components;ui_components" ^
   --add-data "ui;ui" ^
