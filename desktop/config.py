@@ -1,7 +1,16 @@
 # config.py
-import os
+import os, sys
 from dotenv import load_dotenv
-load_dotenv()
+
+# When frozen by PyInstaller (--onefile), the bundled .env lives inside
+# sys._MEIPASS (the temp extraction folder), NOT the current working
+# directory. Without this, load_dotenv() silently finds nothing and
+# OPENROUTER_API_KEY ends up empty → every AI call fails with 401.
+if getattr(sys, 'frozen', False):
+    _bundle_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    load_dotenv(os.path.join(_bundle_dir, '.env'))
+else:
+    load_dotenv()
 
 # ════════════════════════════════════════════════════════
 # DEV_MODE: Phase 1 = True (no auth needed)
