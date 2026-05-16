@@ -24,7 +24,7 @@ AI_MODELS = {
     "fallback": "openai/gpt-4o-mini",
     "economy":  "anthropic/claude-haiku-4-5",
 }
-AI_TIMEOUT, AI_MAX_TOKENS = 20, 2048
+AI_TIMEOUT, AI_MAX_TOKENS = 45, 2048
 
 # Backend (Phase 2+ only -- leave blank in Phase 1)
 BACKEND_BASE        = os.getenv("BACKEND_URL", "https://placeholder.ejobsit.com")

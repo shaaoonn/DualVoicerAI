@@ -4804,75 +4804,122 @@ class VoiceTypingApp(ctk.CTk):
         try:
             full_text = self.current_text
 
-            # ── SND drawer "in btn1/btn2 lang" mode: AI-translate the
-            # selected text into the chosen language BEFORE TTS, so e.g.
-            # an English/Chinese/Spanish selection can be heard in
-            # Bengali. "auto" mode skips this and falls back to the
-            # existing language-detect TTS path below.
+            # ── Split into TTS sentences FIRST (used by both normal and
+            # translate modes) ───────────────────────────────────────────
+            def _split_sentences(text):
+                chunks = re.split(r'([.?!;:\n|।])', text)
+                raw = []
+                cur = ""
+                for part in chunks:
+                    if part in ".?!;:\n|।":
+                        cur += part
+                        if cur.strip():
+                            raw.append(cur.strip())
+                        cur = ""
+                    else:
+                        cur += part
+                if cur.strip():
+                    raw.append(cur.strip())
+                if not raw:
+                    raw = [text]
+                # Merge short pieces into ~300-char chunks
+                merged = []
+                buf = ""
+                for s in raw:
+                    if len(buf) + len(s) < 300:
+                        buf = (buf + " " + s).strip() if buf else s
+                    else:
+                        if buf:
+                            merged.append(buf)
+                        buf = s
+                if buf:
+                    merged.append(buf)
+                return merged
+
+            # ── SND drawer "in btn1/btn2 lang" mode ──────────────────────
+            # Translate sentence-by-sentence so:
+            #   • No single API call carries an entire long text → no timeout
+            #   • Streaming starts playing the FIRST sentence while later
+            #     sentences are still being translated
             #
-            # NOTE: stream_audio_chunks runs inside asyncio.run() (a
-            # FRESH event loop in the TTS thread). The aiohttp session
-            # used by complete() is a singleton bound to the persistent
-            # executor loop in openrouter.py — calling complete() from
-            # this fresh loop crashes with "Timeout context manager
-            # should be used inside a task". So we dispatch the SYNC
-            # wrapper through asyncio.to_thread, which calls
-            # run_on_executor() → bridges back to the executor loop
-            # that owns the session. No event-loop conflict.
+            # NOTE: stream_audio_chunks runs inside asyncio.run() (a FRESH
+            # event loop in the TTS thread). Dispatch through asyncio.to_thread
+            # → translate_to_target_sync → run_on_executor → persistent
+            # executor loop. This avoids aiohttp session cross-loop crashes.
             tts_mode = self.settings.get("tts_source_mode", "auto")
             if tts_mode in ("btn1", "btn2") and full_text.strip():
                 target_lang = self.settings.get(
                     f"{tts_mode}_lang",
                     "bn-BD" if tts_mode == "btn1" else "en-US")
+
+                from ai_engine.tts_detector import get_tts_voice
+                voice = self.settings.get("tts_voice", "bn-BD-NabanitaNeural")
+                # Fallback: derive voice from target_lang if tts_voice unset
+                if not voice or voice == "en-US-JennyNeural":
+                    voice = get_tts_voice(target_lang, target_lang)
+
+                from ai_engine.translator import translate_to_target_sync
+
+                sentences_orig = _split_sentences(full_text)
+                print(f"[TTS-AI] mode={tts_mode} lang={target_lang} "
+                      f"chunks={len(sentences_orig)}")
+
                 try:
-                    from ai_engine.translator import translate_to_target_sync
-                    translated = await asyncio.to_thread(
-                        translate_to_target_sync, full_text, target_lang)
-                    if translated and translated.strip():
-                        full_text = translated
-                        self.current_text = translated
-                        print(f"[TTS-AI] {tts_mode} → {target_lang}: "
-                              f"{translated[:80].replace(chr(10), ' ')}…")
-                    else:
-                        print("[TTS-AI] empty translation — using "
-                              "original text")
-                except Exception as e:
-                    print(f"[TTS-AI] translate failed ({e}) — using "
-                          "original text")
+                    speed = float(self.settings.get("reading_speed", "1.0"))
+                except (ValueError, TypeError):
+                    speed = 1.0
+                speed = max(0.5, min(speed, 3.0))
+                rate_pct = int(round((speed - 1.0) * 100))
+                rate = f"{'+' if rate_pct >= 0 else ''}{rate_pct}%"
 
-            chunks = re.split(r'([.?!;:\n|।])', full_text)
+                for i, orig_sentence in enumerate(sentences_orig):
+                    if not self.is_reading or self._tts_session_id != session_id:
+                        print("[TTS-AI] Stopped (session changed)")
+                        break
+                    # Translate this sentence (~short text → fast, no timeout)
+                    try:
+                        translated_sentence = await asyncio.to_thread(
+                            translate_to_target_sync, orig_sentence, target_lang)
+                        tts_sentence = (translated_sentence.strip()
+                                        if translated_sentence and translated_sentence.strip()
+                                        else orig_sentence)
+                        print(f"[TTS-AI] chunk {i+1}/{len(sentences_orig)}: "
+                              f"{tts_sentence[:60].replace(chr(10), ' ')}…")
+                    except Exception as e:
+                        print(f"[TTS-AI] chunk {i+1} translate failed ({e}) "
+                              f"— using original")
+                        tts_sentence = orig_sentence
 
-            # Reconstruct sentences (attach delimiter to previous text)
-            raw_sentences = []
-            current = ""
-            for part in chunks:
-                if part in ".?!;:\n|।":
-                    current += part
-                    if current.strip():
-                        raw_sentences.append(current.strip())
-                    current = ""
-                else:
-                    current += part
-            if current.strip():
-                raw_sentences.append(current.strip())
+                    filename = os.path.join(
+                        tempfile.gettempdir(), f"stream_{uuid.uuid4().hex}.mp3")
+                    success = False
+                    for attempt in range(3):
+                        try:
+                            comm = edge_tts.Communicate(tts_sentence, voice,
+                                                        rate=rate)
+                            await comm.save(filename)
+                            success = True
+                            break
+                        except Exception as e:
+                            if attempt < 2:
+                                print(f"[TTS-AI] TTS attempt {attempt+1} "
+                                      f"failed: {e}, retrying…")
+                                await asyncio.sleep(1 * (attempt + 1))
+                            else:
+                                self._log_tts_error(
+                                    f"TTS-AI chunk {i+1} failed: {e}")
+                    if success and self.is_reading and self._tts_session_id == session_id:
+                        self.playback_queue.put(filename)
+                    elif not success:
+                        try: os.remove(filename)
+                        except OSError: pass
 
-            if not raw_sentences:
-                raw_sentences = [full_text]
+                if self.is_reading and self._tts_session_id == session_id:
+                    self.playback_queue.put(None)
+                return   # ← translation path done; skip normal TTS below
 
-            # Merge short sentences into bigger chunks (reduces edge_tts calls
-            # and eliminates gaps between sentences)
-            sentences = []
-            buf = ""
-            for s in raw_sentences:
-                if len(buf) + len(s) < 300:
-                    buf = (buf + " " + s).strip() if buf else s
-                else:
-                    if buf:
-                        sentences.append(buf)
-                    buf = s
-            if buf:
-                sentences.append(buf)
-
+            # ── Normal (auto-detect) TTS path ────────────────────────────
+            sentences = _split_sentences(full_text)
             print(f"[TTS] Smart Streaming: {len(sentences)} chunks to process")
 
             from ai_engine.tts_detector import get_tts_voice
