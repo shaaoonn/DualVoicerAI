@@ -28,10 +28,25 @@
             Padding="6,5"
             BorderBrush="#FF4A4680"
             BorderThickness="1">
-        <Border.Effect>
-            <DropShadowEffect ShadowDepth="0" BlurRadius="14"
-                              Opacity="0.5" Color="Black"/>
-        </Border.Effect>
+        <!-- Drop shadow removed.
+             Rationale: with AllowsTransparency=True the Window's
+             rectangle is fully transparent at the corners (outside
+             the rounded chrome), and a DropShadowEffect blurs its
+             dark output INTO those transparent corners as a Gaussian
+             fringe — visible as "black at the corners" the user
+             reported. Three fixes considered:
+               (a) shrink blur/opacity — still leaks, just less.
+               (b) clip the shadow to the rounded silhouette — WPF
+                   has no native way to mask an Effect.
+               (c) drop the shadow entirely.
+             Picked (c). The widget already has a saturated coloured
+             border (#FF4A4680) and a CornerRadius=14 silhouette
+             against most backgrounds, so it doesn't visually need
+             the depth from a shadow to read as a floating widget.
+             If we later want depth back, the right path is a
+             pre-rendered drop-shadow PNG layered behind the chrome
+             — fully under our control, no Gaussian leak. -->
+
 
         <StackPanel Orientation="Horizontal">
 
