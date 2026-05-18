@@ -538,6 +538,7 @@ class VoiceTypingApp(
     
 
 
+    @staticmethod
     def _lang_display(code: str) -> str:
         """Return a human-readable name for a BCP-47 language code,
         falling back to the code itself if unknown."""
