@@ -1,0 +1,52 @@
+<UserControl x:Class="DualVoicerCS.Controls.SpectrumButton"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markupCompatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             Width="72" Height="72"
+             Background="Transparent"
+             Cursor="Hand"
+             d:DesignWidth="72" d:DesignHeight="72">
+    <Grid x:Name="RootGrid">
+        <!-- Outer ring: spectrum gradient. Becomes the "active glow"
+             when recording. -->
+        <Ellipse x:Name="OuterRing"
+                 Fill="{StaticResource SpectrumGradient}"
+                 RenderTransformOrigin="0.5,0.5">
+            <Ellipse.RenderTransform>
+                <ScaleTransform x:Name="ScaleTx" ScaleX="1" ScaleY="1"/>
+            </Ellipse.RenderTransform>
+        </Ellipse>
+
+        <!-- Inner disc: dark fill, hosts the mic icon. -->
+        <Ellipse x:Name="InnerDisc"
+                 Fill="#FF1A1B40"
+                 Margin="6"/>
+
+        <!-- Mic glyph. Uses Segoe Fluent Icons codepoint for the mic
+             () so we don't need to bundle an asset. -->
+        <TextBlock x:Name="MicGlyph"
+                   Text="&#xE720;"
+                   FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets"
+                   FontSize="28"
+                   Foreground="White"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"/>
+
+        <!-- Small label badge at bottom-right (BN / EN). -->
+        <Border x:Name="LabelBadge"
+                Background="#FF1A1B40"
+                CornerRadius="6"
+                Padding="4,1"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="0,0,4,4">
+            <TextBlock x:Name="LabelText"
+                       Text="BN"
+                       Foreground="White"
+                       FontSize="9"
+                       FontWeight="SemiBold"/>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,17 @@
+# Build artefacts
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Published self-contained EXE (large)
+publish/
+
+# Credentials — NEVER commit
+gcp-credentials.json
+*.serviceaccount.json
+
+# Local IDE config
+.idea/
+*.csproj.user

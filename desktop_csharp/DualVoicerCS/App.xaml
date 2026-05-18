@@ -1,0 +1,45 @@
+<Application x:Class="DualVoicerCS.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <!-- Palette pulled from the existing Python widget so the
+             PoC reads as the same product. -->
+        <Color x:Key="WidgetBgColor">#FF2E305E</Color>
+        <Color x:Key="WidgetBgColorTop">#FF3A3C72</Color>
+        <Color x:Key="WidgetBgColorBottom">#FF1C1D3E</Color>
+        <Color x:Key="DrawerBgColor">#FF1C1D3E</Color>
+        <Color x:Key="DrawerHeaderColor">#FF2E305E</Color>
+        <Color x:Key="DrawerRowBgColor">#FF24264D</Color>
+        <Color x:Key="DrawerRowHvColor">#FF3A3C72</Color>
+        <Color x:Key="DrawerActiveColor">#FFFFD166</Color>
+        <Color x:Key="DrawerTextColor">#FFE8E8F5</Color>
+        <Color x:Key="DrawerMutedColor">#FF8E8EB0</Color>
+        <Color x:Key="DrawerBorderColor">#FF4A4680</Color>
+
+        <SolidColorBrush x:Key="WidgetBg" Color="{StaticResource WidgetBgColor}"/>
+        <SolidColorBrush x:Key="DrawerBg" Color="{StaticResource DrawerBgColor}"/>
+        <SolidColorBrush x:Key="DrawerHeader" Color="{StaticResource DrawerHeaderColor}"/>
+        <SolidColorBrush x:Key="DrawerRowBg" Color="{StaticResource DrawerRowBgColor}"/>
+        <SolidColorBrush x:Key="DrawerRowHv" Color="{StaticResource DrawerRowHvColor}"/>
+        <SolidColorBrush x:Key="DrawerActive" Color="{StaticResource DrawerActiveColor}"/>
+        <SolidColorBrush x:Key="DrawerText" Color="{StaticResource DrawerTextColor}"/>
+        <SolidColorBrush x:Key="DrawerMuted" Color="{StaticResource DrawerMutedColor}"/>
+        <SolidColorBrush x:Key="DrawerBorder" Color="{StaticResource DrawerBorderColor}"/>
+
+        <!-- Spectrum gradient — the rainbow ring around each main button. -->
+        <LinearGradientBrush x:Key="SpectrumGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FFFF5C8A" Offset="0.00"/>
+            <GradientStop Color="#FFFFB347" Offset="0.20"/>
+            <GradientStop Color="#FFFDE74C" Offset="0.40"/>
+            <GradientStop Color="#FF6EE7B7" Offset="0.60"/>
+            <GradientStop Color="#FF5DADE2" Offset="0.80"/>
+            <GradientStop Color="#FFAF7AC5" Offset="1.00"/>
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="WidgetBgGradient" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="{StaticResource WidgetBgColorTop}" Offset="0"/>
+            <GradientStop Color="{StaticResource WidgetBgColorBottom}" Offset="1"/>
+        </LinearGradientBrush>
+    </Application.Resources>
+</Application>

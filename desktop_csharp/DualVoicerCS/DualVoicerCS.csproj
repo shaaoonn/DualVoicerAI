@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>DualVoicerCS</RootNamespace>
+    <AssemblyName>DualVoicerCS</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <!-- Publish-time only. `dotnet publish -c Release` produces one self-
+       contained .exe under bin/Release/net8.0-windows/win-x64/publish/.
+       Keep these out of the main PropertyGroup so `dotnet build` and
+       `dotnet run` stay fast and don't drop into the win-x64 sub-RID. -->
+  <PropertyGroup Condition="'$(_IsPublishing)' == 'true'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Real-time streaming Google Cloud Speech-to-Text. -->
+    <PackageReference Include="Google.Cloud.Speech.V1" Version="3.7.0" />
+    <!-- Microphone capture. -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Drop gcp-credentials.json next to the EXE at runtime — DO NOT
+         bundle it. Listed here so the build copies it if present, but
+         it's gitignored. -->
+    <None Update="gcp-credentials.json" Condition="Exists('gcp-credentials.json')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

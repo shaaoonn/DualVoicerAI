@@ -1,0 +1,191 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using DualVoicerCS.Controls;
+using DualVoicerCS.Services;
+using DualVoicerCS.Views;
+
+namespace DualVoicerCS;
+
+/// <summary>
+/// The top-level widget window.
+///
+/// Holds two SpectrumButtons (BN / EN), two ▼ drawer arrows, and a
+/// small icon cluster on the right. Owns one
+/// <see cref="VoiceTypingOrchestrator"/> shared between both
+/// languages — only one mic session can be active at a time, so the
+/// orchestrator's <c>IsRunning</c> flag arbitrates which button is
+/// "armed".
+///
+/// The PoC deliberately runs all wiring from code-behind. In the
+/// full port we'd factor the wiring into a viewmodel + DI container
+/// (the Phase B refactor pattern), but for showing the user the
+/// language + drawer + voice-typing slice, a single 200-line code-
+/// behind is more legible.
+/// </summary>
+public partial class MainWindow : Window
+{
+    // Per-language source preference. Drawer rows write these and
+    // OnBengaliClicked / OnEnglishClicked read them to choose which
+    // BCP-47 code to send to Google.
+    private string _bengaliLang = StreamingSttService.LanguageBengaliBangladesh;
+    private string _englishLang = StreamingSttService.LanguageEnglishUS;
+
+    // Track which (if any) spectrum button currently owns the mic.
+    private SpectrumButton? _activeButton;
+
+    // Services live for the lifetime of the window.
+    private readonly AudioCaptureService _audio = new();
+    private readonly StreamingSttService _stt = new();
+    private readonly TextInjectionService _typer = new();
+    private readonly VoiceTypingOrchestrator _orchestrator;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        _orchestrator = new VoiceTypingOrchestrator(_audio, _stt, _typer);
+        _orchestrator.ErrorOccurred += OnOrchestratorError;
+
+        Closed += (_, _) => _orchestrator.Dispose();
+    }
+
+    // ── Drag-to-move ──────────────────────────────────────────────
+
+    private void OnDragHandle(object sender, MouseButtonEventArgs e)
+    {
+        // The icon-cluster buttons capture their own mouse events;
+        // anywhere else in the chrome lets the user grab and move
+        // the widget. WPF's DragMove() handles the entire press →
+        // move → release lifecycle for us.
+        if (e.OriginalSource is Button) return;
+        if (e.OriginalSource is SpectrumButton) return;
+        try { DragMove(); } catch { /* swallowed — happens on rapid double-click */ }
+    }
+
+    // ── Spectrum button clicks (toggle mic per language) ──────────
+
+    private async void OnBengaliClicked(object? sender, EventArgs e)
+        => await ToggleRecording(BtnBengali, _bengaliLang);
+
+    private async void OnEnglishClicked(object? sender, EventArgs e)
+        => await ToggleRecording(BtnEnglish, _englishLang);
+
+    private async Task ToggleRecording(SpectrumButton button, string languageCode)
+    {
+        // If THIS button is already active → stop and disarm.
+        if (_activeButton == button && _orchestrator.IsRunning)
+        {
+            await _orchestrator.StopAsync();
+            button.IsRecording = false;
+            _activeButton = null;
+            return;
+        }
+
+        // Switching language while another button is hot — stop the
+        // old session first so we don't open a second gRPC stream.
+        if (_activeButton is not null)
+        {
+            await _orchestrator.StopAsync();
+            _activeButton.IsRecording = false;
+            _activeButton = null;
+        }
+
+        await _orchestrator.StartAsync(languageCode);
+        if (_orchestrator.IsRunning)
+        {
+            button.IsRecording = true;
+            _activeButton = button;
+        }
+    }
+
+    // ── Drawer arrows ─────────────────────────────────────────────
+
+    private void OnBengaliDrawerClicked(object sender, RoutedEventArgs e)
+    {
+        ShowDrawerUnder(ArrowBengali, BuildBengaliRows(), _bengaliLang, value =>
+        {
+            _bengaliLang = value;
+        });
+    }
+
+    private void OnEnglishDrawerClicked(object sender, RoutedEventArgs e)
+    {
+        ShowDrawerUnder(ArrowEnglish, BuildEnglishRows(), _englishLang, value =>
+        {
+            _englishLang = value;
+        });
+    }
+
+    private static List<VoiceDrawer.DrawerRow> BuildBengaliRows() => new()
+    {
+        new(StreamingSttService.LanguageBengaliBangladesh, "🇧🇩  বাংলা — Bangladesh"),
+        new(StreamingSttService.LanguageBengaliIndia,      "🇮🇳  বাংলা — India"),
+    };
+
+    private static List<VoiceDrawer.DrawerRow> BuildEnglishRows() => new()
+    {
+        new(StreamingSttService.LanguageEnglishUS, "🇺🇸  English — US"),
+        new(StreamingSttService.LanguageEnglishIN, "🇮🇳  English — India"),
+    };
+
+    private void ShowDrawerUnder(
+        FrameworkElement anchor,
+        List<VoiceDrawer.DrawerRow> rows,
+        string currentValue,
+        Action<string> onSelected)
+    {
+        // Translate the anchor's bottom-left corner into screen
+        // coords — DragMove + DPI awareness mean the widget's own
+        // Left/Top are real pixels, so this is straightforward.
+        var origin = anchor.PointToScreen(new Point(0, anchor.ActualHeight));
+        var drawer = new VoiceDrawer(rows, currentValue)
+        {
+            Owner = this,
+        };
+        drawer.Selected += (_, value) => onSelected(value);
+        drawer.ShowAt(origin.X, origin.Y + 4);
+    }
+
+    // ── Misc icon cluster ─────────────────────────────────────────
+
+    private void OnSettingsClicked(object sender, RoutedEventArgs e)
+    {
+        MessageBox.Show(this,
+            "Settings panel isn't built in the PoC. The point of the " +
+            "PoC is to prove the widget look, the drawer pattern, and " +
+            "real-time Google STT typing — settings will land in the " +
+            "full port.",
+            "Dual Voicer CS",
+            MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void OnQuitClicked(object sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    // ── Error surface ─────────────────────────────────────────────
+
+    private void OnOrchestratorError(Exception ex)
+    {
+        // Already on a non-UI thread potentially — marshal.
+        Dispatcher.InvokeAsync(() =>
+        {
+            // Reset visual recording state since whatever button was
+            // armed has now been torn down by the orchestrator.
+            if (_activeButton is not null)
+            {
+                _activeButton.IsRecording = false;
+                _activeButton = null;
+            }
+            MessageBox.Show(this,
+                ex.Message,
+                "Voice typing error",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        });
+    }
+}
