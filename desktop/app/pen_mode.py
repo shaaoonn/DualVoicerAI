@@ -152,39 +152,7 @@ class PenModeMixin:
         # the primary monitor's width on Windows). Without this the
         # widget would teleport to the primary monitor whenever the
         # user opened pen mode while it was on a secondary monitor.
-        try:
-            import ctypes
-            from ctypes import wintypes, byref
-
-            class _PT(ctypes.Structure):
-                _fields_ = [("x", wintypes.LONG),
-                             ("y", wintypes.LONG)]
-
-            class _RECT(ctypes.Structure):
-                _fields_ = [("left",   wintypes.LONG),
-                             ("top",    wintypes.LONG),
-                             ("right",  wintypes.LONG),
-                             ("bottom", wintypes.LONG)]
-
-            class _MI(ctypes.Structure):
-                _fields_ = [("cbSize",    wintypes.DWORD),
-                             ("rcMonitor", _RECT),
-                             ("rcWork",    _RECT),
-                             ("dwFlags",   wintypes.DWORD)]
-
-            MONITOR_DEFAULTTONEAREST = 2
-            user32 = ctypes.windll.user32
-            hmon = user32.MonitorFromPoint(
-                _PT(wx, wy), MONITOR_DEFAULTTONEAREST)
-            mi = _MI()
-            mi.cbSize = ctypes.sizeof(_MI)
-            user32.GetMonitorInfoW(hmon, byref(mi))
-            mon_left  = mi.rcMonitor.left
-            mon_right = mi.rcMonitor.right
-        except Exception:
-            # Fallback — single-monitor behaviour. Better than crashing.
-            mon_left = 0
-            mon_right = self.winfo_screenwidth()
+        mon_left, mon_right = self._get_current_monitor_bounds(wx, wy)
 
         if wx + target_w > mon_right:
             wx = max(mon_left, mon_right - target_w)
@@ -322,7 +290,15 @@ class PenModeMixin:
                 preset = self.settings.get("size_preset", "medium")
                 btn_s = self.BTN_SIZES.get(preset, 72)
                 base_w, h = self._calc_dims(btn_s)
-                wx, wy = self.winfo_x(), self.winfo_y()  # Position stays fixed
+                wx, wy = self.winfo_x(), self.winfo_y()
+                # Clamp the post-close position to the visible bounds
+                # of the monitor under the widget. Without this, on a
+                # mixed-DPI multi-monitor setup the widget can end up
+                # off-screen on the right edge of a smaller secondary
+                # monitor after collapsing.
+                mon_left, mon_right = self._get_current_monitor_bounds(wx, wy)
+                if wx + base_w > mon_right:
+                    wx = max(mon_left, mon_right - base_w)
                 self.geometry(f"{base_w}x{h}+{wx}+{wy}")
 
             self.btn_pen.configure(text="\U0001f58a\ufe0f")
@@ -341,4 +317,52 @@ class PenModeMixin:
                 self._pen_overlay.lift_render()
         except tk.TclError:
             pass
+
+    def _get_current_monitor_bounds(self, x: int, y: int) -> tuple[int, int]:
+        """Return (left, right) screen-X bounds of the monitor that
+        contains point ``(x, y)``.
+
+        Single source of truth for both ``_animate_tools_open`` and
+        ``_close_pen_mode_immediate`` — the pen-mode-open and pen-mode-
+        close paths used to apply different (or no) monitor-aware
+        clamping, which let the widget teleport across monitors on
+        close in mixed-DPI multi-monitor setups. Centralising the
+        lookup here keeps both paths consistent.
+
+        Falls back to ``(0, winfo_screenwidth())`` (i.e. primary
+        monitor) if the Win32 query fails — safer than crashing the
+        pen-mode lifecycle on multi-monitor edge cases.
+        """
+        try:
+            import ctypes
+            from ctypes import byref, wintypes
+
+            class _PT(ctypes.Structure):
+                _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+            class _RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left",   wintypes.LONG),
+                    ("top",    wintypes.LONG),
+                    ("right",  wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            class _MI(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize",    wintypes.DWORD),
+                    ("rcMonitor", _RECT),
+                    ("rcWork",    _RECT),
+                    ("dwFlags",   wintypes.DWORD),
+                ]
+
+            MONITOR_DEFAULTTONEAREST = 2
+            user32 = ctypes.windll.user32
+            hmon = user32.MonitorFromPoint(_PT(x, y), MONITOR_DEFAULTTONEAREST)
+            mi = _MI()
+            mi.cbSize = ctypes.sizeof(_MI)
+            user32.GetMonitorInfoW(hmon, byref(mi))
+            return mi.rcMonitor.left, mi.rcMonitor.right
+        except Exception:
+            return 0, self.winfo_screenwidth()
 
