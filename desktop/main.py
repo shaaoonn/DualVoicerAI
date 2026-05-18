@@ -16,31 +16,86 @@ if sys.platform == 'win32':
         try: sys.stderr.reconfigure(encoding='utf-8', errors='replace')
         except Exception: pass
 
-# DPI AWARENESS — intentionally DISABLED.
+# DPI AWARENESS — UNAWARE_GDISCALED (Win10 1809+).
 #
-# We previously set Per-Monitor DPI Awareness V2 here so high-DPI
-# displays (4K/2K/Retina) would render text crisply. The trouble:
-# CTk's set_widget_scaling() is applied ONCE at startup based on the
-# primary monitor's scale factor. On a multi-DPI system (e.g. a 4K
-# laptop screen + a 1080p secondary monitor) the widget appears at
-# the WRONG size on whichever monitor doesn't match the primary,
-# AND the settings panel / pen toolbar / drawer geometry — all
-# computed in raw pixels — gets mismatched against CTk's pre-scaled
-# widgets. Result: completely broken UI on the 4K laptop while the
-# 1080p dev machine looks fine.
+# History: we previously toggled between Per-Monitor V2 (sharp 4K but
+# breaks mixed-DPI multi-monitor layout because CTk's
+# set_widget_scaling locks at startup based on the primary monitor)
+# and full DPI-Unaware bitmap-scaling (consistent layout but text
+# looks washed-out / pixelated on 4K and 2K screens).
 #
-# The clean cross-DPI fix is to LET WINDOWS BITMAP-SCALE the entire
-# app. Without a SetProcessDpiAwareness call (and without a manifest
-# declaring awareness), the OS treats us as "DPI Unaware" and scales
-# the rendered window uniformly to match each monitor's DPI. Text is
-# slightly softer on 4K than native rendering, but the LAYOUT is
-# pixel-identical across every machine — which matters far more for
-# a deployable widget app.
+# Windows 10 v1809 added a third option that solves both: declaring
+# the process **DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED** (-5). The
+# app still believes it is 96-DPI Unaware (so every pixel-coordinate
+# calculation we do — drag positions, drawer geometry, pen overlay
+# bounds — stays unchanged), BUT Windows uses GDI scaling instead of
+# bitmap zoom when painting the window to the screen. Concrete net:
+# text and vector glyphs are rendered at the display's NATIVE pixel
+# density, while images and our pen-canvas strokes still scale via
+# bitmap zoom. Practically: settings panel + drawer + toolbar text
+# all become crisp on 4K, with zero changes to our layout math.
 #
-# If we ever want crisp 4K text back, the proper path is to make
-# every geometry calculation (btn_size, drawer width, panel size,
-# Toplevel geometry strings) multiply by GetDpiForWindow(hwnd) at
-# draw time — a bigger refactor than just toggling awareness.
+# The manifest already declares `<gdiScaling>true</gdiScaling>`, but
+# that flag only activates when the process awareness is one of the
+# explicit GDI-scaled contexts. The PyInstaller --windowed bootloader
+# launches the EXE as plain Unaware (lasterr=0 from
+# SetProcessDpiAwarenessContext implies awareness was set elsewhere
+# before our user code runs — see dpi_early_diag.log), which is why
+# the manifest line on its own had no effect. We have to call the API
+# again here, before any tkinter import.
+#
+# Fallback chain: UNAWARE_GDISCALED → PerMonitorV2 → System-Aware →
+# legacy SetProcessDPIAware. The first one that doesn't NameError /
+# OSError wins.
+import ctypes as _ct
+
+def _enable_gdi_scaled_dpi() -> str:
+    """Try to put the process into UNAWARE_GDISCALED mode.
+
+    Returns a short string identifying which API succeeded, for
+    diagnostics. Silent failure is fine — we just fall through to
+    whatever mode Windows defaulted to.
+
+    Note on ctypes: ``SetProcessDpiAwarenessContext`` takes a
+    ``DPI_AWARENESS_CONTEXT`` HANDLE (an opaque void* in Win32 ABI).
+    Without explicit ``argtypes`` / ``restype`` the default ctypes
+    convention coerces the Python int to ``c_int``, which silently
+    truncates on 64-bit and the API rejects the call. We must
+    declare the prototype as ``c_void_p`` so the negative sentinel
+    values (-1 .. -5) round-trip as ``INVALID_HANDLE_VALUE``-style
+    pseudo-handles instead of getting clipped.
+    """
+    try:
+        fn = _ct.windll.user32.SetProcessDpiAwarenessContext
+        fn.argtypes = [_ct.c_void_p]
+        fn.restype = _ct.c_bool
+        # DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED = -5 — Win10 1809+,
+        # the ideal mode for our app.
+        if fn(_ct.c_void_p(-5)):
+            return "UNAWARE_GDISCALED"
+        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4 — Win10
+        # 1703+. Sharp text but breaks our layout math on mixed-DPI
+        # multi-monitor setups (CTk widget scaling is global, not
+        # per-window).
+        if fn(_ct.c_void_p(-4)):
+            return "PER_MONITOR_AWARE_V2"
+    except (AttributeError, OSError):
+        pass
+    try:
+        # Win8.1+ fallback. 2 == PROCESS_PER_MONITOR_DPI_AWARE.
+        _ct.windll.shcore.SetProcessDpiAwareness(2)
+        return "PER_MONITOR_AWARE"
+    except (AttributeError, OSError):
+        pass
+    try:
+        # Vista+ last-ditch.
+        _ct.windll.user32.SetProcessDPIAware()
+        return "SYSTEM_AWARE"
+    except (AttributeError, OSError):
+        pass
+    return "UNAWARE"
+
+_dpi_mode = _enable_gdi_scaled_dpi()
 
 # 1. ডামি ক্লাস যা সব আউটপুট 'গিলে' ফেলবে
 class NullWriter:
@@ -142,16 +197,19 @@ install_socket_default_timeout(10)
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
-# CTk scaling locked to 1.0 to pair with the disabled DPI awareness
-# above. Windows handles all per-display scaling via bitmap zoom; CTk
-# renders widgets at their logical (1.0x) size so the layout matches
-# our hardcoded geometry calculations. Without this lock, CTk's
-# auto-scaling would still query the primary monitor's DPI and bloat
-# the settings panel on high-DPI machines while the rest of the
-# widget stayed at 1.0x — exactly the breakage we're working around.
+# CTk scaling locked to 1.0 to pair with the UNAWARE_GDISCALED DPI
+# mode set above. The app advertises itself as 96-DPI Unaware, so all
+# our geometry math (widget sizes, drawer widths, pen toolbar dims,
+# Toplevel geometry strings) stays in plain logical pixels. Windows
+# then uses GDI scaling — not bitmap zoom — to render the actual
+# pixels on the display: text glyphs and vector primitives are drawn
+# at the monitor's native resolution. End result on a 4K screen:
+# layout is identical to a 1080p machine (drag positions, click
+# regions, drawer alignment all match) but text and icons render
+# crisply instead of looking pixelated/washed-out.
 ctk.set_widget_scaling(1.0)
 ctk.set_window_scaling(1.0)
-print("[DPI] App is DPI-Unaware — Windows bitmap-scales; CTk locked at 1.0x")
+print(f"[DPI] Awareness: {_dpi_mode}; CTk locked at 1.0x")
 
 
 # The VoiceTypingApp class itself — assembled from a stack of mixins
