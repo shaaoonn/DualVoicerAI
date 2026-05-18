@@ -13,6 +13,7 @@ Owned state:
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 import tkinter as tk
@@ -113,10 +114,38 @@ class PenModeMixin:
             self.after(200, self._pen_ensure_topmost)
             print("[PEN] Pen mode opened (draw)")
         except Exception as e:
+            # ``print`` goes to NullWriter in --windowed EXE, so the
+            # user can't see why pen mode failed to open. Persist the
+            # full traceback to %APPDATA%/DualVoicer/pen_error.log so
+            # we have something to diagnose from in production.
+            self._log_pen_error(f"_open_pen_mode failed: {e}")
             print(f"[PEN] Failed to open: {e}")
             import traceback; traceback.print_exc()
             self._pen_overlay = None
             self._pen_toolbar = None
+
+    def _log_pen_error(self, message: str) -> None:
+        """Write pen-mode failures to %APPDATA%/DualVoicer/pen_error.log.
+
+        Mirrors the TTSMixin._log_tts_error pattern. We need this
+        because --windowed EXE silences ``print`` (NullWriter), so any
+        exception in the pen-mode open/close path is otherwise invisible
+        to the user.
+        """
+        try:
+            import datetime
+            import traceback
+            log_path = os.path.join(
+                os.environ.get('APPDATA', os.path.expanduser('~')),
+                'DualVoicer',
+                'pen_error.log',
+            )
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(f"\n[{datetime.datetime.now()}] {message}\n")
+                f.write(traceback.format_exc())
+        except OSError:
+            pass
 
     def _pen_set_draw_mode(self):
         """Switch to draw mode (pen captures events)."""

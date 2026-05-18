@@ -22,16 +22,20 @@ Owned state:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import os
 import queue
 import re
 import tempfile
 import threading
+import time
 import tkinter as tk
 import uuid
 
 import edge_tts
+import pyautogui
 import pygame
+import pyperclip
 
 
 class TTSMixin:

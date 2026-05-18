@@ -12,9 +12,11 @@ Size.
 
 from __future__ import annotations
 
+import os
 import tkinter as tk
 
 import customtkinter as ctk
+from PIL import Image, ImageDraw, ImageFont
 
 from app.constants import BTN_SIZES
 
@@ -37,7 +39,7 @@ class UIBuilderMixin:
         # Reserve extra height below the buttons for the dropdown ▼ arrows
         # (BN / EN / SND / AI). Skipped at the smallest preset where the
         # arrow would render too tiny to read.
-        arrow_h, arrow_gap = VoiceTypingApp._calc_arrow_dims(btn_s)
+        arrow_h, arrow_gap = UIBuilderMixin._calc_arrow_dims(btn_s)
         base_h = btn_s + max(12, int(14 * sc))
         h = base_h + arrow_h + arrow_gap if arrow_h else base_h
         return w, h

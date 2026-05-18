@@ -18,6 +18,7 @@ import time
 import tkinter as tk
 
 import customtkinter as ctk
+import pyautogui
 import pyperclip
 
 

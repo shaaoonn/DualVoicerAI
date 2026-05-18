@@ -27,7 +27,9 @@ import json
 import os
 import sys
 import threading
+import time
 import tkinter as tk
+import webbrowser
 import winreg
 from datetime import datetime
 from tkinter import messagebox

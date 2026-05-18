@@ -17,6 +17,7 @@ when the user enables it from Settings → Shortcuts → Show overlay).
 
 from __future__ import annotations
 
+import keyboard
 import threading
 
 

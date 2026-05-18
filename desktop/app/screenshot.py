@@ -11,9 +11,13 @@ The glow effect is a short visual cue on the AI button that confirms
 
 from __future__ import annotations
 
+import datetime
+import os
 import threading
 import time
 import tkinter as tk
+
+import pyautogui
 
 
 class ScreenshotMixin:

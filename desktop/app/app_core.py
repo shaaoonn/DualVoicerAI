@@ -26,6 +26,7 @@ import time
 import tkinter as tk
 
 import customtkinter as ctk
+import pygame
 import speech_recognition as sr
 from PIL import Image
 
@@ -212,7 +213,7 @@ class VoiceTypingApp(
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         _p = self.settings.get("size_preset", "medium")
-        base_w, base_h = VoiceTypingApp._calc_dims(BTN_SIZES.get(_p, 72))
+        base_w, base_h = self._calc_dims(BTN_SIZES.get(_p, 72))
         
         # Check saved position from settings
         saved_x = self.settings.get("window_x")
@@ -246,7 +247,7 @@ class VoiceTypingApp(
                 self.settings["window_y"] = None
         
         _preset = self.settings.get("size_preset", "medium")
-        _pw, _ph = VoiceTypingApp._calc_dims(BTN_SIZES.get(_preset, 72))
+        _pw, _ph = self._calc_dims(BTN_SIZES.get(_preset, 72))
         self.geometry(f"{_pw}x{_ph}+{self.start_x}+{self.start_y}")
 
         self.drag_start = {"x": 0, "y": 0, "root_x": 0, "root_y": 0}

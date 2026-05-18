@@ -19,12 +19,19 @@ Owned helpers:
 
 from __future__ import annotations
 
+import ctypes
+import queue
+import re
+import socket
 import threading
 import time
 import tkinter as tk
 
+import keyboard
 import pyautogui
+import pygame
 import pyperclip
+import speech_recognition as sr
 
 
 class VoicePipelineMixin:
@@ -894,8 +901,6 @@ class VoicePipelineMixin:
 
 
     # ─────── Dropdown arrow handlers (BN / EN / SND / AI) ──────────
-
-    @staticmethod
 
     def processing_loop(self):
         """
