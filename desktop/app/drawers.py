@@ -17,6 +17,17 @@ import tkinter as tk
 
 import customtkinter as ctk
 
+from app.constants import (
+    DRAWER_ACTIVE,
+    DRAWER_BG,
+    DRAWER_BORDER,
+    DRAWER_HEADER,
+    DRAWER_MUTED,
+    DRAWER_ROW_BG,
+    DRAWER_ROW_HV,
+    DRAWER_TEXT,
+)
+
 
 class DrawerMixin:
     """Mixed into VoiceTypingApp — BN/EN/SND/AI drawer system."""
