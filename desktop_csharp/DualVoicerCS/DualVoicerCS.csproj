@@ -24,19 +24,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Real-time streaming Google Cloud Speech-to-Text. -->
-    <PackageReference Include="Google.Cloud.Speech.V1" Version="3.7.0" />
+    <!-- Local multilingual speech recognition. Whisper.net wraps
+         whisper.cpp; a single multilingual ggml model handles both
+         Bengali and English. We pair it with the CPU runtime — for
+         CUDA acceleration the user would swap in
+         Whisper.net.Runtime.Cuda. The model file (~150-500 MB
+         depending on size variant) is NOT bundled — the README
+         tells the user where to drop it. -->
+    <PackageReference Include="Whisper.net" Version="1.8.1" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.8.1" />
     <!-- Microphone capture. -->
     <PackageReference Include="NAudio" Version="2.2.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Drop gcp-credentials.json next to the EXE at runtime — DO NOT
-         bundle it. Listed here so the build copies it if present, but
-         it's gitignored. -->
-    <None Update="gcp-credentials.json" Condition="Exists('gcp-credentials.json')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
 </Project>

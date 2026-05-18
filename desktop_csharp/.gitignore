@@ -12,6 +12,11 @@ publish/
 gcp-credentials.json
 *.serviceaccount.json
 
+# Vosk language models — too large for git (40-50 MB each), the
+# README tells the user how to download them locally.
+DualVoicerCS/models/
+**/bin/**/models/
+
 # Local IDE config
 .idea/
 *.csproj.user
