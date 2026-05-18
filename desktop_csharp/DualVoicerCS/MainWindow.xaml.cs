@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using DualVoicerCS.Controls;
 using DualVoicerCS.Services;
 using DualVoicerCS.Views;
@@ -49,8 +52,59 @@ public partial class MainWindow : Window
 
         _orchestrator = new VoiceTypingOrchestrator(_audio, _stt, _typer);
         _orchestrator.ErrorOccurred += OnOrchestratorError;
+        _orchestrator.TranscriptChanged += (text, isFinal) =>
+            DiagLog.Write($"transcript [{(isFinal ? "FINAL" : "interim")}]: {text}");
 
         Closed += (_, _) => _orchestrator.Dispose();
+        DiagLog.Write("=== MainWindow constructed ===");
+    }
+
+    // ── Win32: don't steal focus when user clicks the widget ──────
+    //
+    // Critical for voice typing: when the user clicks BN/EN with
+    // Notepad (or any text app) in front, focus MUST stay on Notepad
+    // so the SendInput keystrokes land in the right window. Without
+    // WS_EX_NOACTIVATE, Windows would promote our widget to the
+    // foreground on click, and the typed characters would arrive at
+    // OUR window — which has no text input to receive them, so they
+    // get silently dropped. (This is the exact failure mode the user
+    // reported: "voice typing not working AND focus disappearing".)
+    //
+    // The Python widget had the same flag — see window_chrome.py's
+    // `_set_no_activate`. We apply it once when the HWND becomes
+    // available (SourceInitialized fires after CreateWindowEx).
+
+    private const int GWL_EXSTYLE     = -20;
+    private const int WS_EX_NOACTIVATE = 0x08000000;
+    private const int WS_EX_TOOLWINDOW = 0x00000080;
+
+    [DllImport("user32.dll")]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            int ex = GetWindowLong(hwnd, GWL_EXSTYLE);
+            // NOACTIVATE: clicks on our window don't steal focus from
+            //             whatever app the user was working in.
+            // TOOLWINDOW: don't show in Alt+Tab and don't take a slot
+            //             in the taskbar. ShowInTaskbar=False already
+            //             handles the taskbar side but TOOLWINDOW is
+            //             what hides us from Alt+Tab.
+            SetWindowLong(hwnd, GWL_EXSTYLE,
+                ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+            DiagLog.Write("[Focus] WS_EX_NOACTIVATE applied — clicks won't steal focus");
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"[Focus] Failed to set NoActivate: {ex.Message}");
+        }
     }
 
     // ── Drag-to-move ──────────────────────────────────────────────

@@ -96,8 +96,13 @@ public sealed class StreamingSttService : IDisposable
 
         try
         {
+            DiagLog.Write($"[STT] StartAsync requested language={languageCode}");
             var modelPath = ResolveModelPath();
+            DiagLog.Write($"[STT] Loading model: {modelPath}");
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             _factory = WhisperFactory.FromPath(modelPath);
+            sw.Stop();
+            DiagLog.Write($"[STT] Model loaded in {sw.ElapsedMilliseconds} ms");
 
             // Whisper expects a 2-letter ISO 639-1 code, not BCP-47.
             // Map our app-internal codes (bn-BD, en-US, etc) by
@@ -115,9 +120,11 @@ public sealed class StreamingSttService : IDisposable
             _lastInterim = string.Empty;
             _cts = new CancellationTokenSource();
             _inferenceTask = Task.Run(() => InferenceLoop(_cts.Token));
+            DiagLog.Write($"[STT] Processor ready, inference loop started (tick every {InferenceIntervalMs} ms)");
         }
         catch (Exception ex)
         {
+            DiagLog.Write($"[STT] StartAsync FAILED: {ex.GetType().Name}: {ex.Message}");
             ErrorOccurred?.Invoke(ex);
             await StopAsync();
             throw;
@@ -210,7 +217,11 @@ public sealed class StreamingSttService : IDisposable
                     _audioBuffer.CopyTo(start, snapshot, 0, len);
                 }
 
+                DiagLog.Write($"[STT] Inference tick: window={snapshot.Length} bytes (~{snapshot.Length / 32000.0:F1} s)");
+                var swTick = System.Diagnostics.Stopwatch.StartNew();
                 var text = await TranscribeOnce(snapshot);
+                swTick.Stop();
+                DiagLog.Write($"[STT] Transcribe took {swTick.ElapsedMilliseconds} ms, text={(text.Length > 80 ? text.Substring(0, 80) + "…" : text)}");
                 if (string.IsNullOrWhiteSpace(text)) continue;
                 if (text == _lastInterim) continue;
 

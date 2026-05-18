@@ -46,6 +46,28 @@ public sealed class AudioCaptureService : IDisposable
     {
         if (_waveIn is not null) return;
 
+        try
+        {
+            DiagLog.Write($"[Audio] Start: opening default mic at {SampleRateHz} Hz mono");
+            // Probe for at least one input device — NAudio doesn't
+            // raise a nice exception if there are none, it just
+            // silently records zeros, which would make voice typing
+            // look "broken" without an obvious cause.
+            if (WaveInEvent.DeviceCount == 0)
+            {
+                DiagLog.Write("[Audio] ERROR: no input devices reported by NAudio");
+                ErrorOccurred?.Invoke(new InvalidOperationException(
+                    "No microphone detected. Plug in / enable a mic in " +
+                    "Windows Settings → System → Sound → Input."));
+                return;
+            }
+            DiagLog.Write($"[Audio] DeviceCount={WaveInEvent.DeviceCount}, default device={WaveInEvent.GetCapabilities(0).ProductName}");
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"[Audio] Device probe threw: {ex.Message}");
+        }
+
         _waveIn = new WaveInEvent
         {
             WaveFormat = new WaveFormat(SampleRateHz, BitsPerSample, ChannelCount),
@@ -53,16 +75,24 @@ public sealed class AudioCaptureService : IDisposable
             NumberOfBuffers = 3, // small queue so latency stays sub-200ms
         };
 
+        int chunkCount = 0;
         _waveIn.DataAvailable += (_, e) =>
         {
             // Copy out of NAudio's reusable buffer before raising.
             var copy = new byte[e.BytesRecorded];
             Buffer.BlockCopy(e.Buffer, 0, copy, 0, e.BytesRecorded);
+            chunkCount++;
+            // Log first chunk + every ~5 seconds (~50 chunks) so the
+            // log doesn't drown in audio frames during a long
+            // utterance.
+            if (chunkCount == 1 || chunkCount % 50 == 0)
+                DiagLog.Write($"[Audio] chunk #{chunkCount}: {e.BytesRecorded} bytes");
             AudioReceived?.Invoke(copy);
         };
 
         _waveIn.RecordingStopped += (_, e) =>
         {
+            DiagLog.Write($"[Audio] RecordingStopped after {chunkCount} chunks. Exception: {(e.Exception?.Message ?? "none")}");
             if (e.Exception is not null)
                 ErrorOccurred?.Invoke(e.Exception);
             _waveIn?.Dispose();
@@ -70,6 +100,7 @@ public sealed class AudioCaptureService : IDisposable
         };
 
         _waveIn.StartRecording();
+        DiagLog.Write("[Audio] StartRecording() called — mic should be live");
     }
 
     public void Stop()

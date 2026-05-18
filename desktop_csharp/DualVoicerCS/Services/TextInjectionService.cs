@@ -84,6 +84,29 @@ public sealed class TextInjectionService
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    /// <summary>Returns the title of whichever window currently
+    /// owns the keyboard focus — used purely for diagnostic logging
+    /// so we can confirm SendInput is hitting the user's target app
+    /// (Notepad/browser/etc) and not stealing into our own widget.</summary>
+    public static string GetForegroundWindowTitle()
+    {
+        try
+        {
+            var hwnd = GetForegroundWindow();
+            if (hwnd == IntPtr.Zero) return "(none)";
+            var sb = new System.Text.StringBuilder(256);
+            GetWindowText(hwnd, sb, sb.Capacity);
+            return $"hwnd={hwnd:X} title='{sb}'";
+        }
+        catch { return "(query failed)"; }
+    }
+
     // ── Public API ────────────────────────────────────────────────
 
     /// <summary>Send each character in <paramref name="text"/> to
@@ -98,7 +121,9 @@ public sealed class TextInjectionService
             inputs.Add(MakeUnicodeKey(c, keyUp: false));
             inputs.Add(MakeUnicodeKey(c, keyUp: true));
         }
-        SendInput((uint)inputs.Count, inputs.ToArray(), INPUT.Size);
+        var fg = GetForegroundWindowTitle();
+        uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), INPUT.Size);
+        DiagLog.Write($"[Typer] TypeText({text.Length} chars) → sent {sent}/{inputs.Count}, fg={fg}");
     }
 
     /// <summary>Press Backspace <paramref name="count"/> times in
@@ -113,7 +138,8 @@ public sealed class TextInjectionService
             inputs.Add(MakeVirtualKey(VK_BACK, keyUp: false));
             inputs.Add(MakeVirtualKey(VK_BACK, keyUp: true));
         }
-        SendInput((uint)inputs.Count, inputs.ToArray(), INPUT.Size);
+        uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), INPUT.Size);
+        DiagLog.Write($"[Typer] Backspace({count}) → SendInput sent {sent}/{inputs.Count} events");
     }
 
     private static INPUT MakeUnicodeKey(char c, bool keyUp) => new()

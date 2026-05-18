@@ -86,14 +86,17 @@ public sealed class VoiceTypingOrchestrator : IDisposable
         if (_running) return;
         _typedInterim = string.Empty;
 
+        DiagLog.Write($"[Orch] StartAsync({languageCode}) — bringing STT + Audio up");
         try
         {
             await _stt.StartAsync(languageCode);
             _audio.Start();
             _running = true;
+            DiagLog.Write("[Orch] Session armed; awaiting first transcript");
         }
         catch (Exception ex)
         {
+            DiagLog.Write($"[Orch] StartAsync FAILED: {ex.GetType().Name}: {ex.Message}");
             RaiseError(ex);
             await StopAsync();
         }
