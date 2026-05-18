@@ -67,15 +67,29 @@ public partial class SpectrumButton : UserControl
     public event EventHandler? Click;
 
     private Storyboard? _pulseStoryboard;
-    private bool _pressed;
 
     public SpectrumButton()
     {
         InitializeComponent();
+        // Simple click model — works with WS_EX_NOACTIVATE.
+        //
+        // Original implementation used MouseLeftButtonDown → CaptureMouse
+        // → wait for MouseLeftButtonUp inside bounds. That broke when
+        // the host window got WS_EX_NOACTIVATE: a non-activatable
+        // window can't reliably take mouse capture, so the Up event
+        // never came back to us and Click never fired. End result:
+        // user clicked, nothing happened (no log entry past
+        // "Focus applied"). Confirmed via debug.log: zero
+        // `[Orch] StartAsync` lines despite multiple button presses.
+        //
+        // New model: fire Click immediately on MouseLeftButtonDown.
+        // We lose drag-out-to-cancel (which the Python widget also
+        // doesn't have) but gain reliable activation under
+        // WS_EX_NOACTIVATE. The press-scale-animation still runs so
+        // there's tactile feedback.
         MouseEnter += OnHoverEnter;
         MouseLeave += OnHoverLeave;
-        MouseLeftButtonDown += OnPressed;
-        MouseLeftButtonUp += OnReleased;
+        PreviewMouseLeftButtonDown += OnClickFire;
     }
 
     private void OnHoverEnter(object sender, MouseEventArgs e)
@@ -85,29 +99,17 @@ public partial class SpectrumButton : UserControl
 
     private void OnHoverLeave(object sender, MouseEventArgs e)
     {
-        _pressed = false;
         AnimateScale(1.0, 120);
     }
 
-    private void OnPressed(object sender, MouseButtonEventArgs e)
+    private void OnClickFire(object sender, MouseButtonEventArgs e)
     {
-        _pressed = true;
-        AnimateScale(0.96, 80);
-        // Don't fire Click yet — wait for clean release.
-        CaptureMouse();
-    }
-
-    private void OnReleased(object sender, MouseButtonEventArgs e)
-    {
-        ReleaseMouseCapture();
-        if (!_pressed) return;
-        _pressed = false;
-        AnimateScale(1.06, 120);
-        // Fire Click only if the release lands on the control (host
-        // gets MouseUp anywhere thanks to capture; we filter here).
-        var p = e.GetPosition(this);
-        if (p.X >= 0 && p.X <= ActualWidth && p.Y >= 0 && p.Y <= ActualHeight)
-            Click?.Invoke(this, EventArgs.Empty);
+        // Brief press scale-down for tactile feel, then revert.
+        AnimateScale(0.94, 70);
+        Dispatcher.BeginInvoke(new Action(() => AnimateScale(1.06, 120)),
+            System.Windows.Threading.DispatcherPriority.Background);
+        Click?.Invoke(this, EventArgs.Empty);
+        e.Handled = true; // don't let the click bubble into DragMove
     }
 
     private void AnimateScale(double target, int ms)

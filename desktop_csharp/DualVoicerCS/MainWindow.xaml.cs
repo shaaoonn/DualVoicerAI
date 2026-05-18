@@ -123,10 +123,16 @@ public partial class MainWindow : Window
     // ── Spectrum button clicks (toggle mic per language) ──────────
 
     private async void OnBengaliClicked(object? sender, EventArgs e)
-        => await ToggleRecording(BtnBengali, _bengaliLang);
+    {
+        DiagLog.Write("[UI] BN button clicked");
+        await ToggleRecording(BtnBengali, _bengaliLang);
+    }
 
     private async void OnEnglishClicked(object? sender, EventArgs e)
-        => await ToggleRecording(BtnEnglish, _englishLang);
+    {
+        DiagLog.Write("[UI] EN button clicked");
+        await ToggleRecording(BtnEnglish, _englishLang);
+    }
 
     private async Task ToggleRecording(SpectrumButton button, string languageCode)
     {
