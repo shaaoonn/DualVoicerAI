@@ -37,6 +37,8 @@ python -m PyInstaller --noconfirm --windowed --onefile ^
   --add-data "ui;ui" ^
   --add-data "subscription;subscription" ^
   --add-data "avro_engine;avro_engine" ^
+  --add-data "app;app" ^
+  --add-data "auth;auth" ^
   --add-data "fonts;fonts" ^
   --add-data ".env;." ^
   --add-data "*.wav;." ^
@@ -57,6 +59,8 @@ python -m PyInstaller --noconfirm --windowed --onefile ^
   --collect-data PIL ^
   --collect-submodules pystray ^
   --collect-submodules keyboard ^
+  --collect-submodules app ^
+  --collect-submodules auth ^
   --hidden-import customtkinter ^
   --hidden-import aiohttp ^
   --hidden-import speech_recognition ^
