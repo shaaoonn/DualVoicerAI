@@ -154,58 +154,8 @@ ctk.set_window_scaling(1.0)
 print("[DPI] App is DPI-Unaware — Windows bitmap-scales; CTk locked at 1.0x")
 
 
-class BackgroundUpdateManager:
-    def __init__(self, app_version, repo_url, on_update_ready_callback):
-        self.app_version = app_version
-        self.repo_url = repo_url
-        self.on_update_ready = on_update_ready_callback
-        self.checker = UpdateChecker(app_version, repo_url)
-        self.stop_event = threading.Event()
-        
-    def start(self):
-        threading.Thread(target=self._run_loop, daemon=True).start()
-        
-    def _run_loop(self):
-        print("[UPDATE] Background update manager started")
-        # Initial check after 30 seconds (let app load first)
-        time.sleep(30)
-        
-        while not self.stop_event.is_set():
-            try:
-                self._check_and_process()
-            except Exception as e:
-                print(f"[UPDATE] Background check failed: {e}")
-            
-            # Wait 1 hour before next check
-            # Check stop_event periodically to allow clean exit
-            for _ in range(3600): 
-                if self.stop_event.is_set(): return
-                time.sleep(1)
-                
-    def _check_and_process(self):
-        print("[UPDATE] Checking for updates silently...")
-        result = self.checker.check_for_updates()
-        
-        if result.get("available"):
-            print(f"[UPDATE] New version found: {result.get('version')}")
-            download_url = result.get("download_url")
-            
-            # Download silently
-            downloader = UpdateDownloader(download_url)
-            # Use temp folder for silent background download to avoid clutter
-            # We'll override the default 'Downloads' behavior for this specific instance if possible
-            # But UpdateDownloader hardcodes Downloads. Let's use it as is, it's fine.
-            
-            print("[UPDATE] Starting background download...")
-            path = downloader.download_update()
-            
-            if path and os.path.exists(path):
-                print(f"[UPDATE] Download complete: {path}")
-                # Notify main thread to show popup
-                if self.on_update_ready:
-                    self.on_update_ready(result.get("version"), path, result.get("release_notes"))
-        else:
-            print("[UPDATE] No update found")
+# BackgroundUpdateManager lives in app/background_updates.py now.
+from app.background_updates import BackgroundUpdateManager  # noqa: E402
 
 class VoiceTypingApp(ctk.CTk):
     def __init__(self):
