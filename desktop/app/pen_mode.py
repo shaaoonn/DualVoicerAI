@@ -189,56 +189,42 @@ class PenModeMixin:
         # Place pen toolbar frame (already child of _panel_container)
         tools_frame = self._pen_toolbar.get_root_widget()
         tools_frame.pack(fill="both", expand=True)
-        self._panel_container.configure(width=1, height=h)
+        self._panel_container.configure(width=panel_w, height=h)
         self._panel_container.pack_propagate(False)
         self._panel_container.pack(side="right", fill="y")
 
         self._pen_tools_expanded = True
-        steps = 8
-        step_pw = panel_w / steps
 
-        def _step(i, pw_so_far):
-            if i >= steps:
-                self._panel_container.configure(width=panel_w)
-                self.geometry(f"{target_w}x{h}+{wx}+{wy}")
-                # Open animation done — now measure actual toolbar width and
-                # tighten the container so there's no gap on the right.
-                self.after(40, self._refit_panel_to_toolbar)
-                return
-            pw_so_far += step_pw
-            pw_int = int(pw_so_far)
-            self._panel_container.configure(width=pw_int)
-            self.geometry(f"{base_w + pw_int}x{h}+{wx}+{wy}")
-            self._pen_anim_job = self.after(16, lambda: _step(i + 1, pw_so_far))
-
-        _step(0, 0.0)
+        # Snap to final geometry in ONE call. The previous 8-step
+        # slide animation called `self.geometry()` 8 times in 128ms —
+        # on a 4K display with DPI-Unaware bitmap-scaling, each call
+        # triggered a full DWM layered-window rebuild, producing a
+        # visible "the widget breaks/crumbles for a moment" effect
+        # users complained about. A single geometry call still
+        # rebuilds the layer once but the result is instant and clean.
+        self.geometry(f"{target_w}x{h}+{wx}+{wy}")
+        # Measure actual toolbar width and tighten the container so
+        # there's no gap on the right.
+        self.after(40, self._refit_panel_to_toolbar)
 
     def _animate_tools_close(self, on_done=None):
-        """Retract tools panel from RIGHT - left edge stays fixed."""
+        """Retract tools panel from RIGHT - left edge stays fixed.
+
+        Snap-close (no animation) — same DPI-Unaware/4K rationale as
+        `_animate_tools_open`. The previous 8-step slide caused a
+        visible widget glitch on close.
+        """
         preset = self.settings.get("size_preset", "medium")
         btn_s = self.BTN_SIZES.get(preset, 72)
         base_w, h = self._calc_dims(btn_s)
-        panel_w = self._calc_tools_panel_w(btn_s)
 
         wx, wy = self.winfo_x(), self.winfo_y()  # Position stays fixed
-        steps = 8
-        step_pw = panel_w / steps
 
-        def _step(i, pw_remaining):
-            if i >= steps:
-                self._panel_container.pack_forget()
-                self._pen_tools_expanded = False
-                self.geometry(f"{base_w}x{h}+{wx}+{wy}")
-                if on_done:
-                    on_done()
-                return
-            pw_remaining -= step_pw
-            pw_int = max(1, int(pw_remaining))
-            self._panel_container.configure(width=pw_int)
-            self.geometry(f"{base_w + pw_int}x{h}+{wx}+{wy}")
-            self._pen_anim_job = self.after(16, lambda: _step(i + 1, pw_remaining))
-
-        _step(0, float(panel_w))
+        self._panel_container.pack_forget()
+        self._pen_tools_expanded = False
+        self.geometry(f"{base_w}x{h}+{wx}+{wy}")
+        if on_done:
+            on_done()
 
     def _retract_pen_tools(self):
         """Called when embedded toolbar Close is clicked - retract + cleanup."""

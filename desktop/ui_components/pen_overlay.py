@@ -203,6 +203,15 @@ class PenOverlay:
     def _setup_input_window(self):
         self._input_win = tk.Toplevel(self._parent)
         self._input_win.overrideredirect(True)
+        # CRITICAL: alpha must be set BEFORE geometry — otherwise the
+        # window flashes as a fullscreen solid-black layer for the
+        # ~100ms gap between `__init__` and `_setup_win32` running.
+        # Users see the entire screen go briefly dark when pen mode
+        # opens. Setting `-alpha 0.004` (≈1/255, matches the final
+        # LWA_ALPHA value applied by _setup_win32) here makes the
+        # window practically invisible from the very first frame
+        # Windows paints it.
+        self._input_win.attributes('-alpha', 0.004)
         self._input_win.attributes('-topmost', True)
         self._input_win.geometry(f"{self._vw}x{self._vh}+{self._vx}+{self._vy}")
         self._input_win.configure(bg='black')
@@ -265,7 +274,7 @@ class PenOverlay:
         self._input_canvas.bind("<ButtonRelease-1>", self._engine.on_mouse_up)
         self._input_win.bind("<Control-z>", lambda e: self._engine.undo())
         self._input_win.bind("<Control-y>", lambda e: self._engine.redo())
-        self._input_win.bind("<Control-Delete>", lambda e: self._engine.clear_all())
+        self._input_win.bind("<Control-Delete>", lambda e: self._engine.clear_all())
         self._input_win.bind("<Escape>", lambda e: self._on_escape())
         def _on_key(event):
             self._engine.on_key(event)
