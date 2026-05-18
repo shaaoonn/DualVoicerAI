@@ -159,59 +159,21 @@ from app.background_updates import BackgroundUpdateManager  # noqa: E402
 
 class VoiceTypingApp(ctk.CTk):
     def __init__(self):
-        # SINGLE INSTANCE ENFORCEMENT - Prevent multiple copies (SMART VERSION)
+        # ── Single-instance enforcement ────────────────────────────
+        # Lock-file dance now lives in auth.single_instance. If
+        # acquire_lock returns False there's already an alive
+        # instance — we bail out immediately before any Tk init.
+        from auth.single_instance import acquire_lock
+
         self.lock_file = os.path.join(tempfile.gettempdir(), "dual_voicer.lock")
-        
+        if not acquire_lock(self.lock_file):
+            sys.exit(0)
+
         # Define base path for assets
         try:
             self.base_path = sys._MEIPASS
         except Exception:
             self.base_path = os.path.abspath(".")
-            
-        def is_process_running(pid):
-            """Check if a process with given PID is actually running"""
-            try:
-                import psutil
-                return psutil.pid_exists(pid)
-            except ImportError:
-                # Fallback: Try to check using os methods
-                try:
-                    os.kill(pid, 0)  # Signal 0 just checks if process exists
-                    return True
-                except OSError:
-                    return False
-            except (ValueError, OSError): return False
-
-        # Cleanup stale lock file if process is dead
-        if os.path.exists(self.lock_file):
-            try:
-                with open(self.lock_file, 'r') as f:
-                    old_pid = int(f.read().strip())
-                
-                if not is_process_running(old_pid):
-                    print(f"[INFO] Removing stale lock file (PID {old_pid} not running)")
-                    try: os.remove(self.lock_file)
-                    except OSError: pass
-                else:
-                    # App is running, bring to front instead of launching new
-                    print(f"[INFO] App already running (PID {old_pid})")
-                    try:
-                        messagebox.showinfo("Dual Voicer", "App is already running! Check the tray icon or press Alt+Z.")
-                    except tk.TclError: pass
-                    sys.exit(0)
-            except Exception as e:
-                print(f"[WARNING] Lock file check failed: {e}")
-                # Try to remove if corrupted
-                try: os.remove(self.lock_file)
-                except OSError: pass
-
-        # Create new lock file
-        try:
-            with open(self.lock_file, 'w') as f:
-                f.write(str(os.getpid()))
-            print(f"[INFO] Lock file created with PID {os.getpid()}")
-        except Exception as e:
-            print(f"[ERROR] Could not create lock file: {e}")
 
         super().__init__()
 
@@ -552,114 +514,31 @@ class VoiceTypingApp(ctk.CTk):
         
         print(f"[MIC] Noise threshold: {noise_level}")
 
+    # ── HWID + login config — implementation in app.hwid ──────────
+    # These are thin wrappers that forward to the pure functions in
+    # app.hwid, passing in our instance paths (app_data_dir, config_file).
+    # Existing call sites use `self.get_stable_hwid()`, `self.save_login_config(...)`,
+    # etc., so we keep the same method signatures.
+
     def get_stable_hwid(self):
-        """
-        PERSISTENT HWID: Once generated, the ID is saved and reused forever.
-        This ensures the same device always has the same ID, even after reinstall.
-        The HWID file is stored in AppData which survives uninstall.
-        """
-        import hashlib
-        
-        # STEP 1: Check for existing HWID file FIRST (most important)
-        hwid_file = os.path.join(self.app_data_dir, ".hwid")
-        try:
-            if os.path.exists(hwid_file):
-                with open(hwid_file, 'r') as f:
-                    saved_hwid = f.read().strip()
-                    if saved_hwid and len(saved_hwid) > 10:
-                        print(f"[HWID] Using saved HWID: {saved_hwid[:8]}...")
-                        return saved_hwid
-        except Exception as e:
-            print(f"[HWID] Error reading saved HWID: {e}")
-        
-        # STEP 2: Generate new HWID from hardware components
-        hwid_parts = []
-        
-        # Component 1: Motherboard UUID
-        try:
-            cmd = 'powershell -Command "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID"'
-            output = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=5).decode().strip()
-            if output and output.lower() not in ["", "none", "to be filled by o.e.m."]:
-                hwid_parts.append(f"MB:{output}")
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
-            pass
+        """Return the persistent device fingerprint. See ``app.hwid.get_stable_hwid``."""
+        from app.hwid import get_stable_hwid
+        return get_stable_hwid(self.app_data_dir)
 
-        # Component 2: CPU ID
-        try:
-            cmd = 'powershell -Command "(Get-CimInstance -ClassName Win32_Processor).ProcessorId"'
-            output = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=5).decode().strip()
-            if output and output != "":
-                hwid_parts.append(f"CPU:{output}")
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
-            pass
-
-        # Component 3: Disk Serial
-        try:
-            cmd = 'powershell -Command "(Get-CimInstance -ClassName Win32_DiskDrive | Select-Object -First 1).SerialNumber"'
-            output = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=5).decode().strip()
-            if output and output != "":
-                hwid_parts.append(f"DISK:{output}")
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
-            pass
-
-        # Component 4: MAC Address
-        try:
-            mac = format(uuid.getnode(), '012x')
-            hwid_parts.append(f"MAC:{mac}")
-        except Exception:
-            pass
-        
-        # Create HWID from components or generate random
-        if len(hwid_parts) >= 2:
-            combined = "|".join(sorted(hwid_parts))
-            hwid_hash = hashlib.sha256(combined.encode()).hexdigest()[:32]
-            new_hwid = f"DV-{hwid_hash.upper()}"
-            print(f"[HWID] Generated from {len(hwid_parts)} hardware components")
-        else:
-            # Fallback: Random UUID
-            new_hwid = f"DV-{str(uuid.uuid4()).replace('-', '').upper()[:32]}"
-            print(f"[HWID] Generated random HWID (no hardware info available)")
-        
-        # STEP 3: SAVE the HWID for future use (critical!)
-        try:
-            os.makedirs(self.app_data_dir, exist_ok=True)
-            with open(hwid_file, 'w') as f:
-                f.write(new_hwid)
-            print(f"[HWID] Saved new HWID: {new_hwid[:8]}...")
-        except Exception as e:
-            print(f"[HWID] Warning: Could not save HWID: {e}")
-        
-        return new_hwid
-    
     def save_login_config(self, email, phone):
-        """Save login credentials for auto-login"""
-        try:
-            config = {"email": email, "phone": phone, "last_login": datetime.datetime.now().isoformat()}
-            with open(self.config_file, 'w') as f:
-                json.dump(config, f)
-            print(f"[INFO] Login config saved for {email}")
-        except Exception as e:
-            print(f"[WARNING] Failed to save config: {e}")
-    
+        """Persist the user's email + phone for auto-login."""
+        from app.hwid import save_login_config
+        save_login_config(self.config_file, email, phone)
+
     def load_login_config(self):
-        """Load saved login credentials"""
-        try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r') as f:
-                    config = json.load(f)
-                return config.get("email"), config.get("phone")
-        except Exception as e:
-            print(f"[WARNING] Failed to load config: {e}")
-        return None, None
-    
+        """Return ``(email, phone)`` from saved config or ``(None, None)``."""
+        from app.hwid import load_login_config
+        return load_login_config(self.config_file)
+
     def clear_login_config(self):
-        """Clear saved login credentials (for logout)"""
-        try:
-            if os.path.exists(self.config_file):
-                os.remove(self.config_file)
-                print("[INFO] Login config cleared")
-        except Exception as e:
-            print(f"[WARNING] Failed to clear config: {e}")
+        """Drop the saved login config (used on explicit logout)."""
+        from app.hwid import clear_login_config
+        clear_login_config(self.config_file)
     
     def auto_login_if_saved(self):
         """Attempt auto-login using saved credentials"""
@@ -5501,9 +5380,9 @@ if __name__ == "__main__":
     # Cleanup handler - Remove lock file + unregister fonts on exit
     def cleanup():
         try:
-            if hasattr(app, 'lock_file') and os.path.exists(app.lock_file):
-                os.remove(app.lock_file)
-                print("[INFO] Lock file removed")
+            from auth.single_instance import release_lock
+            if hasattr(app, 'lock_file'):
+                release_lock(app.lock_file)
         except Exception as e:
             print(f"[WARNING] Lock file cleanup failed: {e}")
         try:
