@@ -108,25 +108,24 @@ from updater import UpdateChecker, UpdateDownloader, UpdateInstaller
 from i18n import tr
 
 # Application Version
-APP_VERSION = "4.0.8"
-UPDATE_REPO_URL = "https://raw.githubusercontent.com/shaaoonn/DualVoicer-Dist/main"
-
-# Default settings (single source of truth)
-DEFAULT_SETTINGS = {
-    "max_opacity": 0.95,
-    "idle_opacity": 0.4,
-    "scale": 1.0,
-    "reading_speed": "1.0",
-    "auto_timeout": "15",
-    "show_desktop_icon": True,
-    "sound_enabled": True,
-    "show_labels": True,
-    "mic_sensitivity": "normal",
-    "noise_threshold": 100,
-    "mic_index": None,
-    "window_x": None,
-    "window_y": 0
-}
+# App constants (version, default settings, UI palette) live in
+# app/constants.py now. Re-imported here so existing references in main.py
+# (APP_VERSION, DEFAULT_SETTINGS, etc.) keep working transparently.
+from app.constants import (  # noqa: E402
+    APP_VERSION,
+    BTN_SIZES,
+    DEFAULT_SETTINGS,
+    DRAWER_ACTIVE,
+    DRAWER_BG,
+    DRAWER_BORDER,
+    DRAWER_HEADER,
+    DRAWER_MUTED,
+    DRAWER_ROW_BG,
+    DRAWER_ROW_HV,
+    DRAWER_TEXT,
+    TOOLBAR_BG,
+    UPDATE_REPO_URL,
+)
 
 # Module-level helpers (format_size, resource_path, silent_restart) live in
 # app/helpers.py now. Import them here so the rest of main.py's references
@@ -388,7 +387,7 @@ class VoiceTypingApp(ctk.CTk):
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         _p = self.settings.get("size_preset", "medium")
-        base_w, base_h = VoiceTypingApp._calc_dims({"mini":36,"tiny":48,"small":56,"medium":72,"large":84,"xlarge":96}.get(_p, 72))
+        base_w, base_h = VoiceTypingApp._calc_dims(BTN_SIZES.get(_p, 72))
         
         # Check saved position from settings
         saved_x = self.settings.get("window_x")
@@ -422,7 +421,7 @@ class VoiceTypingApp(ctk.CTk):
                 self.settings["window_y"] = None
         
         _preset = self.settings.get("size_preset", "medium")
-        _pw, _ph = VoiceTypingApp._calc_dims({"mini":36,"tiny":48,"small":56,"medium":72,"large":84,"xlarge":96}.get(_preset, 72))
+        _pw, _ph = VoiceTypingApp._calc_dims(BTN_SIZES.get(_preset, 72))
         self.geometry(f"{_pw}x{_ph}+{self.start_x}+{self.start_y}")
 
         self.drag_start = {"x": 0, "y": 0, "root_x": 0, "root_y": 0}
@@ -1157,8 +1156,9 @@ class VoiceTypingApp(ctk.CTk):
             print(f"[FOCUS] toggle NOACTIVATE failed: {e}")
             return False
 
-    # Toolbar gradient color (approx middle of gradient - used for button corners)
-    TOOLBAR_BG = "#302D5E"
+    # Class-attribute alias of the module-level constant so existing
+    # `self.TOOLBAR_BG` references in mixins / call-sites keep working.
+    TOOLBAR_BG = TOOLBAR_BG
 
     @staticmethod
     def _calc_dims(btn_s):
@@ -1452,7 +1452,8 @@ class VoiceTypingApp(ctk.CTk):
         except Exception as e:
             return None
 
-    BTN_SIZES = {"mini": 36, "tiny": 48, "small": 56, "medium": 72, "large": 84, "xlarge": 96}
+    # Class-attribute alias of the module-level constant.
+    BTN_SIZES = BTN_SIZES
 
     def _apply_window_size(self):
         """Apply size from preset - dynamic width, tight layout."""
@@ -4272,15 +4273,17 @@ class VoiceTypingApp(ctk.CTk):
 
     # ─── Embedded drawer system ────────────────────────────────────
 
-    # Drawer palette — matches widget toolbar
-    _DRAWER_BG       = "#22214B"
-    _DRAWER_HEADER   = "#2E305E"
-    _DRAWER_ROW_BG   = "#2A2A55"
-    _DRAWER_ROW_HV   = "#3A3870"
-    _DRAWER_ACTIVE   = "#FFD700"   # gold accent (matches widget label)
-    _DRAWER_TEXT     = "#F0F2F8"
-    _DRAWER_MUTED    = "#9BA3C7"
-    _DRAWER_BORDER   = "#404778"
+    # Drawer palette — class-attribute aliases of the module-level
+    # constants in app.constants. Existing `self._DRAWER_BG` references
+    # in mixins / call-sites resolve to these.
+    _DRAWER_BG     = DRAWER_BG
+    _DRAWER_HEADER = DRAWER_HEADER
+    _DRAWER_ROW_BG = DRAWER_ROW_BG
+    _DRAWER_ROW_HV = DRAWER_ROW_HV
+    _DRAWER_ACTIVE = DRAWER_ACTIVE
+    _DRAWER_TEXT   = DRAWER_TEXT
+    _DRAWER_MUTED  = DRAWER_MUTED
+    _DRAWER_BORDER = DRAWER_BORDER
 
     def _current_drawer_height(self) -> int:
         """Pixel height the drawer is currently consuming (0 if closed)."""
