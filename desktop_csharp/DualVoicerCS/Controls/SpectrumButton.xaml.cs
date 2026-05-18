@@ -66,8 +66,6 @@ public partial class SpectrumButton : UserControl
     /// recording state for this language.</summary>
     public event EventHandler? Click;
 
-    private Storyboard? _pulseStoryboard;
-
     public SpectrumButton()
     {
         InitializeComponent();
@@ -127,52 +125,51 @@ public partial class SpectrumButton : UserControl
 
     private void StartPulse()
     {
-        // ── 1) Fade the LiveHalo into view ────────────────────
-        // 200 ms fade from invisible to fully visible gives a
-        // distinct "click → red glow appears" beat. The halo's
-        // RadialGradientBrush is doughnut-shaped so it sits OUTSIDE
-        // the spectrum ring rather than washing the button out.
-        LiveHalo.BeginAnimation(OpacityProperty,
-            new DoubleAnimation
-            {
-                To = 1.0,
-                Duration = TimeSpan.FromMilliseconds(200),
-            });
+        // Recording state has three layered animations:
+        //   1. Rainbow ring rotates slowly (4 s per revolution).
+        //   2. Red voice-pulse ellipse inside the disc breathes
+        //      (opacity + scale) — INSIDE the button, not the outer
+        //      halo the previous version had.
+        //   3. Subtle scale-pulse on the rainbow ring itself for
+        //      depth.
 
-        // ── 2) Halo pulses at 700 ms heartbeat ────────────────
-        // Bigger amplitude (1.00 ↔ 1.18) than the inner-button
-        // pulse — the halo HAS to be the eye-catching cue at
-        // glance distance.
-        var haloPulseX = MakeRepeatingPulse(1.00, 1.18, 700);
-        var haloPulseY = MakeRepeatingPulse(1.00, 1.18, 700);
-        Storyboard.SetTarget(haloPulseX, HaloScaleTx);
-        Storyboard.SetTargetProperty(haloPulseX,
-            new PropertyPath(System.Windows.Media.ScaleTransform.ScaleXProperty));
-        Storyboard.SetTarget(haloPulseY, HaloScaleTx);
-        Storyboard.SetTargetProperty(haloPulseY,
-            new PropertyPath(System.Windows.Media.ScaleTransform.ScaleYProperty));
+        // ── 1) Rainbow rotation ──────────────────────────────
+        // Forever loop, 4 s period, linear (no easing) so the
+        // motion looks like a smooth turntable rather than a
+        // wobble.
+        var rotate = new DoubleAnimation
+        {
+            From = 0,
+            To = 360,
+            Duration = TimeSpan.FromSeconds(4),
+            RepeatBehavior = RepeatBehavior.Forever,
+        };
+        RotateTx.BeginAnimation(System.Windows.Media.RotateTransform.AngleProperty, rotate);
 
-        // ── 3) Inner disc tints red so the button core also reads
-        //       as "active" — not just the surrounding halo.
-        InnerDisc.Fill = new System.Windows.Media.SolidColorBrush(
-            System.Windows.Media.Color.FromArgb(0xFF, 0x80, 0x18, 0x20));
+        // ── 2) Inner red voice-pulse: opacity 0 ↔ 0.7, scale
+        //       0.55 ↔ 0.95 — feels like a heartbeat synced to
+        //       speech, INSIDE the mic icon's surrounding disc.
+        var pulseOpacity = new DoubleAnimation
+        {
+            From = 0.0,
+            To = 0.7,
+            Duration = TimeSpan.FromMilliseconds(450),
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+        };
+        VoicePulse.BeginAnimation(OpacityProperty, pulseOpacity);
 
-        // ── 4) Subtle spectrum-ring pulse retained for depth.
-        var ringPulseX = MakeRepeatingPulse(1.00, 1.08, 700);
-        var ringPulseY = MakeRepeatingPulse(1.00, 1.08, 700);
-        Storyboard.SetTarget(ringPulseX, ScaleTx);
-        Storyboard.SetTargetProperty(ringPulseX,
-            new PropertyPath(System.Windows.Media.ScaleTransform.ScaleXProperty));
-        Storyboard.SetTarget(ringPulseY, ScaleTx);
-        Storyboard.SetTargetProperty(ringPulseY,
-            new PropertyPath(System.Windows.Media.ScaleTransform.ScaleYProperty));
+        var pulseScaleX = MakeRepeatingPulse(0.55, 0.95, 450);
+        var pulseScaleY = MakeRepeatingPulse(0.55, 0.95, 450);
+        PulseTx.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, pulseScaleX);
+        PulseTx.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, pulseScaleY);
 
-        _pulseStoryboard = new Storyboard();
-        _pulseStoryboard.Children.Add(haloPulseX);
-        _pulseStoryboard.Children.Add(haloPulseY);
-        _pulseStoryboard.Children.Add(ringPulseX);
-        _pulseStoryboard.Children.Add(ringPulseY);
-        _pulseStoryboard.Begin();
+        // ── 3) Subtle spectrum-ring scale pulse for depth.
+        var ringPulseX = MakeRepeatingPulse(1.00, 1.06, 700);
+        var ringPulseY = MakeRepeatingPulse(1.00, 1.06, 700);
+        ScaleTx.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, ringPulseX);
+        ScaleTx.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, ringPulseY);
     }
 
     private static DoubleAnimation MakeRepeatingPulse(double from, double to, int periodMs) => new()
@@ -187,25 +184,29 @@ public partial class SpectrumButton : UserControl
 
     private void StopPulse()
     {
-        _pulseStoryboard?.Stop();
-        _pulseStoryboard = null;
+        // Cancel each animation by setting the property to null
+        // (DependencyProperty animation reset), then snap back to
+        // the resting visual state.
+        RotateTx.BeginAnimation(System.Windows.Media.RotateTransform.AngleProperty, null);
+        RotateTx.Angle = 0;
+
+        ScaleTx.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, null);
+        ScaleTx.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, null);
         ScaleTx.ScaleX = 1.0;
         ScaleTx.ScaleY = 1.0;
-        HaloScaleTx.ScaleX = 1.0;
-        HaloScaleTx.ScaleY = 1.0;
 
-        // Fade the halo back out — gives a clear "click → red goes
-        // away" cue. Hold over with BeginAnimation rather than
-        // setting Opacity directly so we don't pop visually.
-        LiveHalo.BeginAnimation(OpacityProperty,
+        // Voice-pulse: cancel the scale animations first so the
+        // fade-out doesn't visually wobble, then fade opacity to
+        // zero. Snap the scale transform back to its resting size.
+        PulseTx.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, null);
+        PulseTx.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, null);
+        PulseTx.ScaleX = 0.55;
+        PulseTx.ScaleY = 0.55;
+        VoicePulse.BeginAnimation(OpacityProperty,
             new DoubleAnimation
             {
                 To = 0.0,
-                Duration = TimeSpan.FromMilliseconds(180),
+                Duration = TimeSpan.FromMilliseconds(150),
             });
-
-        // Restore the dark inner disc.
-        InnerDisc.Fill = new System.Windows.Media.SolidColorBrush(
-            System.Windows.Media.Color.FromArgb(0xFF, 0x1A, 0x1B, 0x40));
     }
 }

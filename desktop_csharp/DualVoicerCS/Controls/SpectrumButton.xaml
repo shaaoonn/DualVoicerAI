@@ -5,61 +5,65 @@
              Background="Transparent"
              Cursor="Hand">
     <Grid x:Name="RootGrid">
-        <!-- LIVE recording halo. Invisible while idle, fades in to a
-             saturated red glow when IsRecording=true. Sits OUTSIDE
-             the spectrum ring (negative margin = bleeds outward) so
-             it reads as a separate ring of fire, not a subtle tint
-             of the gradient. The pulse storyboard scales it
-             independently for a heartbeat feel that's obvious from
-             across the screen — user complained the original subtle
-             pulse "didn't clearly show on/off state". -->
-        <Ellipse x:Name="LiveHalo"
-                 Margin="-8"
-                 Opacity="0"
-                 RenderTransformOrigin="0.5,0.5"
-                 IsHitTestVisible="False">
-            <Ellipse.Fill>
-                <RadialGradientBrush GradientOrigin="0.5,0.5">
-                    <GradientStop Color="#00FF4040" Offset="0.40"/>
-                    <GradientStop Color="#80FF3030" Offset="0.50"/>
-                    <GradientStop Color="#FFFF1010" Offset="0.55"/>
-                    <GradientStop Color="#90FF2020" Offset="0.65"/>
-                    <GradientStop Color="#00FF2020" Offset="0.85"/>
-                </RadialGradientBrush>
-            </Ellipse.Fill>
-            <Ellipse.RenderTransform>
-                <ScaleTransform x:Name="HaloScaleTx" ScaleX="1" ScaleY="1"/>
-            </Ellipse.RenderTransform>
-        </Ellipse>
-
-        <!-- Outer ring: spectrum gradient. Becomes the "active glow"
-             when recording. -->
+        <!-- Rainbow spectrum ring.
+             Now ROTATES while recording (RotateTx animated by code-
+             behind, 0→360 over 4 s on a forever-loop) and gets a
+             subtle scale pulse layered on top via ScaleTx for
+             tactile heartbeat. The ring itself stays the same SIZE
+             but appears VISUALLY thinner because InnerDisc's margin
+             is bigger (12 vs the original 6) — half the ring width. -->
         <Ellipse x:Name="OuterRing"
                  Fill="{StaticResource SpectrumGradient}"
                  RenderTransformOrigin="0.5,0.5">
             <Ellipse.RenderTransform>
-                <ScaleTransform x:Name="ScaleTx" ScaleX="1" ScaleY="1"/>
+                <TransformGroup>
+                    <ScaleTransform x:Name="ScaleTx" ScaleX="1" ScaleY="1"/>
+                    <RotateTransform x:Name="RotateTx" Angle="0"/>
+                </TransformGroup>
             </Ellipse.RenderTransform>
         </Ellipse>
 
-        <!-- Inner disc: dark fill, hosts the mic icon. Changes to a
-             saturated red core during recording so the centre of
-             the button also reads as "active" — not just the halo. -->
+        <!-- Inner dark disc — bigger margin (12) than before (6) so
+             the visible rainbow ring is half its previous width. The
+             user wanted a thinner ring; this is the cheapest way to
+             produce that effect without re-drawing the gradient. -->
         <Ellipse x:Name="InnerDisc"
                  Fill="#FF1A1B40"
-                 Margin="6"/>
+                 Margin="12"/>
 
-        <!-- Mic glyph. Uses Segoe Fluent Icons codepoint for the mic
-             () so we don't need to bundle an asset. Flips to a
-             solid white "REC" colour during recording for parity
-             with the surrounding red. -->
+        <!-- VOICE-ACTIVITY PULSE.
+             A red ellipse sitting INSIDE the dark disc, behind the
+             mic glyph. While recording its opacity + scale animate
+             continuously (0.0 ↔ 0.7 opacity, 0.55 ↔ 0.95 scale at
+             450 ms half-period) to feel like a heartbeat synced
+             with speech. User asked for a red indicator INSIDE the
+             round part, not the original outer halo that washed
+             out the surrounding buttons.
+             Future enhancement: drive the amplitude from RMS so it
+             literally pulses with the user's voice volume — wiring
+             requires plumbing audio-level events from
+             AudioCaptureService through to the button. -->
+        <Ellipse x:Name="VoicePulse"
+                 Margin="18"
+                 Fill="#FFFF2020"
+                 Opacity="0"
+                 IsHitTestVisible="False"
+                 RenderTransformOrigin="0.5,0.5">
+            <Ellipse.RenderTransform>
+                <ScaleTransform x:Name="PulseTx" ScaleX="0.55" ScaleY="0.55"/>
+            </Ellipse.RenderTransform>
+        </Ellipse>
+
+        <!-- Mic glyph stays centred on top. IsHitTestVisible=False
+             so clicks bubble straight to the UserControl handler. -->
         <TextBlock x:Name="MicGlyph"
                    Text="&#xE720;"
                    FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets"
-                   FontSize="28"
+                   FontSize="26"
                    Foreground="White"
                    HorizontalAlignment="Center"
-                   VerticalAlignment="Center"/>
+                   VerticalAlignment="Center"
+                   IsHitTestVisible="False"/>
 
         <!-- Small label badge at bottom-right (BN / EN). -->
         <Border x:Name="LabelBadge"
@@ -68,7 +72,8 @@
                 Padding="4,1"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
-                Margin="0,0,4,4">
+                Margin="0,0,4,4"
+                IsHitTestVisible="False">
             <TextBlock x:Name="LabelText"
                        Text="BN"
                        Foreground="White"

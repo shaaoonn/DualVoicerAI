@@ -233,17 +233,53 @@ public partial class MainWindow : Window
     private void OnOrchestratorError(Exception ex)
     {
         // Already on a non-UI thread potentially — marshal.
-        Dispatcher.InvokeAsync(() =>
+        Dispatcher.InvokeAsync(async () =>
         {
-            // Reset visual recording state since whatever button was
-            // armed has now been torn down by the orchestrator.
+            // CRITICAL: fully tear down the orchestrator on error,
+            // not just hide the visual recording state. Previously
+            // we only reset _activeButton and IsRecording — the
+            // orchestrator's _running flag stayed true and audio
+            // capture kept running. That caused the user's reported
+            // "typing stopped and won't restart" — a clear was
+            // visually showing but internally a session was still
+            // half-alive, so the next click hit `if (_running) return`
+            // and did nothing.
+            try
+            {
+                if (_orchestrator.IsRunning)
+                    await _orchestrator.StopAsync();
+            }
+            catch (Exception stopEx)
+            {
+                // Best effort — log but don't cascade to the user.
+                System.Diagnostics.Debug.WriteLine(
+                    $"[OnOrchestratorError] StopAsync cleanup failed: {stopEx}");
+            }
+
             if (_activeButton is not null)
             {
                 _activeButton.IsRecording = false;
                 _activeButton = null;
             }
+
+            // Detect Google rate-limit / quota errors and surface a
+            // clearer explanation than the raw HTTP body.
+            string message = ex.Message;
+            bool isLikelyRateLimit =
+                message.Contains("400") || message.Contains("403") ||
+                message.Contains("429") || message.Contains("quota");
+            if (isLikelyRateLimit)
+            {
+                message =
+                    "Google's free speech endpoint has likely rate-limited " +
+                    "this session (~50 requests/hour on the shared chromium " +
+                    "key). Wait 10-30 minutes and try again, or migrate to " +
+                    "Azure Speech / a self-hosted backend for the full port.\n\n" +
+                    "Underlying error: " + ex.Message;
+            }
+
             MessageBox.Show(this,
-                ex.Message,
+                message,
                 "Voice typing error",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         });
