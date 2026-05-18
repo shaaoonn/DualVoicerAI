@@ -205,23 +205,30 @@ public sealed class StreamingSttService : IDisposable
             var seconds = pcmData.Length / 32000.0;
             DiagLog.Write($"[STT] Posting chunk: {pcmData.Length} bytes (~{seconds:F2} s) lang={_language}");
 
-            // Google's free endpoint parses both raw audio/l16 and
-            // WAV-containerised PCM. WAV is more robust against
-            // sample-rate ambiguity, and the speech_recognition
-            // library has been shipping FLAC for years — RIFF-wrapped
-            // Linear16 is the simplest middle ground that doesn't
-            // require an external encoder.
-            var wavBytes = WrapPcmAsWav(pcmData,
-                sampleRate: 16000, channels: 1, bitsPerSample: 16);
-
-            var url = "https://www.google.com/speech-api/v2/recognize" +
+            // We first send RAW Linear16 PCM with the
+            // `audio/l16; rate=16000` content type. The first
+            // attempt with `audio/x-wav` returned 400 — the
+            // unofficial endpoint apparently doesn't parse RIFF
+            // containers, only the formats Chromium itself emits.
+            // Python's speech_recognition uses FLAC but encoding
+            // FLAC in pure managed C# would require either a
+            // bundled libFLAC native DLL or hundreds of lines of
+            // custom bit-packing code. Raw l16 is documented to
+            // work for the chromium client and avoids the whole
+            // encoder problem.
+            //
+            // Important: the URL is HTTP (matches Python upstream);
+            // switching to HTTPS earlier caused the same 400 in
+            // some quick smoke tests because the SSL endpoint
+            // honours stricter audio-format validation.
+            var url = "http://www.google.com/speech-api/v2/recognize" +
                 $"?client=chromium" +
                 $"&lang={Uri.EscapeDataString(_language)}" +
                 $"&key={GoogleKey}" +
                 $"&pFilter=0";
 
-            using var content = new ByteArrayContent(wavBytes);
-            content.Headers.Add("Content-Type", "audio/x-wav; rate=16000");
+            using var content = new ByteArrayContent(pcmData);
+            content.Headers.Add("Content-Type", "audio/l16; rate=16000");
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             using var response = await _http.PostAsync(url, content);
