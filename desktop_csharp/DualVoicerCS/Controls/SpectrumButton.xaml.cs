@@ -127,29 +127,63 @@ public partial class SpectrumButton : UserControl
 
     private void StartPulse()
     {
-        var pulse = new DoubleAnimation
-        {
-            From = 1.0,
-            To = 1.10,
-            Duration = TimeSpan.FromMilliseconds(700),
-            AutoReverse = true,
-            RepeatBehavior = RepeatBehavior.Forever,
-            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
-        };
-        _pulseStoryboard = new Storyboard();
-        Storyboard.SetTarget(pulse, ScaleTx);
-        Storyboard.SetTargetProperty(pulse,
+        // ── 1) Fade the LiveHalo into view ────────────────────
+        // 200 ms fade from invisible to fully visible gives a
+        // distinct "click → red glow appears" beat. The halo's
+        // RadialGradientBrush is doughnut-shaped so it sits OUTSIDE
+        // the spectrum ring rather than washing the button out.
+        LiveHalo.BeginAnimation(OpacityProperty,
+            new DoubleAnimation
+            {
+                To = 1.0,
+                Duration = TimeSpan.FromMilliseconds(200),
+            });
+
+        // ── 2) Halo pulses at 700 ms heartbeat ────────────────
+        // Bigger amplitude (1.00 ↔ 1.18) than the inner-button
+        // pulse — the halo HAS to be the eye-catching cue at
+        // glance distance.
+        var haloPulseX = MakeRepeatingPulse(1.00, 1.18, 700);
+        var haloPulseY = MakeRepeatingPulse(1.00, 1.18, 700);
+        Storyboard.SetTarget(haloPulseX, HaloScaleTx);
+        Storyboard.SetTargetProperty(haloPulseX,
             new PropertyPath(System.Windows.Media.ScaleTransform.ScaleXProperty));
-        _pulseStoryboard.Children.Add(pulse);
-
-        var pulseY = pulse.Clone();
-        Storyboard.SetTarget(pulseY, ScaleTx);
-        Storyboard.SetTargetProperty(pulseY,
+        Storyboard.SetTarget(haloPulseY, HaloScaleTx);
+        Storyboard.SetTargetProperty(haloPulseY,
             new PropertyPath(System.Windows.Media.ScaleTransform.ScaleYProperty));
-        _pulseStoryboard.Children.Add(pulseY);
 
+        // ── 3) Inner disc tints red so the button core also reads
+        //       as "active" — not just the surrounding halo.
+        InnerDisc.Fill = new System.Windows.Media.SolidColorBrush(
+            System.Windows.Media.Color.FromArgb(0xFF, 0x80, 0x18, 0x20));
+
+        // ── 4) Subtle spectrum-ring pulse retained for depth.
+        var ringPulseX = MakeRepeatingPulse(1.00, 1.08, 700);
+        var ringPulseY = MakeRepeatingPulse(1.00, 1.08, 700);
+        Storyboard.SetTarget(ringPulseX, ScaleTx);
+        Storyboard.SetTargetProperty(ringPulseX,
+            new PropertyPath(System.Windows.Media.ScaleTransform.ScaleXProperty));
+        Storyboard.SetTarget(ringPulseY, ScaleTx);
+        Storyboard.SetTargetProperty(ringPulseY,
+            new PropertyPath(System.Windows.Media.ScaleTransform.ScaleYProperty));
+
+        _pulseStoryboard = new Storyboard();
+        _pulseStoryboard.Children.Add(haloPulseX);
+        _pulseStoryboard.Children.Add(haloPulseY);
+        _pulseStoryboard.Children.Add(ringPulseX);
+        _pulseStoryboard.Children.Add(ringPulseY);
         _pulseStoryboard.Begin();
     }
+
+    private static DoubleAnimation MakeRepeatingPulse(double from, double to, int periodMs) => new()
+    {
+        From = from,
+        To = to,
+        Duration = TimeSpan.FromMilliseconds(periodMs),
+        AutoReverse = true,
+        RepeatBehavior = RepeatBehavior.Forever,
+        EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+    };
 
     private void StopPulse()
     {
@@ -157,5 +191,21 @@ public partial class SpectrumButton : UserControl
         _pulseStoryboard = null;
         ScaleTx.ScaleX = 1.0;
         ScaleTx.ScaleY = 1.0;
+        HaloScaleTx.ScaleX = 1.0;
+        HaloScaleTx.ScaleY = 1.0;
+
+        // Fade the halo back out — gives a clear "click → red goes
+        // away" cue. Hold over with BeginAnimation rather than
+        // setting Opacity directly so we don't pop visually.
+        LiveHalo.BeginAnimation(OpacityProperty,
+            new DoubleAnimation
+            {
+                To = 0.0,
+                Duration = TimeSpan.FromMilliseconds(180),
+            });
+
+        // Restore the dark inner disc.
+        InnerDisc.Fill = new System.Windows.Media.SolidColorBrush(
+            System.Windows.Media.Color.FromArgb(0xFF, 0x1A, 0x1B, 0x40));
     }
 }

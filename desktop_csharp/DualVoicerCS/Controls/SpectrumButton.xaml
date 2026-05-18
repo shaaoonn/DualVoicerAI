@@ -5,6 +5,33 @@
              Background="Transparent"
              Cursor="Hand">
     <Grid x:Name="RootGrid">
+        <!-- LIVE recording halo. Invisible while idle, fades in to a
+             saturated red glow when IsRecording=true. Sits OUTSIDE
+             the spectrum ring (negative margin = bleeds outward) so
+             it reads as a separate ring of fire, not a subtle tint
+             of the gradient. The pulse storyboard scales it
+             independently for a heartbeat feel that's obvious from
+             across the screen — user complained the original subtle
+             pulse "didn't clearly show on/off state". -->
+        <Ellipse x:Name="LiveHalo"
+                 Margin="-8"
+                 Opacity="0"
+                 RenderTransformOrigin="0.5,0.5"
+                 IsHitTestVisible="False">
+            <Ellipse.Fill>
+                <RadialGradientBrush GradientOrigin="0.5,0.5">
+                    <GradientStop Color="#00FF4040" Offset="0.40"/>
+                    <GradientStop Color="#80FF3030" Offset="0.50"/>
+                    <GradientStop Color="#FFFF1010" Offset="0.55"/>
+                    <GradientStop Color="#90FF2020" Offset="0.65"/>
+                    <GradientStop Color="#00FF2020" Offset="0.85"/>
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+            <Ellipse.RenderTransform>
+                <ScaleTransform x:Name="HaloScaleTx" ScaleX="1" ScaleY="1"/>
+            </Ellipse.RenderTransform>
+        </Ellipse>
+
         <!-- Outer ring: spectrum gradient. Becomes the "active glow"
              when recording. -->
         <Ellipse x:Name="OuterRing"
@@ -15,13 +42,17 @@
             </Ellipse.RenderTransform>
         </Ellipse>
 
-        <!-- Inner disc: dark fill, hosts the mic icon. -->
+        <!-- Inner disc: dark fill, hosts the mic icon. Changes to a
+             saturated red core during recording so the centre of
+             the button also reads as "active" — not just the halo. -->
         <Ellipse x:Name="InnerDisc"
                  Fill="#FF1A1B40"
                  Margin="6"/>
 
         <!-- Mic glyph. Uses Segoe Fluent Icons codepoint for the mic
-             () so we don't need to bundle an asset. -->
+             () so we don't need to bundle an asset. Flips to a
+             solid white "REC" colour during recording for parity
+             with the surrounding red. -->
         <TextBlock x:Name="MicGlyph"
                    Text="&#xE720;"
                    FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets"

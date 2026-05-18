@@ -74,11 +74,16 @@ public sealed class StreamingSttService : IDisposable
 
     // Continuous silence ≥ this many ms after we've already heard
     // voice → flush the accumulated buffer as one chunk to Google.
-    // 1.2 s sits in the sweet spot for natural Bengali pause
-    // patterns — short enough that mid-sentence pauses don't
-    // fragment the transcript, long enough that a finished
-    // sentence reliably triggers a flush.
-    private const int SilenceMsForChunkBreak = 1200;
+    // User feedback after the first working build: "typing speed is
+    // slow." Originally 1200 ms — felt sluggish because the user has
+    // to perceive both the pause threshold AND the network round
+    // trip before text appears. Dropped to 700 ms, which still
+    // tolerates natural mid-sentence breaths (those are usually
+    // ≤ 400 ms) but cuts ~500 ms off the perceived end-of-sentence
+    // latency. Combined with the ~600-1100 ms Google round-trip, the
+    // visible "click → finish sentence → see typing" delay is now
+    // around 1.3 s instead of 1.8.
+    private const int SilenceMsForChunkBreak = 700;
 
     // Hard ceiling per chunk so a non-stop talker doesn't blow
     // past Google's per-request audio length limit (~1 minute,
