@@ -23,13 +23,17 @@
             </Ellipse.RenderTransform>
         </Ellipse>
 
-        <!-- Inner dark disc — bigger margin (12) than before (6) so
-             the visible rainbow ring is half its previous width. The
-             user wanted a thinner ring; this is the cheapest way to
-             produce that effect without re-drawing the gradient. -->
+        <!-- Inner dark disc. The visible thickness of the rainbow
+             ring equals this margin value (each side of the disc
+             leaves Margin px of OuterRing showing). User asked for
+             "rainbow width half" — the previous build went the
+             wrong way (margin 6 → 12 made the ring DOUBLE thick by
+             shrinking the disc). Setting margin to 3 gives a ring
+             that's exactly half the original 6 px thickness:
+             a clean thin spectrum halo around a roomy mic disc. -->
         <Ellipse x:Name="InnerDisc"
                  Fill="#FF1A1B40"
-                 Margin="12"/>
+                 Margin="3"/>
 
         <!-- VOICE-ACTIVITY PULSE.
              A red ellipse sitting INSIDE the dark disc, behind the
