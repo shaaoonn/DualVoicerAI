@@ -37,4 +37,20 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 
+  <!-- Models live alongside the EXE at runtime. Copy any *.bin the
+       user has dropped under the project's `models/` folder into
+       every build output (both `bin\Release\net8.0-windows\` and the
+       single-file publish folder). Without this, the EXE the user
+       launches by double-clicking from `bin\Release\net8.0-windows\`
+       can't find ggml-base.bin even though `publish\models\` has it
+       — the exact "No Whisper model found under …\bin\Release\
+       net8.0-windows\models\" symptom the user hit. -->
+  <ItemGroup>
+    <None Include="models\**\*.bin" Condition="Exists('models')">
+      <Link>models\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
