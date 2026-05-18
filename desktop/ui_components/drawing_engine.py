@@ -793,9 +793,13 @@ class DrawingEngine:
 
         font = self._get_text_font()
         dfont = self._display_font(font[0], font[1])
-        # Wrap width: drag → user-defined; click → remaining canvas width
+        # Wrap width: drag → user-defined; click → remaining canvas width.
+        # Right margin = 40px (was 20) to compensate for Tk's wrap algorithm
+        # under-counting for complex scripts: Bengali ligatures + diacritic
+        # marks can extend a few pixels past Tk's measured glyph width, which
+        # clipped the rightmost character at the canvas edge.
         if wrap_w is None:
-            wrap_w = max(200, int(self._canvas.winfo_width() - x - 20))
+            wrap_w = max(200, int(self._canvas.winfo_width() - x - 40))
         else:
             wrap_w = max(50, int(wrap_w))
         # Remember the box width so the text stroke retains it on commit + edit
