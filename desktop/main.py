@@ -128,93 +128,14 @@ DEFAULT_SETTINGS = {
     "window_y": 0
 }
 
-def format_size(bytes_val):
-    """Format bytes to human-readable size string"""
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if bytes_val < 1024:
-            return f"{bytes_val:.1f} {unit}"
-        bytes_val /= 1024
-    return f"{bytes_val:.1f} TB"
+# Module-level helpers (format_size, resource_path, silent_restart) live in
+# app/helpers.py now. Import them here so the rest of main.py's references
+# resolve transparently — call sites stay unchanged.
+from app.helpers import format_size, resource_path, silent_restart  # noqa: E402
 
 # Network timeout for Google STT API (10s = handles large audio chunks without timeout)
-socket.setdefaulttimeout(10)
-
-# CRITICAL: Define resource_path BEFORE Firebase initialization
-def resource_path(relative_path):
-    """Resolve a bundled resource path.
-
-    PyInstaller frozen builds: use sys._MEIPASS (the temp extraction dir).
-    Dev runs (not frozen):     use the directory where this main.py lives,
-                               so the lookup works no matter what CWD the
-                               user launched from. Previously we used
-                               os.path.abspath(".") which broke when the
-                               app was launched from outside desktop/ (e.g.
-                               from the project root) - the start/end SFX
-                               WAVs then silently failed to load.
-    """
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
-
-def silent_restart(app_instance=None):
-    """
-    SILENT RESTART: Restarts the app invisibly.
-    Developer Team Solution: Simple Popen for --windowed mode (no console flags needed).
-    """
-    try:
-        # Get current position
-        pos_x, pos_y = 100, 100
-        
-        if app_instance:
-            try:
-                pos_x = app_instance.winfo_x()
-                pos_y = app_instance.winfo_y()
-                
-                # Save to settings file as backup
-                app_instance.settings["window_x"] = pos_x
-                app_instance.settings["window_y"] = pos_y
-                if hasattr(app_instance, 'settings_file'):
-                    with open(app_instance.settings_file, 'w') as f:
-                        json.dump(app_instance.settings, f, indent=2)
-            except Exception:
-                pass
-        
-        # Remove lock file before restart
-        lock_file = os.path.join(tempfile.gettempdir(), "dual_voicer.lock")
-        try:
-            if os.path.exists(lock_file):
-                os.remove(lock_file)
-        except OSError:
-            pass
-
-        if getattr(sys, 'frozen', False):
-            # FROZEN (PyInstaller EXE)
-            executable = sys.executable
-            cmd_args = [executable, f"--pos={pos_x},{pos_y}"]
-            
-            # Windowed mode এর জন্য simple process start
-            # কনসোল ফ্ল্যাগগুলোর আর দরকার নেই কারণ আমরা কনসোল চাই না
-            subprocess.Popen(cmd_args, shell=False)
-        else:
-            # DEV MODE
-            python = sys.executable
-            os.execl(python, python, *sys.argv)
-        
-        # বর্তমান অ্যাপ বন্ধ করা
-        if app_instance:
-            try:
-                app_instance.quit()
-            except Exception:
-                pass
-        
-        # Force kill current process
-        os._exit(0)
-        
-    except Exception:
-        # Windowed মোডে error দেখা যাবে না, শুধু continue করি
-        pass
+from app.helpers import install_socket_default_timeout  # noqa: E402
+install_socket_default_timeout(10)
 
 
 # Firebase removed - Uses API now
